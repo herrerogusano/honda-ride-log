@@ -1,0 +1,13 @@
+{
+  "referrer": "strict-origin",
+  "directives": {
+    "default-src": ["'none'"],
+    "script-src": ["'self'"],
+    "style-src": ["'self'"],
+    "img-src": ["'self'", "https://tile.openstreetmap.org"],
+    "connect-src": ["'self'"],
+    "font-src": ["'none'"],
+    "base-uri": ["'none'"],
+    "form-action": ["'none'"]
+  }
+}

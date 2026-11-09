@@ -53,9 +53,32 @@ function instantOrNull(value: unknown, path: string): number | null {
   const text = stringOrNull(value, path);
   if (text === null) return null;
   // A zone is required: without it `Date.parse` would silently use local time.
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/.test(text)) return null;
+  const parts = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})$/.exec(text);
+  if (parts === null) return null;
+  const [year, month, day, hour, minute, second] = parts.slice(1).map((part) => Number(part ?? 0));
+  // `Date.parse` rolls impossible dates over (30 February becomes 2 March).
+  const calendar = new Date(Date.UTC(year as number, (month as number) - 1, day as number));
+  if (calendar.getUTCMonth() !== (month as number) - 1 || calendar.getUTCDate() !== day) return null;
+  if ((hour as number) > 23 || (minute as number) > 59 || (second as number) > 59) return null;
   const ms = Date.parse(text);
   return Number.isNaN(ms) ? null : ms;
+}
+
+/** A finite number that is not negative; a negative one is treated as absent. */
+function nonNegativeOrNull(value: unknown, path: string): number | null {
+  const number = finiteOrNull(value, path);
+  return number !== null && number >= 0 ? number : null;
+}
+
+const MAX_LABEL_LENGTH = 60;
+
+/** A short display label: control characters removed, length capped. */
+function labelOrNull(value: unknown, path: string): string | null {
+  const text = stringOrNull(value, path);
+  if (text === null) return null;
+  // eslint-disable-next-line no-control-regex
+  const clean = text.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, MAX_LABEL_LENGTH);
+  return clean === "" ? null : clean;
 }
 
 const routeIds = new WeakMap<RouteRef, string>();
@@ -95,7 +118,7 @@ function sanitizeRoute(raw: unknown, path: string): Route | null {
     endMs,
     durationS: endMs === null ? null : (endMs - startMs) / 1000,
     distanceKm,
-    averageSpeed: finiteOrNull(item["average_speed"], `${path}.average_speed`),
+    averageSpeed: nonNegativeOrNull(item["average_speed"], `${path}.average_speed`),
     hasInferredSegments: boolOrNull(item["has_inferred_segments"], `${path}.has_inferred_segments`),
   };
 }
@@ -117,17 +140,24 @@ export function sanitizeRouteList(raw: unknown): RouteListPage {
     else routes.push(route);
   });
   routes.sort((a, b) => a.startMs - b.startMs);
-  return { routes, truncated, matched, skipped };
+  // If the service matched more routes than it sent, the answer is cut even
+  // when the flag says otherwise: the caller must split the period.
+  return { routes, truncated: truncated || matched > rawRoutes.length, matched, skipped };
+}
+
+function percentOrNull(value: unknown, path: string): number | null {
+  const number = finiteOrNull(value, path);
+  return number !== null && number >= 0 && number <= 100 ? number : null;
 }
 
 export function sanitizeVehicleStatus(raw: unknown): VehicleState {
   const status = asObject(raw, "get_vehicle_status");
   // `position`, `speed`, `voltage` and `last_coordinate_update` are dropped here.
   return {
-    status: stringOrNull(status["status"], "get_vehicle_status.status"),
-    batteryPercent: finiteOrNull(status["battery"], "get_vehicle_status.battery"),
-    lastCommunicationMs: finiteOrNull(status["last_communication"], "get_vehicle_status.last_communication"),
-    odometer: finiteOrNull(status["odometer"], "get_vehicle_status.odometer"),
+    status: labelOrNull(status["status"], "get_vehicle_status.status"),
+    batteryPercent: percentOrNull(status["battery"], "get_vehicle_status.battery"),
+    lastCommunicationMs: nonNegativeOrNull(status["last_communication"], "get_vehicle_status.last_communication"),
+    odometer: nonNegativeOrNull(status["odometer"], "get_vehicle_status.odometer"),
   };
 }
 
@@ -135,8 +165,8 @@ export function sanitizeVehicleDetails(raw: unknown): VehicleInfo {
   const details = asObject(raw, "get_vehicle_details");
   // `registration`, `vin`, `dealer`, `product`, `plan` and `branch` are dropped here.
   return {
-    model: stringOrNull(details["model"], "get_vehicle_details.model"),
-    mileage: finiteOrNull(details["mileage"], "get_vehicle_details.mileage"),
+    model: labelOrNull(details["model"], "get_vehicle_details.model"),
+    mileage: nonNegativeOrNull(details["mileage"], "get_vehicle_details.mileage"),
   };
 }
 
@@ -153,6 +183,8 @@ function sanitizePosition(raw: unknown, path: string): LatLng {
   return [latitude, longitude];
 }
 
+const traceLines = new WeakMap<UntrimmedTrace, readonly TraceLine[]>();
+
 /**
  * Lines of one route detail. The standalone start and end `Point` features
  * are discarded: they mark the exact places the trim exists to hide. A
@@ -168,7 +200,11 @@ export function sanitizeRouteTrace(raw: unknown): UntrimmedTrace {
     features.forEach((rawFeature, index) => {
       const path = `get_route_detail.geojson.features[${index}]`;
       const feature = asObject(rawFeature, path);
+      // GeoJSON allows a feature without geometry: nothing to draw.
+      if (feature["geometry"] === null || feature["geometry"] === undefined) return;
       const geometry = asObject(feature["geometry"], `${path}.geometry`);
+      // Only LineString has been seen. Points are dropped on purpose; any
+      // other geometry type is ignored rather than guessed at.
       if (geometry["type"] !== "LineString") return;
       const coordinates = asArray(geometry["coordinates"], `${path}.geometry.coordinates`);
       const points = coordinates.map((position, i) => sanitizePosition(position, `${path}.geometry.coordinates[${i}]`));
@@ -181,5 +217,17 @@ export function sanitizeRouteTrace(raw: unknown): UntrimmedTrace {
       lines.push({ inferred: typeof inferred === "boolean" ? inferred : null, points });
     });
   }
-  return { lines } as unknown as UntrimmedTrace;
+  const trace = Object.freeze({}) as UntrimmedTrace;
+  traceLines.set(trace, lines);
+  return trace;
+}
+
+/**
+ * The lines behind an `UntrimmedTrace`. Only the trim function may call it
+ * (ESLint enforces the import); everything else works with trimmed lines.
+ */
+export function untrimmedLines(trace: UntrimmedTrace): readonly TraceLine[] {
+  const lines = traceLines.get(trace);
+  if (lines === undefined) throw new ShapeError("untrimmedTrace", "a trace created by sanitizeRouteTrace");
+  return lines;
 }

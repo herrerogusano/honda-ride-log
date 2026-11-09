@@ -27,7 +27,10 @@ import { createRandom, hashSeed, type Random } from "./random";
 const DAY_MS = 86_400_000;
 const HOUR_MS = 3_600_000;
 
-/** Made-up base point for every synthetic trace (latitude, longitude). */
+/**
+ * Base point for every synthetic trace (latitude, longitude). An arbitrary
+ * spot chosen for the demo; it has nothing to do with anyone's rides.
+ */
 export const DEMO_BASE: readonly [number, number] = [40.3456, -1.1065];
 
 /** Marker inside every synthetic value that must never reach the screen. */
@@ -120,7 +123,7 @@ const ID_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvw
 function demoRouteId(random: Random): string {
   let tail = "";
   for (let i = 0; i < 23; i += 1) tail += ID_ALPHABET[random.int(0, ID_ALPHABET.length - 1)];
-  // Same length as a real id (`rt-` + 27 characters) but visibly synthetic.
+  // Visibly synthetic: no real identifier contains this marker.
   return `rt-DEMO${tail}`;
 }
 

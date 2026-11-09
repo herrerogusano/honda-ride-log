@@ -27,7 +27,8 @@ function parseBoundary(value: unknown, field: string): number {
   const text = value.trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
     const ms = Date.parse(`${text}T00:00:00.000Z`);
-    if (Number.isNaN(ms)) throw invalid;
+    // Reject impossible dates that `Date.parse` would roll over (30 February).
+    if (Number.isNaN(ms) || new Date(ms).toISOString().slice(0, 10) !== text) throw invalid;
     return ms;
   }
   if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?/.test(text)) throw invalid;
@@ -90,6 +91,8 @@ export function createDemoService(rider: SyntheticRider): DemoService {
         if (detail === undefined) throw new ToolCallError("tool_error", "route not available");
         return detail;
       }
+      default:
+        throw new ToolCallError("tool_error", "unknown tool");
     }
   }
 

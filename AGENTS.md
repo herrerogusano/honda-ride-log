@@ -16,10 +16,15 @@ the phase split.
   from the service goes through `src/domain/sanitize.ts` before anything else
   touches it.
 - No analytics, no third-party requests except OpenStreetMap tiles. The
-  Content Security Policy lives in `vite.config.ts`; loosening it needs a
-  written reason in `docs/PLAN.md`.
-- No `innerHTML`, no inline scripts, styles or handlers (ESLint and
-  `scripts/check-dist.mjs` enforce this).
+  Content Security Policy lives in `csp.config.json`; changing it needs a
+  written reason in `docs/PLAN.md` and a matching change in
+  `tests/csp.test.ts`.
+- No `innerHTML` or other HTML-string sinks, no inline scripts, styles or
+  handlers, no browser storage outside the modules named in `docs/PLAN.md`
+  (ESLint and `scripts/check-dist.mjs` catch the common forms; they are a
+  net, not a proof).
+- Route ids and untrimmed traces are sealed handles. Do not widen the
+  ESLint import rules that guard `serviceRouteId` and `untrimmedLines`.
 - Runtime dependencies: Leaflet only. Charts are hand-written SVG.
 - User-facing text is Spanish. Code, comments and commit messages are English.
 
