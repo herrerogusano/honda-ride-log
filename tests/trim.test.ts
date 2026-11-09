@@ -4,7 +4,7 @@ import { generateRider } from "../src/demo/generator";
 import type { LatLng, TraceLine } from "../src/domain/model";
 import { TRIM_METERS } from "../src/domain/privacy";
 import { sanitizeRouteTrace } from "../src/domain/sanitize";
-import { distanceMeters, trimTrace } from "../src/domain/trim";
+import { distanceMeters, HIDE_RADIUS_METERS, trimTrace } from "../src/domain/trim";
 import type { RawRouteDetail } from "../src/service/contract";
 
 /** Metres per degree of latitude on the sphere the trim uses. */
@@ -22,10 +22,10 @@ interface TestLine {
 }
 
 /** A raw detail in the service's shape, start and end `Point` features included. */
-function rawDetail(lines: TestLine[]): unknown {
+function rawDetail(lines: TestLine[], ends?: readonly [LatLng, LatLng]): unknown {
   const raw = (point: LatLng): number[] => [point[1], point[0], 0];
-  const first = lines[0]?.points[0] ?? north(0);
-  const last = lines[lines.length - 1]?.points.slice(-1)[0] ?? north(0);
+  const first = ends?.[0] ?? lines[0]?.points[0] ?? north(0);
+  const last = ends?.[1] ?? lines[lines.length - 1]?.points.slice(-1)[0] ?? north(0);
   return {
     geojson: {
       type: "FeatureCollection",
@@ -42,7 +42,9 @@ function rawDetail(lines: TestLine[]): unknown {
   };
 }
 
-const trim = (lines: TestLine[]) => trimTrace(sanitizeRouteTrace(rawDetail(lines)));
+const trim = (lines: TestLine[], ends?: readonly [LatLng, LatLng]) => trimTrace(sanitizeRouteTrace(rawDetail(lines, ends)));
+/** Nothing is drawn nearer than this to the start or the end: the 400 m of the rule plus 1 m of margin. */
+const R = 401;
 const northings = (line: TraceLine | undefined): number[] => (line?.points ?? []).map(northing);
 
 function expectMetres(actual: number[], expected: number[]): void {
@@ -76,25 +78,26 @@ describe("distanceMeters", () => {
 });
 
 describe("trimTrace", () => {
-  it("is set to 400 metres", () => {
+  it("is set to 400 metres, with one more metre of margin around the ends", () => {
     expect(TRIM_METERS).toBe(400);
+    expect(HIDE_RADIUS_METERS).toBe(R);
   });
 
   it("cuts 400 m from each end by distance, inside the segment", () => {
     const result = trim([{ inferred: false, points: [north(0), north(1000), north(2000)] }]);
     expect(result.empty).toBeNull();
     expect(result.lines.length).toBe(1);
-    expectMetres(northings(result.lines[0]), [400, 1000, 1600]);
+    expectMetres(northings(result.lines[0]), [R, 1000, 2000 - R]);
   });
 
   it("interpolates both ends of a single long segment instead of dropping its points", () => {
     const result = trim([{ inferred: false, points: [north(0), north(5000)] }]);
-    expectMetres(northings(result.lines[0]), [400, 4600]);
+    expectMetres(northings(result.lines[0]), [R, 5000 - R]);
   });
 
   it("drops the points inside the cut and keeps the ones between", () => {
     const result = trim([{ inferred: false, points: [north(0), north(100), north(700), north(2500), north(2600)] }]);
-    expectMetres(northings(result.lines[0]), [400, 700, 2200]);
+    expectMetres(northings(result.lines[0]), [R, 700, 2600 - R]);
   });
 
   it("never returns the exact start or end of the ride", () => {
@@ -115,7 +118,7 @@ describe("trimTrace", () => {
 
   it("keeps only the middle of a trace slightly longer than 800 m", () => {
     const result = trim([{ inferred: false, points: [north(0), north(900)] }]);
-    expectMetres(northings(result.lines[0]), [400, 500]);
+    expectMetres(northings(result.lines[0]), [R, 900 - R]);
   });
 
   it("trims several lines as one trace and keeps each line's inferred flag", () => {
@@ -124,8 +127,8 @@ describe("trimTrace", () => {
       { inferred: false, points: [north(1000), north(2000)] },
     ]);
     expect(result.lines.map((line) => line.inferred)).toEqual([true, false]);
-    expectMetres(northings(result.lines[0]), [400, 1000]);
-    expectMetres(northings(result.lines[1]), [1000, 1600]);
+    expectMetres(northings(result.lines[0]), [R, 1000]);
+    expectMetres(northings(result.lines[1]), [1000, 2000 - R]);
   });
 
   it("removes whole lines that fall inside the trimmed ends", () => {
@@ -136,7 +139,7 @@ describe("trimTrace", () => {
     ]);
     expect(result.lines.length).toBe(1);
     expect(result.lines[0]?.inferred).toBe(false);
-    expectMetres(northings(result.lines[0]), [400, 1400]);
+    expectMetres(northings(result.lines[0]), [R, 1800 - R]);
   });
 
   it("does not count the gap between two lines as travelled distance", () => {
@@ -144,13 +147,13 @@ describe("trimTrace", () => {
       { inferred: false, points: [north(0), north(600)] },
       { inferred: false, points: [north(5000), north(5600)] },
     ]);
-    expectMetres(northings(result.lines[0]), [400, 600]);
-    expectMetres(northings(result.lines[1]), [5000, 5200]);
+    expectMetres(northings(result.lines[0]), [R, 600]);
+    expectMetres(northings(result.lines[1]), [5000, 5600 - R]);
   });
 
   it("survives repeated points without producing NaN", () => {
     const result = trim([{ inferred: false, points: [north(0), north(0), north(1000), north(1000), north(2000)] }]);
-    expectMetres(northings(result.lines[0]), [400, 1000, 1600]);
+    expectMetres(northings(result.lines[0]), [R, 1000, 2000 - R]);
   });
 
   it("measures along a parallel too, where a degree of longitude is shorter", () => {
@@ -158,8 +161,8 @@ describe("trimTrace", () => {
     const east = (metres: number): LatLng => [60, metres / metresPerDegLon];
     const result = trim([{ inferred: false, points: [east(0), east(2000)] }]);
     const [from, to] = (result.lines[0]?.points ?? []) as LatLng[];
-    expect(distanceMeters(east(0), from as LatLng)).toBeCloseTo(400, 0);
-    expect(distanceMeters(to as LatLng, east(2000))).toBeCloseTo(400, 0);
+    expect(distanceMeters(east(0), from as LatLng)).toBeCloseTo(R, 0);
+    expect(distanceMeters(to as LatLng, east(2000))).toBeCloseTo(R, 0);
   });
 
   it("reports a detail without any line as having no geometry", () => {
@@ -187,14 +190,18 @@ describe("trimTrace", () => {
         hidden += 1;
         continue;
       }
+      // A longer ride that never leaves the surroundings of its ends is hidden too.
+      if (result.empty !== null) continue;
       drawn += 1;
-      expect(Math.abs(pathLength(result.lines) - (total - 2 * TRIM_METERS))).toBeLessThan(0.5);
+      // At least 400 m are gone from each end; more if the ride comes back near them.
+      expect(pathLength(result.lines)).toBeLessThan(total - 2 * TRIM_METERS);
+      expect(pathLength(result.lines)).toBeGreaterThan(0);
       const start = rawLines[0]?.points[0] as LatLng;
       const end = rawLines[rawLines.length - 1]?.points.slice(-1)[0] as LatLng;
       for (const line of result.lines) {
         for (const point of line.points) {
-          expect(point).not.toEqual(start);
-          expect(point).not.toEqual(end);
+          expect(distanceMeters(point, start)).toBeGreaterThanOrEqual(TRIM_METERS);
+          expect(distanceMeters(point, end)).toBeGreaterThanOrEqual(TRIM_METERS);
           expect(Number.isFinite(point[0]) && Number.isFinite(point[1])).toBe(true);
         }
       }
