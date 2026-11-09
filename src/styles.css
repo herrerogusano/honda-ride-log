@@ -267,6 +267,11 @@ input[type="number"] {
   cursor: pointer;
 }
 
+/* Inside the tab: the scrolling tab list would clip an outer outline. */
+.tab:focus-visible {
+  outline-offset: -3px;
+}
+
 .tab[aria-selected="true"] {
   color: var(--fg);
   border-bottom-color: var(--red);
@@ -658,6 +663,66 @@ h4 {
 .count {
   font-size: 14px;
   color: var(--fg-2);
+}
+
+/* ---------- map ---------- */
+.map-canvas {
+  width: 100%;
+  height: min(62vh, 540px);
+  min-height: 300px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  /* Leaflet stacks its panes up to z-index 1000: keep them inside this box. */
+  isolation: isolate;
+}
+
+.map-canvas .trace,
+.map-canvas .trace-casing {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.map-canvas .trace-casing {
+  stroke: #fff;
+  stroke-width: 8;
+  stroke-opacity: 0.9;
+}
+
+.map-canvas .trace {
+  stroke: #c00018;
+  stroke-width: 4;
+  stroke-opacity: 1;
+}
+
+.map-canvas .trace-inferred {
+  stroke-dasharray: 2 10;
+}
+
+.map-legend {
+  display: grid;
+  gap: 6px;
+  max-width: 80ch;
+  font-size: 14px;
+  color: var(--fg-2);
+}
+
+.map-legend li {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+
+.legend-line {
+  flex: none;
+  width: 36px;
+  height: 0;
+  border-top: 4px solid var(--red-text);
+  transform: translateY(-4px);
+}
+
+.legend-inferred {
+  border-top-style: dotted;
 }
 
 @media (max-width: 520px) {

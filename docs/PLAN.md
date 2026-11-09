@@ -4,7 +4,7 @@ Este documento es el punto de partida de cualquier hilo que trabaje en el
 repo. Dice qué se construye, qué está decidido, qué se ha comprobado y qué no,
 y cómo se reparte el trabajo. Actualízalo al cerrar cada fase.
 
-Última actualización: 2026-11-09, cierre de la fase 1.
+Última actualización: 2026-11-10, cierre de la fase 2.
 
 ## 1. Qué es
 
@@ -32,7 +32,8 @@ Una web estática en la que cada persona invitada entra con su cuenta de MAPIT
 | Unidades | «km» a secas, con nota al pie: se usan los campos `*_km` del servicio, que el propio servicio marca como conversión sin confirmar. Nunca se convierte la distancia nativa. |
 | Zona horaria | Una sola: la del navegador. El campo `timezone` de cada ruta no se usa. |
 | Pila | Vite y TypeScript estricto, sin framework. Leaflet como única dependencia de ejecución. Gráficos en SVG a mano. Vitest y ESLint. |
-| Rutas de menos de 300 m | Se excluyen de todo (lista, mapa y cifras) y se dice cuántas son en una nota. Pendiente de confirmar por el propietario (apartado 9). |
+| Rutas de menos de 300 m | Se excluyen de todo (lista, mapa y cifras) y se dice cuántas son en una nota. Es la respuesta del organizador para la fase 2; el propietario puede cambiarla (apartado 9). Cambiarla es una línea: `SHORT_ROUTES_COUNT_IN_FIGURES` en `src/config.ts` (y su test en `tests/units.test.ts`). |
+| Periodo del Resumen | Las cifras son del año elegido, por defecto el actual, con opción «Todo». Respuesta del organizador para la fase 2; se cambia con `SUMMARY_DEFAULT_PERIOD` en `src/config.ts`. |
 | Almacenamiento | El token de acceso vive en una variable y nada más. El verificador de PKCE y el `state` van a `sessionStorage` solo durante la ida y vuelta al login y se borran al volver. El token de renovación se descarta. En `localStorage` solo va lo que el usuario escribe para el mantenimiento. |
 | Llamadas | Sin sesión MCP: una petición por herramienta, en serie (como mucho de 2 en 2). |
 | Proceso | PR pequeñas contra `main`, CI en verde y revisión de un agente independiente antes de fusionar. |
@@ -46,6 +47,22 @@ herramientas de estadísticas del servicio.
 Definiciones comunes: «salida» es una ruta visible (300 m o más). El día, el
 mes, el día de la semana y la hora de una ruta son los de su instante de
 inicio en la zona horaria del navegador. La semana empieza en lunes.
+
+Concretado al construirlo en la fase 2 (`src/domain/stats.ts`):
+
+- Siguen al selector de periodo las cuatro cifras, los hábitos, los récords,
+  los trayectos cortos y la tarjeta. No lo siguen el estado, la comparación
+  del mes, los km por mes (tres últimos años con rutas), las rachas (todo el
+  historial) ni el mantenimiento. Cada bloque dice en pantalla qué periodo
+  enseña.
+- Rachas: hoy no ha terminado, así que una racha de días saliendo que llegó
+  hasta ayer sigue viva, y hoy no cuenta como día parado hasta que acabe.
+  «Días parada» son días completos sin ninguna salida.
+- En un empate (dos rutas, días, meses o rachas con la misma cifra) gana lo
+  más antiguo.
+- Los números separan siempre los miles («6.125 km»).
+- La velocidad media es la del servicio y se rotula «km/h»; el servicio no
+  confirma sus unidades, igual que no confirma los km (pregunta abierta 8).
 
 ### Resumen
 
@@ -121,7 +138,7 @@ alternativo con las mismas cifras, nada que dependa solo del color.
 |---|---|
 | Nunca matrícula, bastidor, datos del concesionario ni posición actual | `src/domain/sanitize.ts` copia una lista cerrada de campos y descarta el resto al recibir la respuesta. Que ningún otro módulo lea respuestas sin sanear es una convención: ninguna herramienta lo impide. |
 | Nunca identificadores de ruta en pantalla ni en exportaciones | El identificador vive detrás de un `RouteRef` opaco y sin campos; solo `serviceRouteId` lo recupera, y ESLint solo deja importar esa función desde `src/service/` (donde irá la petición de detalle). Serializar una ruta no lo incluye. |
-| Recortar 400 m al inicio y al final de cada traza antes de dibujarla | `TRIM_METERS` en `src/domain/privacy.ts`. **La función de recorte es trabajo de la fase 2 y va en `src/domain/trim.ts`.** El saneador devuelve un `UntrimmedTrace` sellado, sin campos legibles; sus líneas solo salen con `untrimmedLines`, que ESLint solo deja importar desde ese archivo. |
+| Recortar 400 m al inicio y al final de cada traza antes de dibujarla | `TRIM_METERS` en `src/domain/privacy.ts` y `trimTrace` en `src/domain/trim.ts` (fase 2). La longitud del recorte no es un parámetro: nadie puede pedir un corte más corto. La pestaña Mapa solo guarda en memoria las líneas ya recortadas. El saneador devuelve un `UntrimmedTrace` sellado, sin campos legibles; sus líneas solo salen con `untrimmedLines`, que ESLint solo deja importar desde ese archivo. |
 | Ocultar rutas de menos de 300 m | `hideShortRoutes` en `src/domain/privacy.ts`. |
 | Token solo en memoria | Ver «Almacenamiento» en el apartado 2. ESLint prohíbe `localStorage` y `sessionStorage` en todo el código, con una sola excepción, abierta en la fase 2: **`src/storage/maintenance.ts` puede usar `localStorage`** (y solo `localStorage`) para guardar los dos números del mantenimiento que escribe el usuario, con una clave para la cuenta y otra para la demo. `tests/units.test.ts` comprueba que la excepción vale para ese archivo y para ningún otro, y que `sessionStorage` sigue prohibido también ahí. La fase 3 necesitará otra excepción, para `sessionStorage`, en el archivo del login. |
 | Sin analítica ni terceros, salvo las teselas de OpenStreetMap | Política de seguridad de contenido en `csp.config.json`. `scripts/check-dist.mjs` rompe el build si la página que genera Vite no lleva exactamente esa política, o si detecta código en línea o recursos de otro origen; `tests/csp.test.ts` fija su texto. Es una red contra errores propios hecha con expresiones regulares, no un analizador de HTML: no protege contra quien edite `dist/` a mano, y no tiene tests propios. |
@@ -145,6 +162,27 @@ Notas para quien implemente el recorte (comprobado con una lectura real):
   recorte se aplica igualmente.
 - El saneador solo conserva geometrías `LineString`, las únicas vistas. Si
   el servicio enviara otro tipo de línea, se ignoraría sin aviso.
+
+Cómo quedó el recorte (fase 2):
+
+- Los huecos entre dos líneas no cuentan como distancia recorrida: se
+  recortan 400 m de trazo dibujado por cada extremo.
+- Son 400 m **de recorrido**, no en línea recta: en una ruta de ida y vuelta,
+  o con muchas curvas, el primer punto dibujado puede quedar a menos de 400 m
+  en línea recta del inicio real, y el trazo puede volver a pasar junto al
+  punto de salida. El recorte no lo evita.
+- Si no queda nada, la web dice «traza oculta por privacidad»; si el servicio
+  no envió ninguna línea, dice que no hay recorrido. Son mensajes distintos.
+- La interpolación es lineal en latitud y longitud (suficiente a estas
+  distancias) y no contempla el antimeridiano.
+
+Leaflet y la política de seguridad de contenido (visto en un navegador):
+Leaflet cancela una tesela que aún está cargando apuntándola a una imagen
+`data:`, que la política no admite, y el navegador escribía un error por cada
+una. En lugar de admitir `data:` en `img-src`, `src/ui/leafletSurface.ts`
+sustituye tres métodos privados de la capa de teselas de Leaflet 1.9
+(`_abortLoading`, `_removeTile`, `_tileReady`) para cancelar quitando la
+dirección. Hay que revisarlo al actualizar Leaflet.
 
 La política de referencia es `strict-origin`: las normas de uso de las teselas
 de OpenStreetMap exigen que el navegador envíe la cabecera `Referer`, y así
@@ -243,6 +281,62 @@ pantalla y sin token ni datos: configuración ausente, vuelta del login
 (`state` que no coincide), canje del código, red o CORS, 401, 403, error de
 la herramienta, forma inesperada (`ShapeError` ya trae la ruta del campo).
 
+Cómo quedó en la fase 2 (`src/service/loader.ts`):
+
+- Los semestres son naturales **en UTC** y los límites se envían como
+  instantes ISO con `Z`. El semestre en curso se pide hasta su final, que
+  está en el futuro: por lectura del código del servicio no hay regla que lo
+  impida, pero no se ha probado en real.
+- Regla de parada: el año en curso no cuenta (puede no tener aún ninguna
+  salida); se para en el primer año natural **pasado** sin rutas. Límite duro
+  de 30 años. Consecuencia conocida y fijada por un test: quien haya pasado
+  un año natural entero sin salir pierde el historial anterior.
+- Una respuesta cortada se descarta entera y el periodo se vuelve a pedir en
+  dos mitades. Si partir no acaba nunca, error `too_many_routes`.
+- Una ruta que llegue en dos respuestas se cuenta una vez (la comparación de
+  identificadores ocurre dentro del cargador y no sale de él).
+- `LoadError` lleva el paso (`status`, `details`, `routes`, `detail`), un
+  tipo cerrado (`tool_error`, `unexpected_shape`, `too_many_routes`,
+  `unknown`) y un detalle que se puede enseñar: el código del servicio si
+  tiene forma de código, la ruta del campo, o el nombre de la clase de una
+  excepción desconocida. Nunca un mensaje. En pantalla se ve como
+  `routes/tool_error (period_too_large)`.
+- Fallar el estado detiene la carga. Fallar los datos del vehículo solo deja
+  un aviso: la web funciona sin modelo ni kilometraje de respaldo.
+
+### Para la fase 3
+
+- La puerta es `App.load(caller, { demo: false })` en `src/ui/app.ts`: tras
+  el login basta con construir un `ToolCaller` y llamarla. El resto (carga,
+  pestañas, mapa, errores) no cambia.
+- El cliente de `/mcp` debe lanzar `ToolCallError` con el código del servicio
+  cuando la herramienta responda con error. Para lo que solo él puede ver
+  (configuración ausente, `state` que no coincide, canje del código, red o
+  CORS, 401, 403) hay que **ampliar `FailureKind`** en el cargador y los
+  textos de `src/ui/errors.ts`; hoy una excepción que el cargador no conoce
+  sale como `unknown` con el nombre de su clase, sin mensaje. La forma más
+  simple: que el cliente lance una clase propia con un `kind`, y que
+  `toLoadError` la reconozca.
+- Un 401 a mitad de sesión (el token dura 60 minutos) aparece hoy como un
+  error con botón «Reintentar», que repetiría la misma llamada con el mismo
+  token. La fase 3 decide qué hacer: lo natural es volver al login.
+- La pantalla de entrada (`showLanding`) dice que el acceso con cuenta no
+  está disponible y solo ofrece la demo: ahí va el botón de entrar. El
+  fragmento `#demo` está reservado para la demo; la vuelta del login llega
+  en la cadena de consulta (`?code=...&state=...`), que la web debe quitar
+  de la barra de direcciones en cuanto la lea.
+- `sessionStorage` sigue prohibido por ESLint en todo el código. El archivo
+  del login necesita su propia excepción, como la de
+  `src/storage/maintenance.ts`, con su test en `tests/units.test.ts`.
+- `connect-src` hoy es `'self'`: hay que añadir el origen de `/mcp` y el del
+  login en `csp.config.json`, en `tests/csp.test.ts` y con el motivo aquí.
+  Si los orígenes dependen del entorno, la política también.
+- Las claves de mantenimiento en `localStorage` son por navegador, no por
+  cuenta: dos personas que usen el mismo navegador comparten los números.
+- La web pide el historial completo en cada carga (unas 8 peticiones para
+  tres años; más si un semestre pasa de 500 rutas). No hay caché entre
+  recargas, a propósito.
+
 ## 7. Qué necesita del servicio (fase 4, en el repo del servicio)
 
 1. Un tercer cliente de login, público y con PKCE, con dos direcciones de
@@ -275,16 +369,30 @@ npm run preview    # sirve dist/ tal como se publicará
 
 Node 22 o superior. La CI ejecuta lint, typecheck, test y build. Los tests
 corren a propósito con la zona horaria de Los Ángeles, para que un cálculo
-que se cuele en hora local dé un resultado distinto del esperado.
+que se cuele en UTC dé un resultado distinto del esperado.
+
+Para ver el modo demo en local: `npm ci`, `npm run dev` y abrir
+`http://localhost:5173/honda-ride-log/#demo`. Los otros escenarios son
+`#demo=heavy` (más rutas por semestre de las que el servicio entrega de una
+vez), `#demo=empty` (cuenta sin rutas) y `#demo=error` (fallo del servicio);
+también se eligen en el desplegable del aviso de demo. Para verlo con la
+política de seguridad de contenido, tal como se publicará: `npm run build`,
+`npm run preview` y `http://localhost:4173/honda-ride-log/#demo`.
 
 | Ruta | Qué hay |
 |---|---|
 | `src/service/contract.ts` | Formas sin sanear y límites de las cuatro herramientas; `ToolCaller`; `ToolCallError`. |
+| `src/service/loader.ts` | La carga por `ToolCaller` (estado, vehículo, historial por semestres, detalle de una ruta) y `LoadError`. |
 | `src/domain/model.ts` | Lo que el resto de la web puede tener en memoria. |
 | `src/domain/sanitize.ts` | El único módulo que lee respuestas sin sanear. |
 | `src/domain/privacy.ts` | Umbrales de privacidad y la regla de rutas cortas. |
-| `src/demo/` | Generador de datos sintéticos con semilla y servicio de demo en memoria. |
-| `tests/` | Tests. |
+| `src/domain/trim.ts` | El recorte de 400 m; el único módulo que abre una traza sin recortar. |
+| `src/domain/stats.ts`, `format.ts`, `csv.ts`, `maintenance.ts` | Cifras del Resumen, textos en español y búsqueda por fecha, exportación CSV, cálculo de la revisión. |
+| `src/config.ts` | Las dos respuestas de producto que el propietario aún puede cambiar. |
+| `src/storage/maintenance.ts` | El único archivo que usa `localStorage`. |
+| `src/ui/` | La página: `app.ts` (entrada, demo, carga y estados), `summary.ts`, `routesView.ts`, `mapView.ts` y `leafletSurface.ts` (el mapa), `charts.ts`, `card.ts`, `tabs.ts`, `dom.ts`. |
+| `src/demo/` | Generador de datos sintéticos con semilla, servicio de demo en memoria y los escenarios de la demo. |
+| `tests/` | Tests. Los de interfaz (`app`, `map`, `charts`) corren en jsdom, que no es un navegador: sin maquetación, sin canvas, sin política de seguridad de contenido. |
 | `csp.config.json` | La política de seguridad de contenido y la de referencia. |
 | `vite.config.ts` | Build, ruta base de Pages e inyección de la política. |
 | `scripts/check-dist.mjs` | Comprobaciones de publicación sobre `dist/index.html`. |
@@ -295,11 +403,16 @@ Reglas:
 - El texto para el usuario va en español; el código, los comentarios y los
   commits, en inglés.
 - Sin `innerHTML`, sin código ni estilos en línea, sin dependencias de
-  ejecución nuevas sin motivo escrito aquí.
+  ejecución nuevas sin motivo escrito aquí. La única dependencia de
+  ejecución es Leaflet 1.9.4; `jsdom` y `@types/leaflet` son de desarrollo.
+- Al escribir archivos con una herramienta de agente, un carácter invisible
+  puede colarse donde se quería su secuencia de escape (pasó con la marca de
+  orden de bytes del CSV): constrúyelo con `String.fromCharCode`.
 - Cada test nuevo se ve fallar una vez con un dato roto antes de contar. En
   la fase 1 se hizo rompiendo el código de 56 maneras, una cada vez, más 32
   que probó por su cuenta el revisor; las que sobrevivieron se cubrieron
-  después con tests nuevos.
+  después con tests nuevos. En la fase 2, igual: 228 roturas de una línea
+  del autor, todas detectadas, más las de los revisores.
 - Un test en verde contra el servicio de demo prueba el contrato tal como lo
   leímos, no que el servicio real se comporte así. Al informar de una
   prueba, di dónde corre y qué no demuestra.
@@ -321,22 +434,63 @@ Reglas:
 | Fase | Contenido | Estado |
 |---|---|---|
 | 1 | Repo, CI, workflow de Pages, esquema de datos, saneadores, generador de datos sintéticos, este documento | Hecha (2026-11-09) |
-| 2 | La web: tres pestañas, tarjeta, modo demo; función de recorte de trazas; cálculo de estadísticas | Pendiente |
+| 2 | La web: tres pestañas, tarjeta, modo demo; función de recorte de trazas; cálculo de estadísticas | Hecha (2026-11-10), sobre datos sintéticos |
 | 3 | Login con PKCE y cliente de `/mcp` (implementa `ToolCaller`), configuración por entorno, pruebas contra un servidor falso; añadir los orígenes del servicio y del login a `connect-src` | Pendiente |
 | 4 | PR en el repo del servicio (apartado 7), sin fusionar | En otro hilo |
 | 5 | Revisión independiente final y resumen para el propietario | Pendiente |
 
-Qué no ha hecho la fase 1 de los bloques posteriores: nada de interfaz, nada
-de login ni de cliente de `/mcp`, nada en el repo del servicio. Leaflet no
-está instalado todavía.
+Qué no ha hecho la fase 2 de los bloques posteriores: nada de login ni de
+cliente de `/mcp`, ningún archivo de configuración por entorno, nada en el
+repo del servicio. La web solo funciona en modo demo.
+
+### Qué se ha comprobado de la fase 2 y dónde
+
+- **Tests** (Vitest, en local con Windows y Node 24 y en la CI con Ubuntu y
+  Node 22): corren en memoria contra el servicio de demo. Prueban la
+  aritmética y el contrato tal como se leyó; no prueban nada del servicio
+  real, y los de interfaz corren en jsdom, que no es un navegador.
+- **Navegador de verdad** (Chromium, la página construida y servida en local
+  con `vite preview`, con la política de seguridad de contenido puesta):
+  las tres pestañas, el mapa con sus teselas de OpenStreetMap y su
+  atribución, los tramos inferidos en discontinuo, la tarjeta dibujada y
+  descargada como PNG, el CSV descargado, el mantenimiento guardado en
+  `localStorage`, el ancho de un móvil (390 px, sin desbordes) y el tema
+  oscuro. Ninguna infracción de la política después de corregir la de las
+  teselas canceladas (apartado 4).
+- **Sin comprobar**: todo lo que dependa del servicio real o de un login;
+  otros navegadores (Firefox, Safari) y un móvil físico; un lector de
+  pantalla; el contraste medido con una herramienta (se eligió a ojo y por
+  cálculo de un par de colores); el mensaje «traza oculta por privacidad» en
+  el navegador (la demo no tiene rutas de entre 300 y 800 m; lo cubren los
+  tests); la página servida desde GitHub Pages.
+
+### Antes de planificar: repaso de la fase 2
+
+La política del propietario pide repasar al cerrar cada punto de su lista
+«Antes de planificar». Los que aplican a una fase sin servicio real:
+
+| Punto | Qué se hizo |
+|---|---|
+| Lo primero que se mide es lo que recibe el usuario | Se abrió la web en un navegador y se miraron las tres pestañas. Las cinco cifras cotejadas a mano contra la app siguen pendientes: necesitan la fase 3 y al propietario. |
+| Comprobar cada suposición sobre el proveedor | No aplica en esta fase (prohibido llamar al servicio). Las suposiciones nuevas están escritas como tales: `to_time` en el futuro, orden de las rutas, unidades de la velocidad. |
+| Datos realistas antes de los fixtures | El generador de la fase 1 ya reproduce lo visto en real (puntos muy separados, tramos inferidos, rutas de metros). Falta en la demo una ruta de entre 300 y 800 m. |
+| La puerta se prueba antes de confiar en ella | Cada test nuevo se vio fallar: 228 roturas de una línea, todas detectadas. |
+| Un caso de punta a punta antes de treinta | El modo demo recorre el mismo código que recorrerán los datos reales, de la llamada a la pantalla. |
+| Decidir dónde se prueba | Tests en memoria y navegador en local; lo real, en la fase 3 contra el entorno de pruebas del servicio. |
+| Qué es suficiente | El alcance de la fase, verde en CI, revisión independiente y navegador sin errores de la política. |
+
+No aplican: presupuesto de exploración, evaluaciones con modelo, registro de
+fallos de ejecuciones reales y despliegue (no hay nada desplegado).
 
 ### Preguntas abiertas para el propietario
 
 1. Las rutas de menos de 300 m no se cuentan como salidas. La app de MAPIT sí
    las cuenta, así que el número de salidas puede no coincidir. ¿Se queda así
-   o se cuentan aunque no se listen?
+   o se cuentan aunque no se listen? (El organizador contestó «se queda así»
+   para la fase 2; cambiarlo es una línea en `src/config.ts`.)
 2. Las cuatro cifras del Resumen se refieren al año elegido, con opción
-   «Todo». ¿Es lo que se quiere?
+   «Todo». ¿Es lo que se quiere? (Misma situación: contestada por el
+   organizador, una línea en `src/config.ts`.)
 3. El repo no tiene licencia. Al hacerlo público, sin licencia nadie puede
    reutilizar el código. ¿Se añade una?
 4. El nombre lleva una marca comercial y la web usa una API no oficial. Si
@@ -351,6 +505,19 @@ está instalado todavía.
    Pages, que fallará hasta que se active Pages con origen «GitHub
    Actions». Conviene activar las dos cosas seguidas, y la protección de
    `main` en ese momento.
+8. La velocidad media de cada ruta se enseña tal como la da el servicio y
+   rotulada «km/h». El servicio no confirma esa unidad. ¿Se deja, se quita
+   el rótulo o se calcula a partir de los km y la duración?
+9. Además de las cuatro cifras, siguen al selector de periodo los hábitos,
+   los récords, los trayectos cortos y la tarjeta; las rachas y los km por
+   mes no. ¿Es lo que se quiere?
+10. Quien pase un año natural entero sin salir pierde en la web el historial
+    anterior (regla de parada de la carga). ¿Se acepta, o se sigue mirando
+    hacia atrás algún año más?
+11. El mapa enseña la ruta elegida en Rutas y dos botones para pasar a la
+    anterior y a la siguiente. No hay selector propio en la pestaña Mapa.
+12. Hay cuatro PR de Dependabot abiertas (actualizaciones de las acciones de
+    GitHub). Ningún agente las ha tocado.
 
 ### Aceptación real (no la sustituye ningún test)
 
