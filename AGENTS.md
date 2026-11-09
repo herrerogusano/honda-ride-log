@@ -20,7 +20,8 @@ the phase split.
   written reason in `docs/PLAN.md` and a matching change in
   `tests/csp.test.ts`.
 - No `innerHTML` or other HTML-string sinks, no inline scripts, styles or
-  handlers, no browser storage outside the modules named in `docs/PLAN.md`
+  handlers, no browser storage (banned everywhere until a phase opens one file for
+  it and records it in `docs/PLAN.md`)
   (ESLint and `scripts/check-dist.mjs` catch the common forms; they are a
   net, not a proof).
 - Route ids and untrimmed traces are sealed handles. Do not widen the

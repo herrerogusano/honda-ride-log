@@ -1,13 +1,23 @@
-// Fails the build if the published page does not carry exactly the security
-// policy of csp.config.json, or if it contains inline code. Runs after
-// `vite build`.
+// Fails the build if the page Vite produced does not carry exactly the
+// security policy of csp.config.json, or if it contains inline code. Runs
+// after `vite build`.
+//
+// It is a net against our own mistakes (a plugin that injects a script, a
+// loosened policy), written with regular expressions over the HTML that Vite
+// emits. It is not an HTML parser and does not defend against someone who
+// edits dist/ by hand: whoever can do that can also skip this script.
 import { readFileSync } from "node:fs";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const expected = JSON.parse(read("../csp.config.json"));
-// Comments cannot hide or fake anything: drop them before looking.
-const html = read("../dist/index.html").replace(/<!--[\s\S]*?-->/g, "");
 const problems = [];
+const html = read("../dist/index.html").replace(/<!--[\s\S]*?-->/g, "");
+if (html.includes("<!--")) problems.push("unterminated or nested HTML comment");
+if (!/<html[^>]*>\s*<head[^>]*>/i.test(html)) problems.push("something sits between <html> and <head>");
+if (/<template\b/i.test(html)) problems.push("<template> element found");
+for (const meta of html.matchAll(/<meta\b[^>]*\bhttp-equiv\s*=\s*["']?([^"'\s>]+)/gi)) {
+  if (meta[1].toLowerCase() !== "content-security-policy") problems.push(`unexpected http-equiv: ${meta[1]}`);
+}
 
 const decode = (text) => text.replaceAll("&#39;", "'").replaceAll("&quot;", '"').replaceAll("&amp;", "&");
 
@@ -48,9 +58,11 @@ for (const tag of html.matchAll(/<script\b([^>]*)>/gi)) {
 if (/<style[\s>]/i.test(html)) problems.push("inline <style> found");
 if (/<[^>]*\son[a-z]+\s*=/i.test(html)) problems.push("inline event handler found");
 if (/<[^>]*\sstyle\s*=/i.test(html)) problems.push("inline style attribute found");
+if (/<[^>]*\sreferrerpolicy\s*=/i.test(html)) problems.push("per-element referrer policy found");
 if (/<(iframe|object|embed|base)\b/i.test(html)) problems.push("frame, plugin or base element found");
-for (const url of html.matchAll(/\s(?:src|href)\s*=\s*"([^"]*)"/gi)) {
-  if (/^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(url[1])) problems.push(`resource from another origin: ${url[1]}`);
+for (const url of html.matchAll(/\s(?:src|href|srcset|ping)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi)) {
+  const value = (url[1] ?? url[2] ?? url[3] ?? "").trim();
+  if (/^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(value)) problems.push(`resource from another origin: ${value}`);
 }
 
 if (problems.length > 0) {

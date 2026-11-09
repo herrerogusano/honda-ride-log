@@ -124,7 +124,7 @@ alternativo con las mismas cifras, nada que dependa solo del color.
 | Recortar 400 m al inicio y al final de cada traza antes de dibujarla | `TRIM_METERS` en `src/domain/privacy.ts`. **La función de recorte es trabajo de la fase 2 y va en `src/domain/trim.ts`.** El saneador devuelve un `UntrimmedTrace` sellado, sin campos legibles; sus líneas solo salen con `untrimmedLines`, que ESLint solo deja importar desde ese archivo. |
 | Ocultar rutas de menos de 300 m | `hideShortRoutes` en `src/domain/privacy.ts`. |
 | Token solo en memoria | Ver «Almacenamiento» en el apartado 2. ESLint prohíbe hoy `localStorage` y `sessionStorage` en todo el código; la fase que los necesite abre una excepción para un único archivo y lo anota aquí. |
-| Sin analítica ni terceros, salvo las teselas de OpenStreetMap | Política de seguridad de contenido en `csp.config.json`. `scripts/check-dist.mjs` rompe el build si la página publicada no lleva exactamente esa política, si aparece código en línea o si carga algo de otro origen; `tests/csp.test.ts` fija su texto. |
+| Sin analítica ni terceros, salvo las teselas de OpenStreetMap | Política de seguridad de contenido en `csp.config.json`. `scripts/check-dist.mjs` rompe el build si la página que genera Vite no lleva exactamente esa política, o si detecta código en línea o recursos de otro origen; `tests/csp.test.ts` fija su texto. Es una red contra errores propios hecha con expresiones regulares, no un analizador de HTML: no protege contra quien edite `dist/` a mano, y no tiene tests propios. |
 | Los datos viven solo en el navegador y solo durante la sesión | Nada se guarda salvo los dos números de mantenimiento. |
 
 Notas para quien implemente el recorte (comprobado con una lectura real):
@@ -307,7 +307,11 @@ Reglas:
   reales, ni matrículas, ni correos, ni tokens, ni identificadores de un
   despliegue real.
 - Las acciones de GitHub están fijadas por commit, con la versión en un
-  comentario. Al actualizarlas, cambia las dos cosas.
+  comentario. Dependabot propone las actualizaciones una vez al mes.
+- Las reglas de ESLint que vigilan el almacenamiento, el HTML y los sellos
+  de privacidad cubren las formas habituales, no todas (por ejemplo, no ven
+  `document.cookie`, `indexedDB` ni un nombre de atributo en una variable).
+  Son una red, no una prueba: la revisión de cada PR sigue haciendo falta.
 - `main` no tiene protección de rama (GitHub no la ofrece en un repo privado
   del plan gratuito): que no se empuje directo y que la CI esté en verde
   depende hoy de quien fusiona.

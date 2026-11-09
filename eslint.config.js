@@ -1,12 +1,12 @@
 import js from "@eslint/js";
 import tseslint from "typescript-eslint";
 
-const STORAGE = "Browser storage is limited to the modules named in docs/PLAN.md (privacy): never the access token.";
+const STORAGE = "Browser storage is banned everywhere for now; the phase that needs it opens one file and records it in docs/PLAN.md (privacy). Never the access token.";
 const HTML = "Build DOM nodes instead: data must never be parsed as HTML and the CSP forbids inline code.";
 
 /** Imports that open a privacy seal; each is allowed in one place only. */
 const sealedImport = (name, where) => ({
-  group: ["**/sanitize", "**/sanitize.ts"],
+  regex: "(^|/)sanitize(\\.[cm]?[jt]s)?$",
   importNames: [name],
   message: `${name} is only for ${where} (docs/PLAN.md, privacy).`,
 });
@@ -47,6 +47,10 @@ export default tseslint.config(
         {
           selector: "CallExpression[callee.name=/^(eval|Function)$/], NewExpression[callee.name='Function']",
           message: "No evaluated code.",
+        },
+        {
+          selector: "ImportExpression",
+          message: "No dynamic imports: they slip past the import rules that guard the privacy seals.",
         },
       ],
       "no-restricted-imports": ["error", { patterns: [ROUTE_ID_SEAL, TRACE_SEAL] }],

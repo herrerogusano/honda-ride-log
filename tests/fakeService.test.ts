@@ -38,7 +38,7 @@ describe("demo service limits", () => {
   });
 
   it("reads a bare date as midnight UTC, wherever the tests run", async () => {
-    expect(new Date(NOW).getTimezoneOffset()).not.toBe(0);
+    expect(new Date(NOW).getTimezoneOffset()).toBe(480);
     const service = createDemoService(heavy);
     const byDate = await list(service, "2026-03-02", "2026-03-04");
     const byInstant = await list(service, "2026-03-02T00:00:00Z", "2026-03-04T00:00:00Z");

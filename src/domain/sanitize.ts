@@ -76,8 +76,11 @@ const MAX_LABEL_LENGTH = 60;
 function labelOrNull(value: unknown, path: string): string | null {
   const text = stringOrNull(value, path);
   if (text === null) return null;
-  // eslint-disable-next-line no-control-regex
-  const clean = text.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, MAX_LABEL_LENGTH);
+  // Control and invisible formatting characters (bidi overrides, zero-width
+  // marks, line separators) have no place in a label.
+  const visible = text.replace(/[\p{Cc}\p{Cf}\u2028\u2029]/gu, " ").trim();
+  // Cut by code point so an emoji is never split in half.
+  const clean = Array.from(visible).slice(0, MAX_LABEL_LENGTH).join("").trim();
   return clean === "" ? null : clean;
 }
 

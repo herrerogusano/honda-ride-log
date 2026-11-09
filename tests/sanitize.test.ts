@@ -81,6 +81,18 @@ describe("vehicle sanitizers", () => {
     expect(info.model?.length).toBe(60);
     expect(info.mileage).toBeNull();
     expect(sanitizeVehicleDetails({ model: "   " }).model).toBeNull();
+    // Zero is a real value, not an absent one.
+    expect(sanitizeVehicleStatus({ odometer: 0, last_communication: 0 })).toMatchObject({
+      odometer: 0,
+      lastCommunicationMs: 0,
+    });
+    expect(sanitizeVehicleDetails({ mileage: 0 }).mileage).toBe(0);
+    // Tab, DEL, a bidi override and a zero-width space are not label text.
+    expect(sanitizeVehicleDetails({ model: "A\tB\u007fC\u202eD\u200bE" }).model).toBe("A B C D E");
+    const emoji = "\u{1F3CD}";
+    const cut = sanitizeVehicleDetails({ model: "M".repeat(59) + emoji + "tail" }).model as string;
+    expect(Array.from(cut).length).toBe(60);
+    expect(cut.endsWith(emoji)).toBe(true);
   });
 });
 
@@ -166,12 +178,25 @@ describe("route list sanitizer", () => {
     );
     expect(page.routes).toEqual([]);
     expect(page.skipped).toBe(3);
+    const valid = sanitizeRouteList(
+      listOf([
+        { ...sample, route_id: "rt-DEMO-n", started_at: "2024-02-29T23:59:59.000Z", ended_at: null },
+        { ...sample, route_id: "rt-DEMO-o", started_at: "2026-12-31T00:00:00-08:00", ended_at: null },
+      ]),
+    );
+    expect(valid.routes.map((r) => r.startMs)).toEqual([
+      Date.parse("2024-02-29T23:59:59.000Z"),
+      Date.parse("2026-12-31T08:00:00.000Z"),
+    ]);
+    expect(sanitizeRouteList(listOf([{ ...sample, average_speed: 0 }])).routes[0]?.averageSpeed).toBe(0);
   });
 
   it("treats an answer with more matches than routes as truncated, whatever the flag says", () => {
     const page = sanitizeRouteList({ routes: [sample], truncated: false, matched_routes: 900 });
     expect(page.truncated).toBe(true);
     expect(sanitizeRouteList({ routes: [sample], truncated: false, matched_routes: 1 }).truncated).toBe(false);
+    expect(sanitizeRouteList({ routes: [sample], truncated: false, matched_routes: 2 }).truncated).toBe(true);
+    expect(sanitizeRouteList({ routes: [], truncated: true, matched_routes: 0 }).truncated).toBe(true);
   });
 
   it("drops a negative average speed", () => {
@@ -276,7 +301,9 @@ describe("route trace sanitizer", () => {
     expect(untrimmedLines(sanitizeRouteTrace(noFlag))[0]?.inferred).toBeNull();
     expect(untrimmedLines(sanitizeRouteTrace({ geojson: null }))).toEqual([]);
     expect(untrimmedLines(sanitizeRouteTrace({}))).toEqual([]);
-    const noGeometry = { geojson: { type: "FeatureCollection", features: [{ type: "Feature", geometry: null }, first] } };
+    const noGeometry = {
+      geojson: { type: "FeatureCollection", features: [{ type: "Feature", geometry: null }, { type: "Feature" }, first] },
+    };
     expect(untrimmedLines(sanitizeRouteTrace(noGeometry)).length).toBe(1);
   });
 

@@ -70,7 +70,8 @@ describe("synthetic rider", () => {
 
   it("does not depend on the time zone of the machine", () => {
     // The test run is pinned far from UTC (vite.config.ts).
-    expect(new Date(NOW).getTimezoneOffset()).not.toBe(0);
+    expect(process.env["TZ"]).toBe("America/Los_Angeles");
+    expect(new Date(NOW).getTimezoneOffset()).toBe(480);
     // Long rides are planned for Saturday and Sunday in UTC.
     const long = commuter.routes.filter((r) => (r.distance_km as number) > 50);
     expect(long.length).toBeGreaterThan(20);

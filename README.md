@@ -3,8 +3,8 @@
 Web estática para ver las estadísticas de tus propias rutas en moto. Cada
 persona invitada entra con su cuenta de MAPIT y sus datos se leen desde su
 navegador. La web no tiene servidor propio y no guarda tus rutas ni tu
-sesión: solo recuerda, en tu navegador, el intervalo de mantenimiento que tú
-escribas.
+contraseña ni tu token de acceso: solo recuerda, en tu navegador, los dos
+números de mantenimiento que tú escribas.
 
 Estado: en construcción. El plan, las decisiones y el reparto de fases están en
 [`docs/PLAN.md`](docs/PLAN.md).
