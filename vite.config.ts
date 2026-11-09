@@ -1,26 +1,22 @@
 import type { Plugin } from "vite";
 import { defineConfig } from "vitest/config";
+import policy from "./csp.config.json" with { type: "json" };
 
 /**
- * Content Security Policy of the published page. GitHub Pages cannot send
- * response headers, so the policy travels in a <meta> tag that is injected
- * only in the production build (the dev server needs inline styles and a
- * websocket for hot reload).
+ * Content Security Policy of the published page, defined in
+ * `csp.config.json`. GitHub Pages cannot send response headers, so the
+ * policy travels in a <meta> tag that is injected only in the production
+ * build (the dev server needs inline styles and a websocket for hot reload).
  *
- * Phase 3 adds the service and login origins to `connect-src` from the
- * per-environment configuration. Nothing else should be loosened without a
- * written reason in docs/PLAN.md.
+ * `scripts/check-dist.mjs` compares the built page with that file, and
+ * `tests/csp.test.ts` pins its content: changing the policy means changing
+ * the JSON and the test on purpose, with the reason in docs/PLAN.md.
+ *
+ * The referrer policy is `strict-origin`: OpenStreetMap's tile usage policy
+ * requires a Referer, and this sends only the site origin, never the path.
  */
-export const CSP_DIRECTIVES: Readonly<Record<string, readonly string[]>> = {
-  "default-src": ["'none'"],
-  "script-src": ["'self'"],
-  "style-src": ["'self'"],
-  "img-src": ["'self'", "https://tile.openstreetmap.org"],
-  "connect-src": ["'self'"],
-  "font-src": ["'none'"],
-  "base-uri": ["'none'"],
-  "form-action": ["'none'"],
-};
+export const CSP_DIRECTIVES: Readonly<Record<string, readonly string[]>> = policy.directives;
+export const REFERRER_POLICY: string = policy.referrer;
 
 export function cspContent(directives = CSP_DIRECTIVES): string {
   return Object.entries(directives)
@@ -39,7 +35,7 @@ function cspMeta(): Plugin {
           attrs: { "http-equiv": "Content-Security-Policy", content: cspContent() },
           injectTo: "head-prepend",
         },
-        { tag: "meta", attrs: { name: "referrer", content: "no-referrer" }, injectTo: "head-prepend" },
+        { tag: "meta", attrs: { name: "referrer", content: REFERRER_POLICY }, injectTo: "head-prepend" },
       ];
     },
   };
@@ -50,5 +46,11 @@ export default defineConfig({
   base: "/honda-ride-log/",
   plugins: [cspMeta()],
   build: { sourcemap: false, assetsInlineLimit: 0 },
-  test: { include: ["tests/**/*.test.ts"], environment: "node" },
+  test: {
+    include: ["tests/**/*.test.ts"],
+    environment: "node",
+    // Tests run far from UTC on purpose, so code that slips into local time
+    // gives a different answer than the pinned UTC expectations.
+    env: { TZ: "America/Los_Angeles" },
+  },
 });

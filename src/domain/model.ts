@@ -60,12 +60,10 @@ export interface TraceLine {
 declare const untrimmedBrand: unique symbol;
 
 /**
- * A route's lines exactly as the service sent them, start and end included.
- * It must NOT be drawn: phase 2 turns it into a drawable trace by cutting
- * `TRIM_METERS` from each end (see `privacy.ts`). The brand keeps map code
- * from accepting it by accident.
+ * Sealed handle to a route's lines exactly as the service sent them, start
+ * and end included. It has no readable fields: the lines can only be taken
+ * out with `untrimmedLines` in `sanitize.ts`, which is reserved (by an ESLint
+ * rule) for the trim function that cuts `TRIM_METERS` from each end. Map code
+ * therefore cannot draw an untrimmed trace by accident.
  */
-export interface UntrimmedTrace {
-  readonly [untrimmedBrand]: true;
-  readonly lines: readonly TraceLine[];
-}
+export type UntrimmedTrace = { readonly [untrimmedBrand]: true };

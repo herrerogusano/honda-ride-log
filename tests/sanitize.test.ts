@@ -9,6 +9,7 @@ import {
   sanitizeVehicleStatus,
   serviceRouteId,
   ShapeError,
+  untrimmedLines,
 } from "../src/domain/sanitize";
 import type { RawRouteDetail, RawRouteList, RawRouteSummary } from "../src/service/contract";
 
@@ -60,6 +61,38 @@ describe("vehicle sanitizers", () => {
     expect(message).not.toContain(secret);
     expect(() => sanitizeVehicleDetails(null)).toThrow(ShapeError);
     expect(() => sanitizeVehicleDetails([])).toThrow(ShapeError);
+    expect(() => sanitizeVehicleStatus({ odometer: "12000" })).toThrow(ShapeError);
+    let textMessage = "";
+    try {
+      sanitizeVehicleDetails({ model: 987654321 });
+    } catch (error) {
+      textMessage = (error as ShapeError).message;
+    }
+    expect(textMessage).toContain("get_vehicle_details.model");
+    expect(textMessage).not.toContain("987654321");
+  });
+
+  it("discards values that cannot be true and trims labels", () => {
+    const state = sanitizeVehicleStatus({ status: " AT_REST\n", battery: 9999, odometer: -3, last_communication: -1 });
+    expect(state).toEqual({ status: "AT_REST", batteryPercent: null, lastCommunicationMs: null, odometer: null });
+    expect(sanitizeVehicleStatus({ battery: 0 }).batteryPercent).toBe(0);
+    expect(sanitizeVehicleStatus({ battery: 100 }).batteryPercent).toBe(100);
+    const info = sanitizeVehicleDetails({ model: "M".repeat(500), mileage: -1 });
+    expect(info.model?.length).toBe(60);
+    expect(info.mileage).toBeNull();
+    expect(sanitizeVehicleDetails({ model: "   " }).model).toBeNull();
+    // Zero is a real value, not an absent one.
+    expect(sanitizeVehicleStatus({ odometer: 0, last_communication: 0 })).toMatchObject({
+      odometer: 0,
+      lastCommunicationMs: 0,
+    });
+    expect(sanitizeVehicleDetails({ mileage: 0 }).mileage).toBe(0);
+    // Tab, DEL, a bidi override and a zero-width space are not label text.
+    expect(sanitizeVehicleDetails({ model: "A\tB\u007fC\u202eD\u200bE" }).model).toBe("A B C D E");
+    const emoji = "\u{1F3CD}";
+    const cut = sanitizeVehicleDetails({ model: "M".repeat(59) + emoji + "tail" }).model as string;
+    expect(Array.from(cut).length).toBe(60);
+    expect(cut.endsWith(emoji)).toBe(true);
   });
 });
 
@@ -104,8 +137,11 @@ describe("route list sanitizer", () => {
     const ref = page.routes[0]?.ref;
     if (ref === undefined) throw new Error("no route");
     expect(serviceRouteId(ref)).toBe(sample.route_id);
-    expect(Object.keys(ref)).toEqual([]);
-    expect(String(ref)).not.toContain("rt-");
+    // Nothing on the handle itself, enumerable or not, own or inherited.
+    expect(Reflect.ownKeys(ref)).toEqual([]);
+    expect(Object.getPrototypeOf(ref)).toBe(Object.prototype);
+    expect(Object.isFrozen(ref)).toBe(true);
+    expect(JSON.stringify(ref)).toBe("{}");
     expect(() => serviceRouteId({} as typeof ref)).toThrow(ShapeError);
   });
 
@@ -121,6 +157,50 @@ describe("route list sanitizer", () => {
     );
     expect(page.routes.length).toBe(1);
     expect(page.skipped).toBe(4);
+  });
+
+  it("accepts instants with an offset and an end equal to the start", () => {
+    const page = sanitizeRouteList(
+      listOf([{ ...sample, started_at: "2026-03-01T12:00:00+02:00", ended_at: "2026-03-01T10:00:00.000Z" }]),
+    );
+    expect(page.routes[0]?.startMs).toBe(Date.parse("2026-03-01T10:00:00.000Z"));
+    expect(page.routes[0]?.endMs).toBe(Date.parse("2026-03-01T10:00:00.000Z"));
+    expect(page.routes[0]?.durationS).toBe(0);
+  });
+
+  it("skips impossible calendar dates instead of rolling them over", () => {
+    const page = sanitizeRouteList(
+      listOf([
+        { ...sample, route_id: "rt-DEMO-k", started_at: "2026-02-30T10:00:00.000Z" },
+        { ...sample, route_id: "rt-DEMO-l", started_at: "2026-03-01T24:00:00.000Z" },
+        { ...sample, route_id: "rt-DEMO-m", started_at: "2026-13-01T10:00:00.000Z" },
+      ]),
+    );
+    expect(page.routes).toEqual([]);
+    expect(page.skipped).toBe(3);
+    const valid = sanitizeRouteList(
+      listOf([
+        { ...sample, route_id: "rt-DEMO-n", started_at: "2024-02-29T23:59:59.000Z", ended_at: null },
+        { ...sample, route_id: "rt-DEMO-o", started_at: "2026-12-31T00:00:00-08:00", ended_at: null },
+      ]),
+    );
+    expect(valid.routes.map((r) => r.startMs)).toEqual([
+      Date.parse("2024-02-29T23:59:59.000Z"),
+      Date.parse("2026-12-31T08:00:00.000Z"),
+    ]);
+    expect(sanitizeRouteList(listOf([{ ...sample, average_speed: 0 }])).routes[0]?.averageSpeed).toBe(0);
+  });
+
+  it("treats an answer with more matches than routes as truncated, whatever the flag says", () => {
+    const page = sanitizeRouteList({ routes: [sample], truncated: false, matched_routes: 900 });
+    expect(page.truncated).toBe(true);
+    expect(sanitizeRouteList({ routes: [sample], truncated: false, matched_routes: 1 }).truncated).toBe(false);
+    expect(sanitizeRouteList({ routes: [sample], truncated: false, matched_routes: 2 }).truncated).toBe(true);
+    expect(sanitizeRouteList({ routes: [], truncated: true, matched_routes: 0 }).truncated).toBe(true);
+  });
+
+  it("drops a negative average speed", () => {
+    expect(sanitizeRouteList(listOf([{ ...sample, average_speed: -5 }])).routes[0]?.averageSpeed).toBeNull();
   });
 
   it("keeps a route whose end is missing or before its start, without a duration", () => {
@@ -151,6 +231,9 @@ describe("route list sanitizer", () => {
     expect(() => sanitizeRouteList({ routes: [sample], truncated: false, matched_routes: 0 })).toThrow(ShapeError);
     expect(() => sanitizeRouteList(listOf([{ ...sample, route_id: 5 }]))).toThrow(ShapeError);
     expect(() => sanitizeRouteList(listOf([{ ...sample, distance_km: "12" }]))).toThrow(ShapeError);
+    expect(() => sanitizeRouteList(listOf([{ ...sample, route_id: "r".repeat(257) }]))).toThrow(ShapeError);
+    expect(sanitizeRouteList(listOf([{ ...sample, route_id: "r".repeat(256) }])).routes.length).toBe(1);
+    expect(() => sanitizeRouteList({ routes: [sample], truncated: false, matched_routes: 1.5 })).toThrow(ShapeError);
   });
 });
 
@@ -191,25 +274,37 @@ describe("route trace sanitizer", () => {
 
   it("keeps the lines in latitude-longitude order and discards the start and end points", () => {
     const trace = sanitizeRouteTrace(detail);
+    const lines = untrimmedLines(trace);
     const rawLines = detail.geojson?.features.filter((f) => f.geometry.type === "LineString") ?? [];
     expect(rawLines.length).toBe(2);
-    expect(trace.lines.length).toBe(rawLines.length);
-    expect(trace.lines.length).toBe((detail.geojson?.features.length ?? 0) - 2);
-    trace.lines.forEach((line, index) => {
+    expect(lines.length).toBe(rawLines.length);
+    expect(lines.length).toBe((detail.geojson?.features.length ?? 0) - 2);
+    lines.forEach((line, index) => {
       const raw = rawLines[index]?.geometry.coordinates as number[][];
       expect(line.points).toEqual(raw.map(([longitude, latitude]) => [latitude, longitude]));
       expect(line.inferred).toBe(rawLines[index]?.properties.inferred);
     });
-    expect(trace.lines.some((line) => line.inferred === true)).toBe(true);
-    expect(JSON.stringify(trace)).not.toContain("rt-");
+    expect(lines.some((line) => line.inferred === true)).toBe(true);
+  });
+
+  it("seals the untrimmed lines so nothing can draw them by accident", () => {
+    const trace = sanitizeRouteTrace(detail);
+    expect(Reflect.ownKeys(trace)).toEqual([]);
+    expect(Object.getPrototypeOf(trace)).toBe(Object.prototype);
+    expect(JSON.stringify(trace)).toBe("{}");
+    expect(() => untrimmedLines({} as typeof trace)).toThrow(ShapeError);
   });
 
   it("treats a missing flag as unknown and a missing geometry as no lines", () => {
     const first = detail.geojson?.features.find((f) => f.geometry.type === "LineString");
     const noFlag = { geojson: { type: "FeatureCollection", features: [{ ...first, properties: {} }] } };
-    expect(sanitizeRouteTrace(noFlag).lines[0]?.inferred).toBeNull();
-    expect(sanitizeRouteTrace({ geojson: null }).lines).toEqual([]);
-    expect(sanitizeRouteTrace({}).lines).toEqual([]);
+    expect(untrimmedLines(sanitizeRouteTrace(noFlag))[0]?.inferred).toBeNull();
+    expect(untrimmedLines(sanitizeRouteTrace({ geojson: null }))).toEqual([]);
+    expect(untrimmedLines(sanitizeRouteTrace({}))).toEqual([]);
+    const noGeometry = {
+      geojson: { type: "FeatureCollection", features: [{ type: "Feature", geometry: null }, { type: "Feature" }, first] },
+    };
+    expect(untrimmedLines(sanitizeRouteTrace(noGeometry)).length).toBe(1);
   });
 
   it("rejects coordinates that are not a place on Earth", () => {
@@ -220,6 +315,8 @@ describe("route trace sanitizer", () => {
       },
     });
     expect(() => sanitizeRouteTrace(bad([[0, 91, 0]]))).toThrow(ShapeError);
+    expect(() => sanitizeRouteTrace(bad([[181, 0, 0]]))).toThrow(ShapeError);
+    expect(untrimmedLines(sanitizeRouteTrace(bad([[180, -90, 0]])))[0]?.points).toEqual([[-90, 180]]);
     expect(() => sanitizeRouteTrace(bad([["a", 1, 0]]))).toThrow(ShapeError);
     expect(() => sanitizeRouteTrace(bad("x"))).toThrow(ShapeError);
   });

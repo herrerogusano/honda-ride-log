@@ -34,6 +34,18 @@ describe("demo service limits", () => {
     expect(await errorCode(list(service, "", "2026-01-01"))).toBe("invalid_date_range");
     expect(await errorCode(list(service, "2026-01-01T00:00:00", "2026-02-01T00:00:00"))).toBe("invalid_date_range");
     expect(await errorCode(list(service, "ayer", "hoy"))).toBe("invalid_date_range");
+    expect(await errorCode(list(service, "2026-02-30", "2026-03-05"))).toBe("invalid_date_range");
+  });
+
+  it("reads a bare date as midnight UTC, wherever the tests run", async () => {
+    expect(new Date(NOW).getTimezoneOffset()).toBe(480);
+    const service = createDemoService(heavy);
+    const byDate = await list(service, "2026-03-02", "2026-03-04");
+    const byInstant = await list(service, "2026-03-02T00:00:00Z", "2026-03-04T00:00:00Z");
+    expect(byDate.from_time).toBe("2026-03-02T00:00:00.000Z");
+    expect(byDate.to_time).toBe("2026-03-04T00:00:00.000Z");
+    expect(byDate.routes.length).toBeGreaterThan(0);
+    expect(byDate.routes).toEqual(byInstant.routes);
   });
 
   it("includes the start boundary and excludes the end boundary", async () => {
@@ -92,12 +104,16 @@ describe("demo service limits", () => {
     expect(await service.callTool("get_route_detail", { route_id: id })).toEqual(heavy.detail(id));
     expect(await errorCode(service.callTool("get_route_detail", { route_id: "rt-unknown" }))).toBe("tool_error");
     expect(await errorCode(service.callTool("get_route_detail", { route_id: "" }))).toBe("invalid_route_id");
+    expect(await errorCode(service.callTool("get_route_detail", { route_id: "r".repeat(257) }))).toBe("invalid_route_id");
+    expect(await errorCode(service.callTool("borrar_mis_datos" as "get_vehicle_status", {}))).toBe("tool_error");
     expect(service.calls).toEqual([
       "get_vehicle_status",
       "get_vehicle_details",
       "get_route_detail",
       "get_route_detail",
       "get_route_detail",
+      "get_route_detail",
+      "borrar_mis_datos",
     ]);
   });
 

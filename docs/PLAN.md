@@ -119,12 +119,12 @@ alternativo con las mismas cifras, nada que dependa solo del color.
 
 | Regla | Cómo se cumple |
 |---|---|
-| Nunca matrícula, bastidor, datos del concesionario ni posición actual | `src/domain/sanitize.ts` copia una lista cerrada de campos y descarta el resto al recibir la respuesta. Ningún otro módulo lee respuestas sin sanear. |
-| Nunca identificadores de ruta en pantalla ni en exportaciones | El identificador vive detrás de un `RouteRef` opaco; solo `serviceRouteId` lo recupera, y solo para pedir el detalle. Serializar una ruta no lo incluye. |
-| Recortar 400 m al inicio y al final de cada traza antes de dibujarla | `TRIM_METERS` en `src/domain/privacy.ts`. **La función de recorte es trabajo de la fase 2.** El saneador devuelve un `UntrimmedTrace` que el mapa no debe aceptar. |
+| Nunca matrícula, bastidor, datos del concesionario ni posición actual | `src/domain/sanitize.ts` copia una lista cerrada de campos y descarta el resto al recibir la respuesta. Que ningún otro módulo lea respuestas sin sanear es una convención: ninguna herramienta lo impide. |
+| Nunca identificadores de ruta en pantalla ni en exportaciones | El identificador vive detrás de un `RouteRef` opaco y sin campos; solo `serviceRouteId` lo recupera, y ESLint solo deja importar esa función desde `src/service/` (donde irá la petición de detalle). Serializar una ruta no lo incluye. |
+| Recortar 400 m al inicio y al final de cada traza antes de dibujarla | `TRIM_METERS` en `src/domain/privacy.ts`. **La función de recorte es trabajo de la fase 2 y va en `src/domain/trim.ts`.** El saneador devuelve un `UntrimmedTrace` sellado, sin campos legibles; sus líneas solo salen con `untrimmedLines`, que ESLint solo deja importar desde ese archivo. |
 | Ocultar rutas de menos de 300 m | `hideShortRoutes` en `src/domain/privacy.ts`. |
-| Token solo en memoria | Ver «Almacenamiento» en el apartado 2. ESLint prohíbe `localStorage` y `sessionStorage` fuera de los módulos autorizados. |
-| Sin analítica ni terceros, salvo las teselas de OpenStreetMap | Política de seguridad de contenido en `vite.config.ts`; `scripts/check-dist.mjs` rompe el build si se relaja o si aparece código en línea. |
+| Token solo en memoria | Ver «Almacenamiento» en el apartado 2. ESLint prohíbe hoy `localStorage` y `sessionStorage` en todo el código; la fase que los necesite abre una excepción para un único archivo y lo anota aquí. |
+| Sin analítica ni terceros, salvo las teselas de OpenStreetMap | Política de seguridad de contenido en `csp.config.json`. `scripts/check-dist.mjs` rompe el build si la página que genera Vite no lleva exactamente esa política, o si detecta código en línea o recursos de otro origen; `tests/csp.test.ts` fija su texto. Es una red contra errores propios hecha con expresiones regulares, no un analizador de HTML: no protege contra quien edite `dist/` a mano, y no tiene tests propios. |
 | Los datos viven solo en el navegador y solo durante la sesión | Nada se guarda salvo los dos números de mantenimiento. |
 
 Notas para quien implemente el recorte (comprobado con una lectura real):
@@ -143,6 +143,12 @@ Notas para quien implemente el recorte (comprobado con una lectura real):
 - Una ruta cuya traza mide 800 m o menos se queda sin nada que dibujar.
 - El servicio puede haber recortado ya el final de algunas trazas; nuestro
   recorte se aplica igualmente.
+- El saneador solo conserva geometrías `LineString`, las únicas vistas. Si
+  el servicio enviara otro tipo de línea, se ignoraría sin aviso.
+
+La política de referencia es `strict-origin`: las normas de uso de las teselas
+de OpenStreetMap exigen que el navegador envíe la cabecera `Referer`, y así
+solo se envía el origen del sitio, nunca la ruta de la página.
 
 La política de seguridad de contenido se envía en una etiqueta `<meta>`
 porque GitHub Pages no permite cabeceras propias. Consecuencias: no se puede
@@ -267,7 +273,9 @@ npm run build      # typecheck + vite build + comprobaciones sobre dist/
 npm run preview    # sirve dist/ tal como se publicará
 ```
 
-Node 22 o superior. La CI ejecuta lint, typecheck, test y build.
+Node 22 o superior. La CI ejecuta lint, typecheck, test y build. Los tests
+corren a propósito con la zona horaria de Los Ángeles, para que un cálculo
+que se cuele en hora local dé un resultado distinto del esperado.
 
 | Ruta | Qué hay |
 |---|---|
@@ -277,7 +285,8 @@ Node 22 o superior. La CI ejecuta lint, typecheck, test y build.
 | `src/domain/privacy.ts` | Umbrales de privacidad y la regla de rutas cortas. |
 | `src/demo/` | Generador de datos sintéticos con semilla y servicio de demo en memoria. |
 | `tests/` | Tests. |
-| `vite.config.ts` | Build, ruta base de Pages y política de seguridad de contenido. |
+| `csp.config.json` | La política de seguridad de contenido y la de referencia. |
+| `vite.config.ts` | Build, ruta base de Pages e inyección de la política. |
 | `scripts/check-dist.mjs` | Comprobaciones de publicación sobre `dist/index.html`. |
 | `.github/workflows/` | `ci.yml` y `pages.yml` (no hace nada mientras el repo sea privado). |
 
@@ -288,15 +297,24 @@ Reglas:
 - Sin `innerHTML`, sin código ni estilos en línea, sin dependencias de
   ejecución nuevas sin motivo escrito aquí.
 - Cada test nuevo se ve fallar una vez con un dato roto antes de contar. En
-  la fase 1 se hizo con 29 mutaciones del código, una a una.
+  la fase 1 se hizo rompiendo el código de 56 maneras, una cada vez, más 32
+  que probó por su cuenta el revisor; las que sobrevivieron se cubrieron
+  después con tests nuevos.
 - Un test en verde contra el servicio de demo prueba el contrato tal como lo
   leímos, no que el servicio real se comporte así. Al informar de una
   prueba, di dónde corre y qué no demuestra.
 - Ni un dato real en el repo: ni identificadores, ni coordenadas de rutas
   reales, ni matrículas, ni correos, ni tokens, ni identificadores de un
   despliegue real.
-- Las acciones de GitHub están fijadas por etiqueta de versión, no por
-  commit. Mejorable antes de abrir el repo a contribuciones.
+- Las acciones de GitHub están fijadas por commit, con la versión en un
+  comentario. Dependabot propone las actualizaciones una vez al mes.
+- Las reglas de ESLint que vigilan el almacenamiento, el HTML y los sellos
+  de privacidad cubren las formas habituales, no todas (por ejemplo, no ven
+  `document.cookie`, `indexedDB` ni un nombre de atributo en una variable).
+  Son una red, no una prueba: la revisión de cada PR sigue haciendo falta.
+- `main` no tiene protección de rama (GitHub no la ofrece en un repo privado
+  del plan gratuito): que no se empuje directo y que la CI esté en verde
+  depende hoy de quien fusiona.
 
 ## 9. Fases y estado
 
@@ -323,6 +341,16 @@ está instalado todavía.
    reutilizar el código. ¿Se añade una?
 4. El nombre lleva una marca comercial y la web usa una API no oficial. Si
    alguna vez se abre al público general, hay que revisarlo.
+5. Los apartados 5 y 7 describen detalles internos del servicio (límites,
+   cabeceras, reglas del token). No son secretos y el repo del servicio ya
+   los documenta, pero conviene decidir si se recortan antes de hacer
+   público este repo.
+6. Los commits llevan el nombre real del autor (el correo es el `noreply`
+   de GitHub). Será visible al hacer público el repo.
+7. Al hacer público el repo, cada fusión en `main` lanzará el despliegue de
+   Pages, que fallará hasta que se active Pages con origen «GitHub
+   Actions». Conviene activar las dos cosas seguidas, y la protección de
+   `main` en ese momento.
 
 ### Aceptación real (no la sustituye ningún test)
 
