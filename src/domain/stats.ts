@@ -218,12 +218,19 @@ export function streaks(routes: readonly Route[], nowMs: number): Streaks {
     previous = day;
   }
 
-  // `previous` is now the last riding day and `runStart` the start of its run.
-  const gap = Math.max(0, localDay(nowMs) - previous);
+  // The runs in progress look only at days up to today: a ride dated in the
+  // future (a wrong clock, here or in the service) is not part of them.
+  const today = localDay(nowMs);
+  const past = days.filter((day) => day <= today);
+  const last = past[past.length - 1];
+  if (last === undefined) return { longestRiding, longestParked, currentRiding: 0, currentParked: 0 };
+  let currentStart = last;
+  for (let index = past.length - 2; index >= 0 && past[index] === currentStart - 1; index -= 1) currentStart -= 1;
+  const gap = today - last;
   return {
     longestRiding,
     longestParked,
-    currentRiding: gap <= 1 ? previous - runStart + 1 : 0,
+    currentRiding: gap <= 1 ? last - currentStart + 1 : 0,
     currentParked: Math.max(0, gap - 1),
   };
 }

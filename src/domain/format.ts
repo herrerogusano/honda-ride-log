@@ -86,19 +86,38 @@ export function fold(text: string): string {
 }
 
 /**
- * Text a route can be searched by: its date written in the ways a person
- * would type it (weekday, day, month by name and by number, year).
+ * Words a route can be searched by: its date written in the ways a person
+ * would type it (weekday, day, month by name and by number, year, and the
+ * whole date with slashes or dashes, with and without leading zeros).
  */
-export function searchText(route: Route): string {
+export function searchWords(route: Route): string[] {
   const date = new Date(route.startMs);
-  const numeric = `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()}`;
-  return fold(`${formatDateLong(route.startMs)} ${MONTHS_SHORT[date.getMonth()]} ${numeric} ${formatIsoDate(route.startMs)}`);
+  const day = date.getDate();
+  const month = date.getMonth() + 1;
+  const year = date.getFullYear();
+  const text = [
+    formatDateLong(route.startMs),
+    MONTHS_SHORT[date.getMonth()],
+    pad(day) + "/" + pad(month) + "/" + year,
+    day + "/" + month + "/" + year,
+    formatIsoDate(route.startMs),
+  ].join(" ");
+  return words(text);
 }
 
-/** True when every word of the query appears in the route's date text. */
+/** Folded words of a text, split at spaces and commas. */
+function words(text: string): string[] {
+  return fold(text).split(/[\s,]+/).filter((word) => word !== "");
+}
+
+/**
+ * True when every word of the query is the beginning of one of the route's
+ * date words: "sab" finds Saturdays and "5 mayo" finds 5 May, but not the 5
+ * inside 2025.
+ */
 export function matchesSearch(route: Route, query: string): boolean {
-  const words = fold(query).split(/\s+/).filter((word) => word !== "");
-  if (words.length === 0) return true;
-  const text = searchText(route);
-  return words.every((word) => text.includes(word));
+  const wanted = words(query);
+  if (wanted.length === 0) return true;
+  const known = searchWords(route);
+  return wanted.every((want) => known.some((word) => word.startsWith(want)));
 }

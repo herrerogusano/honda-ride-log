@@ -26,6 +26,11 @@ export function csvCell(text: string): string {
 
 const decimal = (value: number, digits: number): string => value.toFixed(digits).replace(".", ",");
 
+/** Rows of cells as one CSV text. Every cell goes through `csvCell`. */
+export function rowsToCsv(rows: readonly (readonly string[])[]): string {
+  return BOM + rows.map((row) => row.map(csvCell).join(";")).join("\r\n") + "\r\n";
+}
+
 export function routesToCsv(routes: readonly Route[]): string {
   const rows: string[][] = [[...CSV_HEADER]];
   for (const route of routes) {
@@ -37,5 +42,5 @@ export function routesToCsv(routes: readonly Route[]): string {
       route.averageSpeed === null ? "" : decimal(route.averageSpeed, 1),
     ]);
   }
-  return BOM + rows.map((row) => row.map(csvCell).join(";")).join("\r\n") + "\r\n";
+  return rowsToCsv(rows);
 }
