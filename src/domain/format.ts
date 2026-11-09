@@ -58,11 +58,19 @@ export function formatDuration(seconds: number | null): string {
 
 const numberFormats = new Map<number, Intl.NumberFormat>();
 
-/** A number with Spanish separators (`12.345,6`) and a fixed number of decimals. */
+/**
+ * A number with Spanish separators (`12.345,6`) and a fixed number of decimals.
+ * Thousands are always separated, also in four-digit numbers, so `6.125 km`
+ * and `25.608 km` look alike side by side.
+ */
 export function formatNumber(value: number, decimals = 0): string {
   let format = numberFormats.get(decimals);
   if (format === undefined) {
-    format = new Intl.NumberFormat("es-ES", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+    format = new Intl.NumberFormat("es-ES", {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+      useGrouping: "always",
+    });
     numberFormats.set(decimals, format);
   }
   // Avoid "-0": a tiny negative rounds to zero and should read as zero.

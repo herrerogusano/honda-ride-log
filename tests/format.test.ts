@@ -66,6 +66,8 @@ describe("numbers", () => {
     expect(formatNumber(12345.67, 1)).toBe("12.345,7");
     expect(formatNumber(12345.67)).toBe("12.346");
     expect(formatNumber(7)).toBe("7");
+    expect(formatNumber(6125)).toBe("6.125");
+    expect(formatNumber(999)).toBe("999");
     expect(formatNumber(7, 2)).toBe("7,00");
     expect(formatNumber(-3.21, 1)).toBe("-3,2");
   });
