@@ -447,11 +447,17 @@ const pageButton = (label: string): HTMLButtonElement => [...root.querySelectorA
 describe("list and map in the same place", () => {
   it("asks for each route's detail once, however often it is chosen", async () => {
     await page();
+    const drawn = (): Promise<void> => vi.waitFor(() => expect(root.querySelector(".map-stage")?.getAttribute("data-state")).toBe("drawn"));
+    // Twice in a row while the first answer is on its way, then again after each answer arrived.
     rowButton(0).click();
-    rowButton(1).click();
     rowButton(0).click();
+    await drawn();
     rowButton(1).click();
-    await vi.waitFor(() => expect(root.querySelector(".map-stage")?.getAttribute("data-state")).toBe("drawn"));
+    await drawn();
+    rowButton(0).click();
+    await drawn();
+    rowButton(1).click();
+    await drawn();
     expect(calls).toEqual(["get_route_detail", "get_route_detail"]);
   });
 
