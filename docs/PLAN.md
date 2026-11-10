@@ -109,7 +109,11 @@ se cuentan y cuántas se han descartado por venir sin fecha o sin km.
 
 - Lista con fecha, hora de salida, duración, km y velocidad media.
 - Búsqueda por texto sobre la fecha (día, mes, año, día de la semana) y orden
-  por fecha o por distancia.
+  por fecha o por distancia. Cada palabra de la búsqueda tiene que cuadrar:
+  un número suelto es el día o el año enteros («2» es el día 2, no el
+  principio de 2025); una fecha con barras o guiones se compara como
+  números («7/3», «07/03/2026», «2026-03»); lo demás es el principio del
+  día de la semana o del mes, sin acentos («sab», «mar»).
 - Al pulsar una ruta se abre en la pestaña Mapa.
 - Exportar CSV de lo que se ve, con esas mismas columnas. Sin identificadores
   ni coordenadas. Las celdas que empiecen por `=`, `+`, `-` o `@` se protegen
@@ -144,20 +148,18 @@ alternativo con las mismas cifras, nada que dependa solo del color.
 | Sin analítica ni terceros, salvo las teselas de OpenStreetMap | Política de seguridad de contenido en `csp.config.json`. `scripts/check-dist.mjs` rompe el build si la página que genera Vite no lleva exactamente esa política, o si detecta código en línea o recursos de otro origen; `tests/csp.test.ts` fija su texto. Es una red contra errores propios hecha con expresiones regulares, no un analizador de HTML: no protege contra quien edite `dist/` a mano, y no tiene tests propios. |
 | Los datos viven solo en el navegador y solo durante la sesión | Nada se guarda salvo los dos números de mantenimiento. |
 
-Notas para quien implemente el recorte (comprobado con una lectura real):
+Lo que se vio en una lectura real, que el recorte tiene en cuenta:
 
 - El GeoJSON de un detalle trae, además de las líneas, **dos puntos sueltos
-  con el inicio y el final exactos**. El saneador ya los descarta; no los
-  reintroduzcas.
+  con el inicio y el final exactos**. Nunca se dibujan. El saneador los
+  aparta de las líneas y los guarda sellados para un solo uso: que el
+  recorte esconda lo que pase cerca de ellos.
 - Las coordenadas vienen como `[longitud, latitud, 0]`. El saneador entrega
   `[latitud, longitud]`, que es el orden de Leaflet.
 - Los puntos de una traza están muy separados (decenas para una ruta de 15
-  km, con tramos de más de 400 m). El recorte tiene que cortar por distancia
-  recorrida **dentro del tramo**, interpolando un punto nuevo; quitar los
-  primeros N puntos no basta ni es correcto.
-- Una ruta con varias líneas se recorta sobre el conjunto: 400 m desde el
-  principio de la primera y 400 m hasta el final de la última.
-- Una ruta cuya traza mide 800 m o menos se queda sin nada que dibujar.
+  km, con tramos de más de 400 m). El corte tiene que caer **dentro del
+  tramo**, con un punto nuevo; quitar los primeros N puntos no basta ni es
+  correcto.
 - El servicio puede haber recortado ya el final de algunas trazas; nuestro
   recorte se aplica igualmente.
 - El saneador solo conserva geometrías `LineString`, las únicas vistas. Si
@@ -179,22 +181,34 @@ Cómo quedó el recorte (fase 2):
   Siguen sin dibujarse.
 - Esa regla contiene a la anterior (un punto a menos de 400 m por carretera
   está a menos de 400 m en línea recta), así que el corte por distancia se
-  quitó por redundante. Una traza de 800 m o menos sigue quedándose sin nada.
+  quitó por redundante. Con los dos puntos sueltos, una traza de 800 m o
+  menos se queda siempre sin nada.
 - Una ruta puede quedar partida en varios trozos (una ida y vuelta queda en
   dos), y una ruta larga que no sale de los alrededores de su inicio queda
   oculta entera.
 - No depende del orden ni del sentido en que lleguen las líneas, siempre que
-  el detalle traiga los dos puntos sueltos. Si no los trae **y** las líneas
-  llegan desordenadas, los centros serían los extremos de las líneas tal como
-  llegan y el inicio real podría dibujarse. No se ha visto ningún detalle sin
-  esos puntos, pero solo se ha visto uno.
+  el detalle traiga los dos puntos sueltos. Si no los trae, no se puede
+  saber qué extremo es el inicio: entonces se esconden los alrededores de
+  los dos extremos de **todas** las líneas, al precio de un hueco donde se
+  juntan dos. No se ha visto ningún detalle sin esos puntos, pero solo se ha
+  visto uno.
+- La cuenta se hace sobre la proyección del mapa (Web Mercator), porque ahí
+  es donde el mapa une dos puntos con una recta. La primera versión medía la
+  recta en grados de latitud y longitud, que en un tramo de decenas de km se
+  separa de la dibujada más que el metro de margen (un tramo de 100 km
+  habría pasado a 344 m). Lo encontró la segunda comprobación independiente.
+- Un lugar junto al borde del mapa del mundo (longitud ±180°) se esconde
+  también de un tramo dibujado al otro lado de ese borde.
+- Por encima de unos 85° de latitud la proyección no existe y la regla deja
+  de ser fiable. No hay carreteras allí.
 - Lo que no evita: quien conozca la zona puede deducir hacia dónde apunta un
   trazo que empieza a 400 m de una casa. Y el recuadro del mapa, que se pide
   a OpenStreetMap, suele contener el inicio y el final recortados.
 - Si no queda nada, la web dice «traza oculta por privacidad»; si el servicio
   no envió ninguna línea, dice que no hay recorrido. Son mensajes distintos.
-- La interpolación es lineal en latitud y longitud y no contempla el
-  antimeridiano (allí el dibujo saldría mal, no menos recortado).
+- Los sellos son reglas de ESLint sobre los `import`. Están cerradas las
+  vías conocidas para saltárselas (`import()` dinámico e `import.meta.glob`,
+  con test), pero siguen siendo una red, no una prueba.
 
 Leaflet y la política de seguridad de contenido (visto en un navegador):
 Leaflet cancela una tesela que aún está cargando apuntándola a una imagen
@@ -368,7 +382,10 @@ Cómo quedó en la fase 2 (`src/service/loader.ts`):
   está disponible y solo ofrece la demo: ahí va el botón de entrar. El
   fragmento `#demo` está reservado para la demo; la vuelta del login llega
   en la cadena de consulta (`?code=...&state=...`), que la web debe quitar
-  de la barra de direcciones en cuanto la lea.
+  de la barra de direcciones en cuanto la lea. Con una cuenta real en
+  pantalla, escribir `#demo` en la dirección no hace nada (no sustituye la
+  vista por la demo); en la pantalla de entrada o en la demo, sí la abre o
+  la cambia, y quitar el fragmento estando en la demo vuelve a la entrada.
 - `sessionStorage` sigue prohibido por ESLint en todo el código. El archivo
   del login necesita su propia excepción, como la de
   `src/storage/maintenance.ts`, con su test en `tests/units.test.ts`.
@@ -455,9 +472,12 @@ Reglas:
 - Cada test nuevo se ve fallar una vez con un dato roto antes de contar. En
   la fase 1 se hizo rompiendo el código de 56 maneras, una cada vez, más 32
   que probó por su cuenta el revisor; las que sobrevivieron se cubrieron
-  después con tests nuevos. En la fase 2 fueron unas 380 del autor y 151 de
-  los dos revisores; las que sobrevivieron se cubrieron con tests nuevos,
-  salvo unas pocas que no cambian nada observable.
+  después con tests nuevos. En la fase 2 fueron unas 480 del autor y 291 de
+  los tres revisores (dos revisiones y una segunda comprobación de las
+  correcciones). De las que sobrevivieron se cubrieron con tests nuevos las
+  que cambian algo que importa; quedan sin test algunas menores, anotadas en
+  el informe de cierre (por ejemplo, que `invalidateSize` de Leaflet se
+  llame, o el nivel del título «Notas»).
 - **Antes de fiarse de un ejecutor de roturas, comprobar que la suite pasa
   sin romper nada cuando se lanza como él la lanza.** En la fase 2 el primer
   ejecutor arrancaba Vitest de un modo que no aplicaba la zona horaria de

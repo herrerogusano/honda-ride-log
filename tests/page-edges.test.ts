@@ -284,6 +284,14 @@ describe("tabs and the map", () => {
     // Leaving the view releases its map; so does replacing it with another load.
     button("Salir de la demo").click();
     expect(mapCalls).toEqual(["shown", "shown", "open", "destroy"]);
+    // So does replacing the view with another load.
+    mount("#demo");
+    await loaded();
+    tab("Mapa").click();
+    const select = root.querySelector<HTMLSelectElement>(".demo-banner select") as HTMLSelectElement;
+    select.value = "empty";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(mapCalls).toEqual(["shown", "destroy"]);
   });
 
   it("calls back once per change, keeps panels reachable and names the tab list", () => {

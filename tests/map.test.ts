@@ -167,7 +167,8 @@ describe("Mapa tab", () => {
     short = true;
     h.view.open(h.data.routes[1] as RiderData["routes"][number]);
     await vi.waitFor(() => expect(text()).toContain("Traza oculta por privacidad"));
-    expect(h.cleared()).toBeGreaterThan(0);
+    // Cleared when the route was opened and again when its trace turned out to be hidden.
+    expect(h.cleared()).toBe(2);
     expect(canvas().hidden).toBe(true);
     expect(h.shown.length).toBe(1);
   });
@@ -259,7 +260,7 @@ describe("Mapa tab", () => {
     for (const go of release) go();
     await vi.waitFor(() => expect(h.shown.length).toBe(1));
     expect(document.querySelector("h2")?.textContent).toBe(`Ruta del ${formatDateLong(a.startMs)}`);
-    // A failed request is not remembered: opening the route again asks again.
+    // One request per route, however many times each was opened.
     expect(h.calls.length).toBe(2);
   });
 
@@ -339,6 +340,8 @@ describe("Mapa tab", () => {
     await vi.waitFor(() => expect(document.querySelector('[role="alert"]')).not.toBeNull());
     expect(canvas().hidden).toBe(true);
     expect(text()).not.toContain("Cargando el recorrido");
+    // Cleared when the next route was opened and again when it failed.
+    expect(h.cleared()).toBe(2);
   });
 
   it("announces its messages in a live region that exists from the start", async () => {
@@ -407,6 +410,8 @@ describe("Leaflet surface", () => {
     const attribution = container.querySelector(".leaflet-control-attribution");
     expect(attribution?.textContent).toBe("© colaboradores de OpenStreetMap");
     expect(attribution?.querySelector("a")?.getAttribute("href")).toBe("https://www.openstreetmap.org/copyright");
+    // The link opens apart and tells the other site nothing about this page.
+    expect([attribution?.querySelector("a")?.getAttribute("target"), attribution?.querySelector("a")?.getAttribute("rel")]).toEqual(["_blank", "noopener noreferrer"]);
     expect(container.querySelectorAll(".leaflet-control-attribution").length).toBe(1);
     expect(container.querySelectorAll(".leaflet-marker-icon").length).toBe(0);
     expect(classes(container)).toEqual(["trace-casing", "trace trace-inferred", "trace-casing", "trace"]);
@@ -454,6 +459,27 @@ describe("Leaflet surface", () => {
     surface.resize();
     const zooms = new Set([...container.querySelectorAll<HTMLImageElement>("img.leaflet-tile")].map((tile) => tile.src.split("/")[3]));
     expect([...zooms]).toEqual([zoomBefore]);
+    surface.destroy();
+  });
+
+  it("waits for a height as well as a width", () => {
+    const container = sized(600, 0) as HTMLElement & { resizeTo(width: number, height: number): void };
+    const surface = createLeafletSurface(container);
+    surface.show(LINES);
+    expect(container.querySelectorAll("img.leaflet-tile").length).toBe(0);
+    container.resizeTo(600, 400);
+    surface.resize();
+    expect(container.querySelectorAll("img.leaflet-tile").length).toBeGreaterThan(0);
+    surface.destroy();
+  });
+
+  it("does not zoom in past street level on a very short stretch", () => {
+    const container = sized(600, 400);
+    const surface = createLeafletSurface(container);
+    // Fifty metres: framed alone it would ask for the deepest zoom there is.
+    surface.show([{ inferred: false, points: [[40.3, -1.1], [40.30045, -1.1]] }]);
+    const zooms = [...container.querySelectorAll<HTMLImageElement>("img.leaflet-tile")].map((tile) => tile.src.split("/")[3]);
+    expect(new Set(zooms)).toEqual(new Set(["16"]));
     surface.destroy();
   });
 
