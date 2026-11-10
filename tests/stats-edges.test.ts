@@ -108,6 +108,19 @@ describe("search by date, edge cases", () => {
     no(newYearsEve, ["2026", "enero", "1/1/2026", "jueves"]);
   });
 
+  it("gives no meaning to the words written around a date, and a single letter is not one of them", () => {
+    yes(march, ["el 1 de marzo", "dia 1 del 2026", "domingo."]);
+    // "d" is the beginning of domingo and of diciembre, not of every date.
+    yes(march, ["d"]);
+    no(may12, ["d", "e", "x", "de mayo de 2024"]);
+    yes(newYearsEve, ["d"]);
+  });
+
+  it("reads other date shapes and a date that is still being typed", () => {
+    yes(march, ["2026/03/01", "01.03.2026", "1.3.26", "3/2026", "03-2026", "1/3/2026.", "1/", "1/3/", "2026-", "2026-03-"]);
+    no(march, ["2026/03/02", "02.03.2026", "4/2026", "3/2025", "2/", "1/4/"]);
+  });
+
   it("needs every word to match and splits the query at any white space and at commas", () => {
     yes(may12, ["lunes,\t12\nmayo", "lunes, 12 de mayo de 2025", "", "   ", ","]);
     no(may12, ["lunes 13 mayo", "martes 12 mayo", "12 mayo 2024"]);

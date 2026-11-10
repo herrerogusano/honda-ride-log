@@ -85,44 +85,58 @@ export function fold(text: string): string {
   return text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
 }
 
-/** Folded words of a text, split at spaces and commas. */
+/**
+ * Folded words of a query, split at spaces and commas. A separator left at
+ * the end of a word (a full stop, or the slash of a date still being typed)
+ * is dropped, so `7/` reads as `7` and the list does not empty while typing.
+ */
 function words(text: string): string[] {
-  return fold(text).split(/[\s,]+/).filter((word) => word !== "");
+  return fold(text)
+    .split(/[\s,;]+/)
+    .map((word) => word.replace(/[./-]+$/, ""))
+    .filter((word) => word !== "");
 }
 
 /** Two-digit years are read as 20xx: `25` is 2025. */
 const fullYear = (text: string): number => (text.length <= 2 ? 2000 + Number(text) : Number(text));
 
+/** Words people write around a date that say nothing about it. */
+const FILLERS = new Set(["de", "del", "el", "dia"]);
+
 /**
  * Does one word of a query describe the date of the route?
  *
- * - A date with slashes or dashes, the day first, with or without the year
- *   and with or without leading zeros: `7/3`, `07/03/2026`, `7-3-26`.
- * - A date the other way round, the year first: `2026-03-07`, `2026-03`.
+ * - A date with slashes, dashes or dots, the day first, with or without the
+ *   year and with or without leading zeros: `7/3`, `07/03/2026`, `7-3-26`,
+ *   `07.03.2026`. Also month and year: `3/2026`.
+ * - A date the other way round, the year first: `2026-03-07`, `2026/03`.
  * - A number alone: the day of the month or the year, the whole number. A
  *   `2` is the 2nd, never the beginning of 2025 or of the 20th.
  * - Anything else: the beginning of the weekday or of the month, without
  *   accents: `sab` finds Saturdays and `mar` finds March and Tuesdays.
  */
 function wordMatches(route: Route, word: string): boolean {
+  if (FILLERS.has(word)) return true;
   const date = new Date(route.startMs);
   const day = date.getDate();
   const month = date.getMonth() + 1;
   const year = date.getFullYear();
 
-  const dayFirst = /^(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2}|\d{4}))?$/.exec(word);
+  const monthYear = /^(\d{1,2})[/.-](\d{4})$/.exec(word);
+  if (monthYear !== null) return Number(monthYear[1]) === month && Number(monthYear[2]) === year;
+  const dayFirst = /^(\d{1,2})[/.-](\d{1,2})(?:[/.-](\d{2}|\d{4}))?$/.exec(word);
   if (dayFirst !== null) {
     const [, d, m, y] = dayFirst;
     return Number(d) === day && Number(m) === month && (y === undefined || fullYear(y) === year);
   }
-  const yearFirst = /^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?$/.exec(word);
+  const yearFirst = /^(\d{4})[/.-](\d{1,2})(?:[/.-](\d{1,2}))?$/.exec(word);
   if (yearFirst !== null) {
     const [, y, m, d] = yearFirst;
     return Number(y) === year && Number(m) === month && (d === undefined || Number(d) === day);
   }
   if (/^\d+$/.test(word)) return word.length <= 2 ? Number(word) === day : Number(word) === year;
 
-  const names = [WEEKDAYS_LONG[(date.getDay() + 6) % 7] as string, MONTHS_LONG[date.getMonth()] as string, "de"];
+  const names = [WEEKDAYS_LONG[(date.getDay() + 6) % 7] as string, MONTHS_LONG[date.getMonth()] as string];
   return names.some((name) => fold(name).startsWith(word));
 }
 
