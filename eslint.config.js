@@ -104,7 +104,7 @@ export default tseslint.config(
     rules: {
       "@typescript-eslint/no-restricted-imports": [
         "error",
-        { patterns: [{ regex: "(^|/)pendingLogin(\\.[cm]?[jt]s)?$", message: PENDING_LOGIN_STORAGE }] },
+        { patterns: [{ regex: "(^|/)pendingLogin(\\.[cm]?[jt]s)?(\\?.*)?$", message: PENDING_LOGIN_STORAGE }] },
       ],
     },
   },

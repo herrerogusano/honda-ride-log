@@ -2,7 +2,7 @@
 // we read the login's contract, not that Cognito or its CORS behave this way.
 import { webcrypto } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { AuthError, authorizeUrl, completeLogin, logout, startLogin, type AuthDeps } from "../src/auth/login";
+import { AuthError, authorizeUrl, browserDeps, completeLogin, logout, startLogin, type AuthDeps } from "../src/auth/login";
 import { PENDING_LOGIN_TTL_MS, type StorageLike } from "../src/auth/pendingLogin";
 import { createFakeServer, TEST_CONFIG, type FakeServer } from "./fakeServer";
 
@@ -379,6 +379,21 @@ describe("return from the login", () => {
     const result = await completeLogin(TEST_CONFIG, b.deps);
     if (result.status !== "signed_in") throw new Error("expected a session");
     expect(result.session.authorization(server.clock.now + 86_400_000)).toBeNull();
+  });
+});
+
+describe("browser objects", () => {
+  it("never hand session storage to the caller", () => {
+    // `browserDeps` reads `window`; stub just enough of it for Node.
+    const stub = { location: { href: "" }, history: {} };
+    Object.assign(globalThis, { window: stub });
+    try {
+      const deps = browserDeps();
+      expect("storage" in deps).toBe(false);
+      expect(Object.values(deps).some((value) => typeof value === "object" && value !== null && "setItem" in value)).toBe(false);
+    } finally {
+      delete (globalThis as { window?: unknown }).window;
+    }
   });
 });
 

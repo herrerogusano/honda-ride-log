@@ -30,6 +30,8 @@ describe("browser storage rules", () => {
       expect(await errorsIn(file, code)).toEqual(["@typescript-eslint/no-restricted-imports"]);
       const relative = 'import { savePendingLogin } from "../auth/pendingLogin.ts";\nexport const s = savePendingLogin;\n';
       expect(await errorsIn(file, relative)).toEqual(["@typescript-eslint/no-restricted-imports"]);
+      const query = 'import { savePendingLogin } from "../auth/pendingLogin.ts?v=1";\nexport const s = savePendingLogin;\n';
+      expect(await errorsIn(file, query)).toEqual(["@typescript-eslint/no-restricted-imports"]);
     },
   );
 

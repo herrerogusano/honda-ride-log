@@ -427,6 +427,10 @@ no una conexión: no la gobierna `connect-src`, y `form-action` sigue en
 `sessionStorage`, y solo `src/auth/login.ts` puede importarlo (dos reglas en
 `eslint.config.js`, comprobadas en `tests/lint-storage.test.ts`; la segunda
 evita que otro módulo llegue a `sessionStorage` a través de sus funciones).
+`src/auth/login.ts` tampoco lo entrega: `browserDeps()` no lleva el
+almacenamiento y el flujo lo pide por su cuenta. Es una red contra errores,
+no una barrera: el código que lo intente a propósito (una cadena en una
+variable, `globalThis["session" + "Storage"]`) pasa la regla.
 Guarda solo el verificador, el `state` y la hora, bajo una única clave. Se
 borra al leerlo, salga bien o mal la vuelta, y no vale pasados 10 minutos.
 `localStorage` y el HTML siguen prohibidos en ese archivo; un test compara
@@ -554,8 +558,10 @@ exigen el contrato tal como lo leímos (PKCE S256 con el vector del RFC 7636,
 códigos de un solo uso, `redirect_uri` exacta, solo las tres cabeceras, sin
 cookies, sin cadena de consulta, JSON-RPC con el servicio de demo detrás).
 Los tests se vieron fallar rompiendo el código a propósito, una rotura cada
-vez: 66 del implementador y 7 más sobre los arreglos de la revisión, y 44 del
-revisor independiente. Al principio sobrevivieron 2 de las primeras y 21 de
+vez: 66 del implementador y 9 más sobre los arreglos de la revisión, y 44 del
+revisor independiente (más 9 suyas en la segunda pasada, de las que 2 siguen
+vivas sin consecuencia: `check-dist.mjs` no tiene tests y el límite de seis
+palabras del código de error no se mide). Al principio sobrevivieron 2 de las primeras y 21 de
 las del revisor (por ejemplo, aceptar `http:` en el dominio del login o
 quitar el plazo del canje); se cubrieron con tests nuevos y ahora fallan
 todas. Es una muestra de roturas pensadas por dos agentes, no una prueba de

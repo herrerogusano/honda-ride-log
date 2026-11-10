@@ -55,7 +55,11 @@ export class AuthError extends Error {
 /** Browser objects the flow uses; `browserDeps()` gives the real ones. */
 export interface AuthDeps {
   readonly crypto: CryptoLike;
-  readonly storage: StorageLike | null;
+  /**
+   * Only for tests. Left out (as `browserDeps()` does), the flow uses the
+   * browser's sessionStorage itself, so no other module is ever handed it.
+   */
+  readonly storage?: StorageLike | null;
   readonly fetch: typeof fetch;
   /** Current address of the page. */
   readonly currentUrl: () => string;
@@ -70,7 +74,6 @@ export interface AuthDeps {
 export function browserDeps(): AuthDeps {
   return {
     crypto: globalThis.crypto,
-    storage: browserSessionStorage(),
     fetch: globalThis.fetch.bind(globalThis),
     currentUrl: () => window.location.href,
     replaceUrl: (url) => window.history.replaceState(null, "", url),
@@ -78,6 +81,8 @@ export function browserDeps(): AuthDeps {
     now: () => Date.now(),
   };
 }
+
+const storageOf = (deps: AuthDeps): StorageLike | null => (deps.storage === undefined ? browserSessionStorage() : deps.storage);
 
 const TOKEN_TIMEOUT_MS = 20_000;
 /** OAuth error codes are short lowercase words; anything else is not shown. */
@@ -111,12 +116,13 @@ export function authorizeUrl(config: ServiceConfig, state: string, challenge: st
 /** Sends the browser to the login page. Resolves only if navigation is stubbed. */
 export async function startLogin(config: ServiceConfig | null, deps: AuthDeps): Promise<void> {
   if (config === null) throw new AuthError("config_missing");
-  if (deps.storage === null) throw new AuthError("storage_unavailable");
+  const storage = storageOf(deps);
+  if (storage === null) throw new AuthError("storage_unavailable");
   const verifier = randomToken(deps.crypto);
   const state = randomToken(deps.crypto);
   const challenge = await challengeFor(verifier, deps.crypto);
   try {
-    savePendingLogin(deps.storage, { verifier, state }, deps.now());
+    savePendingLogin(storage, { verifier, state }, deps.now());
   } catch {
     throw new AuthError("storage_unavailable");
   }
@@ -148,9 +154,10 @@ export async function completeLogin(config: ServiceConfig | null, deps: AuthDeps
   deps.replaceUrl(url.href);
 
   let pending: PendingLogin | null = null;
-  if (deps.storage !== null) {
+  const storage = storageOf(deps);
+  if (storage !== null) {
     try {
-      pending = takePendingLogin(deps.storage, deps.now());
+      pending = takePendingLogin(storage, deps.now());
     } catch {
       throw new AuthError("storage_unavailable");
     }
@@ -226,7 +233,8 @@ async function exchangeCode(config: ServiceConfig, code: string, verifier: strin
  */
 export function logout(config: ServiceConfig | null, session: AuthSession | null, deps: AuthDeps): void {
   session?.end("signed_out");
-  if (deps.storage !== null) clearPendingLogin(deps.storage);
+  const storage = storageOf(deps);
+  if (storage !== null) clearPendingLogin(storage);
   if (config === null || config.logoutUri === null) return;
   const url = new URL("/logout", config.loginOrigin);
   url.searchParams.set("client_id", config.webClientId);
