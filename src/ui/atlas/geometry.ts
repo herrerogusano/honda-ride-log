@@ -23,8 +23,8 @@ const toRad = (degrees: number): number => (degrees * Math.PI) / 180;
 export const PLATE_MARGIN = 1.08;
 /** Steps the ground grid may use, in km. */
 export const GRID_STEPS_KM: readonly number[] = [1, 2, 5, 10, 20, 50, 100, 200, 500];
-/** The most grid cells across the plate. */
-const MAX_CELLS = 10;
+/** Grid cells across the plate the step aims for. */
+const GOOD_CELLS = 8;
 
 export type PlanePoint = readonly [number, number];
 
@@ -82,8 +82,12 @@ export function linesToPlane(plane: Plane, lines: readonly TraceLine[]): PlaneLi
 
 /** The grid step in km: the smallest of 1, 2, 5, 10, 20… that leaves at most ten cells across the plate. */
 export function gridStepKm(halfKm: number): number {
-  for (const step of GRID_STEPS_KM) if ((2 * halfKm) / step <= MAX_CELLS) return step;
-  return GRID_STEPS_KM[GRID_STEPS_KM.length - 1] as number;
+  // The step whose cell count across the plate is closest to eight (6 to 10 whenever the ladder allows).
+  let best = GRID_STEPS_KM[0] as number;
+  for (const step of GRID_STEPS_KM) {
+    if (Math.abs((2 * halfKm) / step - GOOD_CELLS) < Math.abs((2 * halfKm) / best - GOOD_CELLS)) best = step;
+  }
+  return best;
 }
 
 /** Height of layer `index` of `count` (0 = oldest, at the bottom), centred on 0. */
@@ -96,28 +100,38 @@ export interface Camera {
   project(x: number, y: number, z: number): readonly [number, number, number];
   /** Sine of the tilt: how flat a circle on the ground looks. */
   readonly flatten: number;
+  /** Changes whenever any projected point would: projections may be cached under it. */
+  readonly key: string;
 }
 
 /** How far the eye is from the centre of the scene, in plate units: smaller is more perspective. */
-export const EYE_DISTANCE = 4.3;
+export const EYE_DISTANCE = 3.6;
+
+/** Where the scene sits on screen: px per plate unit at the centre, and the screen point of the origin. */
+export interface Framing {
+  readonly scale: number;
+  readonly cx: number;
+  readonly cy: number;
+}
 
 export interface CameraOptions {
   readonly yaw: number;
   readonly tilt: number;
   readonly width: number;
   readonly height: number;
+  /** Default: a framing that fits a flat plate. */
+  readonly framing?: Framing | undefined;
 }
 
-export function camera({ yaw, tilt, width, height }: CameraOptions): Camera {
+export function camera({ yaw, tilt, width, height, framing }: CameraOptions): Camera {
   const cosY = Math.cos(yaw);
   const sinY = Math.sin(yaw);
   const sinE = Math.sin(tilt);
   const cosE = Math.cos(tilt);
-  const scale = Math.min(width / 3, height / 3.1);
-  const cx = width / 2;
-  const cy = height * 0.52;
+  const { scale, cx, cy } = framing ?? { scale: Math.min(width / 3, height / 3.1), cx: width / 2, cy: height * 0.52 };
   return {
     flatten: sinE,
+    key: `${yaw.toFixed(5)}|${tilt.toFixed(5)}|${scale.toFixed(3)}|${cx.toFixed(2)}|${cy.toFixed(2)}`,
     project(x, y, z) {
       // Yaw turns the plate; then the eye looks down at `tilt` from the south.
       const rx = x * cosY - y * sinY;
@@ -127,6 +141,42 @@ export function camera({ yaw, tilt, width, height }: CameraOptions): Camera {
       return [cx + rx * k, cy - (ry * sinE + z * cosE) * k, depth];
     },
   };
+}
+
+/** Room kept around the plate for the north mark and the scale bar, in plate units. */
+const FRAME_REACH = 1.3;
+
+/**
+ * The framing that makes the plate and its stack (from `groundZ` to `topZ`)
+ * fill the stage at the given angle, with `margin` px left on each side.
+ * Computed once for the default angle, so turning the plate never zooms.
+ */
+export function fitFraming(width: number, height: number, yaw: number, tilt: number, groundZ: number, topZ: number, margin = 26): Framing {
+  const unit = camera({ yaw, tilt, width: 0, height: 0, framing: { scale: 1, cx: 0, cy: 0 } });
+  let left = Infinity;
+  let right = -Infinity;
+  let top = Infinity;
+  let bottom = -Infinity;
+  for (const [x, y] of [
+    [-1, -1],
+    [1, -1],
+    [1, 1],
+    [-1, 1],
+    [0, -FRAME_REACH],
+    [0, FRAME_REACH],
+    [-FRAME_REACH, 0],
+    [FRAME_REACH, 0],
+  ] as const) {
+    for (const z of [groundZ, topZ]) {
+      const [sx, sy] = unit.project(x, y, z);
+      left = Math.min(left, sx);
+      right = Math.max(right, sx);
+      top = Math.min(top, sy);
+      bottom = Math.max(bottom, sy);
+    }
+  }
+  const scale = Math.max(1, Math.min((width - 2 * margin) / (right - left), (height - 2 * margin) / (bottom - top)));
+  return { scale, cx: width / 2 - ((left + right) / 2) * scale, cy: height / 2 - ((top + bottom) / 2) * scale };
 }
 
 /** Indices of the layers from the farthest to the nearest, as the painter draws them. */

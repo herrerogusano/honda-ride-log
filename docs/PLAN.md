@@ -1543,24 +1543,41 @@ no necesitan GPU; ninguna dependencia nueva y ningún cambio en la política
 (sombreadores o workers de WebGL añadirían riesgo a cambio de nada); funciona
 donde WebGL está bloqueado; el código es nuestro y va en el único paquete
 (`import()` está prohibido, así que el peso cuenta: el JS pasa de 251,33 kB
-a 272,09 kB, de 79,87 a 87,78 kB comprimido); y la alternativa sin canvas es
+a 275,53 kB, de 79,87 a 89,10 kB comprimido); y la alternativa sin canvas es
 trivial. Si el navegador no da contexto 2D, la sección dice «Este navegador
 no puede dibujar el atlas», enseña la lista de las rutas que apilaría y no
 lee nada.
 
 - Plano: las líneas recortadas pasan a km sobre un plano local
   equirectangular centrado en el conjunto y luego a la placa (de −1 a 1, con
-  un 8 % de margen). Cuadrícula con escala real, la menor de 1, 2, 5, 10,
-  20, 50… km que deja como mucho diez celdas; su valor va escrito en la placa
-  y en el nombre accesible del lienzo.
+  un 8 % de margen). Cuadrícula con escala real: de la escala 1, 2, 5, 10,
+  20, 50… km, el paso más cercano a ocho celdas (de 6 a 10 siempre que la
+  escala lo permite); su valor va en una barra fuera del borde sur de la
+  placa y en el nombre accesible del lienzo.
 - Cámara: giro sobre la vertical, inclinación y división de perspectiva
   escritas a mano. Una recta en el espacio se proyecta en una recta, así que
   un punto sobre un tramo proyectado está sobre la traza.
-- Capas por fecha (la más antigua abajo), huellas tenues de todas en el
-  suelo, marcas de corte por capa, palos en las esquinas con una muesca del
-  color de cada capa, norte en el borde de la placa que gira con ella,
-  pintadas de lejos a cerca, rampa de rojo apagado (antigua) a rojo vivo
-  (reciente), tramos inferidos discontinuos y ámbar.
+- Encuadre: la placa y una pila de ocho llenan el escenario en el ángulo de
+  reposo (`fitFraming`); se calcula para ese ángulo, así que girar no acerca
+  ni aleja. Al llegar trazas, la placa y el encuadre se ajustan con suavidad.
+- Capas por fecha (la más antigua abajo), cada una con su hoja: relleno
+  tenue, contorno fino y marcas de corte en las esquinas (más visibles en la
+  de arriba y en la elegida). Palos en las cuatro esquinas con una muesca por
+  capa en su color, y la fecha corta de cada capa («18 abr») junto al palo
+  más cercano, saltando las que se tocarían. Señal de profundidad: las capas
+  lejanas algo más apagadas y finas. Huellas tenues de todas en el suelo; la
+  de la elegida, en rojo vivo. Rampa de rojo apagado (antigua) a rojo vivo
+  (reciente); halo rojo (un trazo ancho y tenue debajo) en la capa más
+  reciente y en la elegida, que se quita si pintar resulta lento en ese
+  equipo (media de más de 6 ms). Tramos inferidos discontinuos y ámbar. El
+  norte va sobre la pila, fuera del borde norte; las fechas, junto a los
+  palos, nunca sobre la placa.
+- Con una capa elegida, las demás quedan en gris rojizo al 30 % y la elegida
+  sube un poco sobre su sitio (`--dur-ui`), con la hoja marcada.
+- Al construir, cada capa sube del suelo a su sitio en `--dur-hero` mientras
+  su traza se dibuja.
+- Las proyecciones de cada traza se guardan por cámara y altura y se reusan
+  mientras la cámara no se mueve (hallazgo PB-001 de PullBeacon).
 - **Sin marcas de inicio ni de fin.** El concepto de origen pintaba un punto
   de salida: aquí no. Solo hay un punto (la cabeza) mientras una traza se
   dibuja, y va sobre las líneas recortadas (`partialTrace` de
@@ -1634,7 +1651,12 @@ tabla» lista las capas con sus cifras.
   asentarse; movimiento reducido; limpieza; sin canvas; el mapa abre sin
   leer una ruta que leyó el atlas. Es el contrato tal como lo leemos, contra
   dobles: no prueba el servicio real.
-- Roturas: 25, una cada vez, contra `tests/atlas.test.ts`. Fallaron 22. De
+- Roturas: 25, una cada vez, contra `tests/atlas.test.ts`, y 3 más tras la
+  segunda pasada de diseño (cabeza fuera de la línea y paso de la cuadrícula
+  sobre el código nuevo, que fallan; y la clave de la caché sin la cámara,
+  que al principio sobrevivió: el test nuevo enseñó que la huella y la capa
+  se pisaban la entrada de la caché y no se reusaba nada; corregido, ya
+  falla). De las 25 primeras fallaron 22. De
   las tres que sobrevivieron, una era un hueco (el giro en espejo) y se cubrió
   con una aserción que ya falla; las otras dos son guardas dobles (la
   comprobación antes de cada lectura la cubre también la de después de cada
@@ -1648,9 +1670,11 @@ tabla» lista las capas con sus cifras.
   Lecturas de detalle contadas con un punto de ruptura condicional en el
   código: 8 por construcción, 0 al pulsar «Ver en el mapa». Coste de los
   fotogramas al girar con el ratón (1280) y con el dedo (390), medido con la
-  traza de DevTools (tiempo dentro de los `requestAnimationFrame`): mediana
-  0,5 ms; con la CPU 4 veces más lenta, mediana 2,2 a 3,0 ms, p95 6 a 10 ms,
-  máximo 6,5 a 18 ms. En reposo, ningún fotograma. Con el dedo, un deslizar
+  traza de DevTools (tiempo dentro de los `requestAnimationFrame`), tras la
+  segunda pasada de diseño: mediana 0,5 ms; con la CPU 4 veces más lenta,
+  mediana 2,6 a 3,6 ms, p95 5,5 a 12 ms, máximo 6 a 14 ms según la vuelta
+  (la medida varía entre vueltas). Con `shadowBlur` el p95 llegaba a 15-18
+  ms a 390 px: se cambió por el trazo ancho y tenue. En reposo, ningún fotograma. Con el dedo, un deslizar
   vertical desplazó la página 225 px sin girar la placa. Con movimiento
   reducido: 8 lecturas, ninguna animación.
 

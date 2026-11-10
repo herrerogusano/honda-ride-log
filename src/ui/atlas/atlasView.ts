@@ -27,7 +27,7 @@ import { errorText } from "../errors";
 import { canAnimate, durationToken, scanLine } from "../motion";
 import { drawDuration, easeInOut, partialTrace, planTrace, type TracePlan } from "../traceDraw";
 import type { TraceStore } from "../traceStore";
-import { camera, farToNear, fitPlane, gridStepKm, layerZ, linesToPlane, toPlane, wrapAngle, type Plane } from "./geometry";
+import { camera, farToNear, fitFraming, fitPlane, gridStepKm, layerZ, linesToPlane, toPlane, wrapAngle, type Framing, type Plane, type PlaneLine } from "./geometry";
 import { paintScene, pickLayer, type LayerScene, type Scene } from "./render";
 
 /** The most route details one atlas reads. */
@@ -44,21 +44,25 @@ export function chooseRoutes(routes: readonly Route[], period: Period, set: Atla
 
 const DEG = Math.PI / 180;
 export const DEFAULT_YAW = -28 * DEG;
-export const DEFAULT_TILT = 54 * DEG;
+export const DEFAULT_TILT = 44 * DEG;
 const MIN_TILT = 25 * DEG;
 const MAX_TILT = 85 * DEG;
-export const DEFAULT_SPACING = 0.15;
-const MIN_SPACING = 0.04;
-const MAX_SPACING = 0.22;
+export const DEFAULT_SPACING = 0.2;
+const MIN_SPACING = 0.06;
+const MAX_SPACING = 0.34;
 /** How tight the stack stays while it is being built; the intro opens it to 1. */
-const BUILD_EXPLODE = 0.5;
+const BUILD_EXPLODE = 0.85;
 /** How far a selected layer lifts above its place. */
-const LIFT = 0.16;
+export const LIFT = 0.14;
+/** Ground below the lowest layer. */
+const GROUND_GAP = 0.18;
 /** Yaw the intro starts from, before turning to the default. */
 const INTRO_TURN = -60 * DEG;
 /** Keyboard step for ← and →. */
 const KEY_TURN = 10 * DEG;
 const MAX_RATIO = 2;
+/** Average paint time above which the halo is dropped. */
+const GLOW_BUDGET_MS = 6;
 
 export interface AtlasOptions {
   /** The trimmed traces of the page, shared with the map. */
@@ -89,6 +93,12 @@ interface Layer {
   /** Fraction of the trace drawn by its own build-up (1 when done). */
   drawn: number;
   opacity: number;
+  /** 0 to 1: how far it has risen from the ground to its slot. */
+  rise: number;
+  /** Its whole trace on the plate, kept while the plate does not change. */
+  planeFull: PlaneLine[] | null;
+  planeOf: Plane | null;
+  readonly label: string;
 }
 
 type Phase = "idle" | "loading" | "built" | "error" | "empty";
@@ -224,6 +234,8 @@ export function createAtlasView(data: RiderData, initialPeriod: Period, options:
   let replay: { began: number | null; duration: number; from: number } | null = null;
   let intro: { began: number | null; duration: number; fromYaw: number; fromExplode: number } | null = null;
   let plane: Plane | null = null;
+  let planeTarget: Plane | null = null;
+  let framing: Framing | null = null;
   let width = 0;
   let height = 0;
   let ratio = 1;
@@ -233,30 +245,47 @@ export function createAtlasView(data: RiderData, initialPeriod: Period, options:
   let lastScene: Scene | null = null;
   const hero = durationToken("--dur-hero", 800);
   const reveal = durationToken("--dur-reveal", 520);
+  const ui = durationToken("--dur-ui", 200);
 
   // ---- painting ----
+  /** Ground and top of the posts for a stack of `count` layers `gap` apart. */
+  function stackEnds(count: number, gap: number): { groundZ: number; topZ: number } {
+    const stack = Math.max(count - 1, 0) * gap;
+    const groundZ = -stack / 2 - GROUND_GAP;
+    return { groundZ, topZ: groundZ + Math.max(0.6, stack + GROUND_GAP + 0.12) };
+  }
+
+  /** Where the plate and a full stack sit on the stage at the default angle: turning never zooms. */
+  function framingTarget(): Framing {
+    const { groundZ, topZ } = stackEnds(Math.max(layers.length, ATLAS_MAX), spacing);
+    return fitFraming(width, height, DEFAULT_YAW, DEFAULT_TILT, groundZ, topZ + LIFT);
+  }
+
   function sceneNow(): Scene {
-    const view = camera({ yaw: yaw + parallaxYaw, tilt: clamp(tilt + parallaxTilt, MIN_TILT, MAX_TILT), width, height });
+    framing ??= framingTarget();
+    const view = camera({ yaw: yaw + parallaxYaw, tilt: clamp(tilt + parallaxTilt, MIN_TILT, MAX_TILT), width, height, framing });
     const n = layers.length;
-    const gap = spacing * explode;
-    const stack = Math.max(n - 1, 0) * gap;
-    const groundZ = -stack / 2 - 0.16;
-    const topZ = groundZ + Math.max(0.55, stack + 0.26);
+    const { groundZ, topZ } = stackEnds(n, spacing * explode);
     const single = selected >= 0;
-    const scenes: LayerScene[] = layers.map((layer, index) => {
+    const own = plane;
+    const scenes: LayerScene[] = own === null ? [] : layers.map((layer, index) => {
+      if (layer.planeOf !== own || layer.planeFull === null) {
+        layer.planeFull = linesToPlane(own, layer.plan.lines);
+        layer.planeOf = own;
+      }
       const shown = single ? (index === selected ? progress : 1) : progress;
       const fraction = Math.min(layer.drawn, shown);
-      const partial = partialTrace(layer.plan, fraction);
-      const own = plane as Plane;
+      const partial = fraction >= 1 ? null : partialTrace(layer.plan, fraction);
       return {
-        lines: linesToPlane(own, partial.lines),
-        full: linesToPlane(own, layer.plan.lines),
-        head: partial.head === null ? null : toPlane(own, partial.head),
+        lines: partial === null ? layer.planeFull : linesToPlane(own, partial.lines),
+        full: layer.planeFull,
+        head: partial === null || partial.head === null ? null : toPlane(own, partial.head),
         z: layer.z,
         age: n > 1 ? index / (n - 1) : 1,
         opacity: layer.opacity,
         selected: index === selected,
         dimmed: single && index !== selected,
+        label: layer.label,
       };
     });
     return {
@@ -265,16 +294,23 @@ export function createAtlasView(data: RiderData, initialPeriod: Period, options:
       view,
       layers: scenes,
       groundZ,
-      topZ,
+      topZ: Math.max(topZ, ...scenes.map((one) => one.z + 0.1)),
       halfKm: plane?.halfKm ?? 10,
       order: farToNear(scenes.map((one) => one.z), view),
+      glow,
     };
   }
 
+  /** The halo on the brightest strokes goes for good if painting proves slow on this device. */
+  let glow = true;
+  let paintCost = 0;
   function paint(): void {
     if (context === null || width === 0 || height === 0) return;
+    const began = performance.now();
     lastScene = sceneNow();
     paintScene(context, lastScene, ratio);
+    paintCost = paintCost * 0.8 + (performance.now() - began) * 0.2;
+    if (paintCost > GLOW_BUDGET_MS) glow = false;
   }
 
   const active = (): boolean => onScreen && !document.hidden;
@@ -297,22 +333,50 @@ export function createAtlasView(data: RiderData, initialPeriod: Period, options:
       else moving = true;
       syncInputs();
     }
-    for (const layer of layers) {
+    // Each new layer rises from the ground to its slot while its trace draws itself.
+    const { groundZ } = stackEnds(layers.length, spacing * explode);
+    const k = 1 - Math.exp(-dt / (ui / 2));
+    layers.forEach((layer, index) => {
       layer.began ??= now;
       const elapsed = now - layer.began;
       const drawFor = drawDuration(layer.plan, hero);
       layer.opacity = clamp(elapsed / reveal, 0, 1);
       layer.drawn = elapsed >= drawFor ? 1 : easeInOut(clamp(elapsed / drawFor, 0, 1));
+      layer.rise = clamp(elapsed / hero, 0, 1);
       if (layer.drawn < 1 || layer.opacity < 1) moving = true;
-    }
-    const k = 1 - Math.exp(-dt / 140);
-    layers.forEach((layer, index) => {
       const target = targetZ(index);
-      if (Math.abs(target - layer.z) > 1e-4) {
+      if (layer.rise < 1) {
+        layer.z = groundZ + (target - groundZ) * (1 - (1 - layer.rise) ** 3);
+        moving = true;
+      } else if (Math.abs(target - layer.z) > 1e-4) {
+        // Lift, spacing and new neighbours: eased with the `--dur-ui` token.
         layer.z += (target - layer.z) * k;
         moving = true;
       } else layer.z = target;
     });
+    // The plate refits gently as traces arrive, and so does the framing.
+    const ease = 1 - Math.exp(-dt / (hero / 3));
+    if (plane !== null && planeTarget !== null && plane !== planeTarget) {
+      const next = planeTarget;
+      const close = Math.abs(next.halfKm - plane.halfKm) < next.halfKm * 1e-3 && Math.abs(next.center[0] - plane.center[0]) < 1e-6 && Math.abs(next.center[1] - plane.center[1]) < 1e-6;
+      plane = close
+        ? next
+        : {
+            center: [plane.center[0] + (next.center[0] - plane.center[0]) * ease, plane.center[1] + (next.center[1] - plane.center[1]) * ease],
+            halfKm: plane.halfKm + (next.halfKm - plane.halfKm) * ease,
+            kmPerDegree: next.kmPerDegree,
+          };
+      moving = true;
+    }
+    const wanted = framingTarget();
+    if (framing !== null && (Math.abs(wanted.scale - framing.scale) > 0.01 || Math.abs(wanted.cy - framing.cy) > 0.05 || Math.abs(wanted.cx - framing.cx) > 0.05)) {
+      framing = {
+        scale: framing.scale + (wanted.scale - framing.scale) * ease,
+        cx: framing.cx + (wanted.cx - framing.cx) * ease,
+        cy: framing.cy + (wanted.cy - framing.cy) * ease,
+      };
+      moving = true;
+    } else framing = wanted;
     if (replay !== null) {
       replay.began ??= now;
       progress = clamp(replay.from + (now - replay.began) / replay.duration, 0, 1);
@@ -347,8 +411,11 @@ export function createAtlasView(data: RiderData, initialPeriod: Period, options:
       layer.began = 0;
       layer.drawn = 1;
       layer.opacity = 1;
+      layer.rise = 1;
       layer.z = targetZ(index);
     });
+    plane = planeTarget;
+    framing = framingTarget();
   }
 
   function step(now: number): void {
@@ -384,6 +451,8 @@ export function createAtlasView(data: RiderData, initialPeriod: Period, options:
     ratio = Math.min(window.devicePixelRatio || 1, MAX_RATIO);
     canvas.width = Math.round(width * ratio);
     canvas.height = Math.round(height * ratio);
+    // A new size frames the stage again at once.
+    framing = null;
     if (!animate) paint();
     else if (frame === 0) paint();
   }
@@ -563,6 +632,7 @@ export function createAtlasView(data: RiderData, initialPeriod: Period, options:
     noLine = 0;
     selected = -1;
     plane = null;
+    planeTarget = null;
     progress = 1;
     replay = null;
     intro = null;
@@ -578,12 +648,13 @@ export function createAtlasView(data: RiderData, initialPeriod: Period, options:
       noLine += 1;
       return;
     }
-    layers.push({ route, plan: planTrace(trace.lines), z: 0, began: null, drawn: 0, opacity: 0 });
-    // The plate fits the traces read so far; it refits as each one arrives.
-    plane = fitPlane(layers.map((layer) => layer.plan.lines));
+    const label = formatDate(route.startMs).split(" ").slice(0, 2).join(" ");
+    layers.push({ route, plan: planTrace(trace.lines), z: 0, began: null, drawn: 0, opacity: 0, rise: 0, planeFull: null, planeOf: null, label });
+    // The plate fits the traces read so far; it eases to the new fit as each one arrives.
+    planeTarget = fitPlane(layers.map((layer) => layer.plan.lines));
+    plane ??= planeTarget;
     // A new layer rises from the ground.
-    const ground = layerZ(0, layers.length, spacing * explode) - 0.16;
-    (layers[layers.length - 1] as Layer).z = ground;
+    (layers[layers.length - 1] as Layer).z = layerZ(0, layers.length, spacing * explode) - GROUND_GAP;
   }
 
   function fail(error: unknown, mine: number): void {

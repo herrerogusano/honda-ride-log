@@ -7,8 +7,9 @@ import { trimTrace } from "../src/domain/trim";
 import { ToolCallError, type ToolCaller } from "../src/service/contract";
 import { loadAllRoutes, loadRouteTrace, loadVehicleState } from "../src/service/loader";
 import { ServiceError } from "../src/service/mcpClient";
-import { ATLAS_MAX, chooseRoutes, createAtlasView, DEFAULT_SPACING, DEFAULT_TILT, DEFAULT_YAW, type AtlasView } from "../src/ui/atlas/atlasView";
-import { camera, farToNear, fitPlane, gridStepKm, layerZ, linesToPlane, toPlane, wrapAngle } from "../src/ui/atlas/geometry";
+import { ATLAS_MAX, chooseRoutes, createAtlasView, DEFAULT_SPACING, DEFAULT_TILT, DEFAULT_YAW, LIFT, type AtlasView } from "../src/ui/atlas/atlasView";
+import { camera, farToNear, fitFraming, fitPlane, gridStepKm, layerZ, linesToPlane, toPlane, wrapAngle } from "../src/ui/atlas/geometry";
+import { INK } from "../src/ui/atlas/render";
 import { buildRiderData, type RiderData } from "../src/ui/data";
 import { createMapView } from "../src/ui/mapView";
 import { createTraceStore, type TraceStore } from "../src/ui/traceStore";
@@ -239,8 +240,14 @@ describe("atlas geometry", () => {
     expect(north[1]).toBeCloseTo((0.05 * 110.574) / plane.halfKm, 9);
   });
 
-  it("picks the smallest grid of 1, 2, 5, 10, 20… km with at most ten cells across", () => {
-    expect([0.5, 3, 5, 6, 24, 25, 26, 90, 400].map(gridStepKm)).toEqual([1, 1, 1, 2, 5, 5, 10, 20, 100]);
+  it("picks the grid of 1, 2, 5, 10, 20… km closest to eight cells across", () => {
+    expect([0.5, 3, 5, 6, 24, 25, 26, 90, 400].map(gridStepKm)).toEqual([1, 1, 1, 2, 5, 5, 5, 20, 100]);
+    // Wherever the ladder allows, 6 to 10 cells.
+    for (const half of [3, 4, 7, 30, 45, 70, 200]) {
+      const cells = (2 * half) / gridStepKm(half);
+      expect(cells).toBeGreaterThanOrEqual(6);
+      expect(cells).toBeLessThanOrEqual(10);
+    }
   });
 
   it("projects by hand: from above north is up and east is right; yaw turns the plate", () => {
@@ -395,7 +402,8 @@ describe("reads", () => {
 });
 
 // ---------- privacy of the drawing ----------
-const TRACE_WIDTHS = new Set([1, 1.4, 2.1, 3]);
+/** Stroke widths used only by the plate: the scale bar and the selected ring (1.5), ticks and north (2). */
+const PLATE_WIDTHS = new Set([1.5, 2]);
 const distanceToSegment = (p: readonly [number, number], a: readonly number[], b: readonly number[]): number => {
   const dx = (b[0] as number) - (a[0] as number);
   const dy = (b[1] as number) - (a[1] as number);
@@ -414,9 +422,13 @@ describe("what is drawn", () => {
     await press(".atlas-build");
     const traces = (await trimmedOf(chooseRoutes(h.data.routes, "all", "longest"))).filter((lines) => lines.length > 0);
     const plane = fitPlane(traces);
-    const view = camera({ yaw: DEFAULT_YAW, tilt: DEFAULT_TILT, width: 640, height: 512 });
+    // The framing of a full stack of eight at the default angle (src/ui/atlas/atlasView.ts).
+    const full = 7 * DEFAULT_SPACING;
+    const fullGround = -full / 2 - 0.18;
+    const framing = fitFraming(640, 512, DEFAULT_YAW, DEFAULT_TILT, fullGround, fullGround + Math.max(0.6, full + 0.3) + LIFT);
+    const view = camera({ yaw: DEFAULT_YAW, tilt: DEFAULT_TILT, width: 640, height: 512, framing });
     const n = traces.length;
-    const ground = layerZ(0, n, DEFAULT_SPACING) - 0.16;
+    const ground = layerZ(0, n, DEFAULT_SPACING) - 0.18;
 
     const check = (lift: number, selectedIndex: number): void => {
       const segments: (readonly number[])[][] = [];
@@ -433,7 +445,8 @@ describe("what is drawn", () => {
         }
       });
       const near = (p: readonly [number, number]): number => Math.min(...segments.map(([a, b]) => distanceToSegment(p, a as number[], b as number[])));
-      const traceStrokes = h.ctx.strokes.filter((stroke) => TRACE_WIDTHS.has(stroke.width) && stroke.style !== "#2e2726" && stroke.style !== "#4a3f3d" && stroke.style !== "#998f8e" && stroke.style !== "#f2edec");
+      // Everything but the plate (grid, frame, sheets, crop marks, scale bar, ticks, north and the drop line).
+      const traceStrokes = h.ctx.strokes.filter((stroke) => !PLATE_WIDTHS.has(stroke.width) && ![INK.grid, INK.frame, INK.fg3, INK.fg].includes(stroke.style as never));
       expect(traceStrokes.length).toBeGreaterThan(n);
       let checked = 0;
       for (const stroke of traceStrokes) {
@@ -454,7 +467,7 @@ describe("what is drawn", () => {
     progress.value = "430";
     progress.dispatchEvent(new Event("input"));
     expect(h.ctx.dots.length).toBeGreaterThan(0);
-    check(0.16, 2);
+    check(LIFT, 2);
   });
 
   it("writes the north mark and the grid scale, and a complete drawing has no dot at all", async () => {
@@ -462,9 +475,31 @@ describe("what is drawn", () => {
     await press(".atlas-build");
     const step = /Cuadrícula de (\d+) km\./.exec($(".atlas-canvas").getAttribute("aria-label") ?? "")?.[1];
     expect(step).toBeDefined();
-    expect(h.ctx.texts).toEqual(["N", `${step as string} km`]);
+    expect(h.ctx.texts[0]).toBe(`${step as string} km`);
+    expect(h.ctx.texts[h.ctx.texts.length - 1]).toBe("N");
+    // Between them, short dates beside the nearest post (some skipped when they would touch).
+    const dates = h.ctx.texts.slice(1, -1);
+    expect(dates.length).toBeGreaterThan(2);
+    expect(dates.every((one) => /^\d{1,2} [a-z]{3}$/.test(one))).toBe(true);
     // The concept drew a start dot: here a dot only exists while a trace draws itself.
     expect(h.ctx.dots).toHaveLength(0);
+  });
+});
+
+describe("projection cache", () => {
+  it("projects the traces again when the camera turns, and not when it stays", async () => {
+    const h = await harness();
+    await press(".atlas-build");
+    const traceStroke = (): Stroke => h.ctx.strokes.find((stroke) => !PLATE_WIDTHS.has(stroke.width) && stroke.width > 1.6) as Stroke;
+    const before = traceStroke().points.map((point) => [...point]);
+    // Same camera (a spacing change of nothing): the same points.
+    const spacing = document.querySelectorAll<HTMLInputElement>(".atlas-ranges input")[2] as HTMLInputElement;
+    spacing.dispatchEvent(new Event("input"));
+    expect(traceStroke().points.map((point) => [...point])).toEqual(before);
+    $(".atlas-canvas").dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    const after = traceStroke().points.map((point) => [...point]);
+    expect(after).toHaveLength(before.length);
+    expect(after).not.toEqual(before);
   });
 });
 
