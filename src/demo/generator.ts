@@ -26,6 +26,8 @@ import { createRandom, hashSeed, type Random } from "./random";
 
 const DAY_MS = 86_400_000;
 const HOUR_MS = 3_600_000;
+/** The highest maximum speed a demo route reports, in km/h: about what a 125 cc tops out at. */
+export const DEMO_TOP_SPEED = 115;
 
 /**
  * Base point for every synthetic trace (latitude, longitude). An arbitrary
@@ -166,7 +168,8 @@ function makeRoute(random: Random, startMs: number, trip: PlannedTrip): RawRoute
     inference_quality_source: "geojson_linestring_properties",
     inference_quality_warning: inferred ? WARNING_INFERRED : WARNING_NOT_INFERRED,
     average_speed: average,
-    maximum_speed: average + random.int(15, 55),
+    // Above the average and never past what a 125 cc reaches.
+    maximum_speed: Math.min(average + random.int(15, 55), DEMO_TOP_SPEED),
     complete: false,
     timezone: random.chance(0.03) ? null : "Europe/Madrid",
     odometer_start: null,

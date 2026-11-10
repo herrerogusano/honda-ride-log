@@ -3,7 +3,7 @@
  * trace is requested when the route is opened, never earlier, and only its
  * trimmed lines are kept in memory, so the same route is not asked twice.
  */
-import { formatDateLong, formatDuration, formatKm, formatTime } from "../domain/format";
+import { formatDateLong, formatDuration, formatEndTime, formatInferred, formatKm, formatSpeed, formatTime } from "../domain/format";
 import type { Route, RouteRef } from "../domain/model";
 import { TRIM_METERS } from "../domain/privacy";
 import { trimTrace, type TrimmedTrace } from "../domain/trim";
@@ -29,7 +29,20 @@ export interface MapViewOptions {
   readonly signIn: (() => void) | null;
 }
 
-export type MapFactory = (data: RiderData, caller: ToolCaller, options: MapViewOptions) => MapView;
+/** Everything the Rutas list says about one route, as one line under the map heading. */
+export function routeFacts(route: Route): string {
+  return [
+    `Salida: ${formatTime(route.startMs)}`,
+    `Llegada: ${formatEndTime(route.startMs, route.endMs)}`,
+    `Duración: ${formatDuration(route.durationS)}`,
+    formatKm(route.distanceKm),
+    `Vel. media: ${formatSpeed(route.averageSpeed)}`,
+    `Vel. máxima: ${formatSpeed(route.maxSpeed)}`,
+    `Tramos inferidos: ${formatInferred(route.hasInferredSegments)}`,
+  ].join(" · ");
+}
+
+export type MapFactory =(data: RiderData, caller: ToolCaller, options: MapViewOptions) => MapView;
 
 export function createMapView(
   data: RiderData,
@@ -138,7 +151,7 @@ export function createMapView(
     current = route;
     const index = data.routes.indexOf(route);
     heading.textContent = `Ruta del ${formatDateLong(route.startMs)}`;
-    facts.textContent = `Salida a las ${formatTime(route.startMs)} · ${formatKm(route.distanceKm)} · ${formatDuration(route.durationS)}`;
+    facts.textContent = routeFacts(route);
     stepper.hidden = index < 0;
     previous.disabled = index <= 0;
     next.disabled = index < 0 || index >= data.routes.length - 1;
@@ -181,6 +194,11 @@ export function createMapView(
       "li",
       {},
       `No se dibuja nada a menos de ${TRIM_METERS} m de donde empieza o acaba cada ruta (eso quita, como poco, sus primeros y últimos ${TRIM_METERS} m), ni marcadores de inicio o de fin.`,
+    ),
+    el(
+      "li",
+      {},
+      "Los km y las velocidades media y máxima son los que entrega el servicio; el propio servicio avisa de que sus unidades están sin confirmar.",
     ),
   );
 

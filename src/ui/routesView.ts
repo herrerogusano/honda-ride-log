@@ -1,19 +1,37 @@
 /** The Rutas tab: a searchable, sortable list and the CSV export of what it shows. */
 import { routesToCsv } from "../domain/csv";
-import { formatDate, formatDuration, formatIsoDate, formatNumber, formatTime, matchesSearch, WEEKDAYS_SHORT } from "../domain/format";
+import {
+  formatDate,
+  formatDuration,
+  formatEndTime,
+  formatInferred,
+  formatIsoDate,
+  formatNumber,
+  formatTime,
+  matchesSearch,
+  WEEKDAYS_SHORT,
+} from "../domain/format";
 import type { Route } from "../domain/model";
 import type { RiderData } from "./data";
 import { clear, el, uniqueId } from "./dom";
 import { downloadBlob } from "./download";
 
-export type SortOrder = "date_desc" | "date_asc" | "km_desc" | "km_asc";
+export type SortOrder = "date_desc" | "date_asc" | "km_desc" | "km_asc" | "max_speed_desc";
 
 const SORTS: readonly { readonly id: SortOrder; readonly label: string }[] = [
   { id: "date_desc", label: "Fecha, las más recientes primero" },
   { id: "date_asc", label: "Fecha, las más antiguas primero" },
   { id: "km_desc", label: "Distancia, de mayor a menor" },
   { id: "km_asc", label: "Distancia, de menor a mayor" },
+  // Short on purpose: the select is as wide as its longest option, and a longer one
+  // made the page scroll sideways at 320 px (checked in Chrome on 2026-11-10).
+  { id: "max_speed_desc", label: "Vel. máxima, de mayor a menor" },
 ];
+
+/** The footnote under the list; the map tab repeats the same caveats in its legend. */
+export const ROUTES_NOTE =
+  "Los km y las velocidades media y máxima son los que entrega el servicio; el propio servicio avisa de que sus unidades están sin confirmar. " +
+  "«Tramos inferidos» es una etiqueta descriptiva del servicio, no una garantía de precisión del GPS. Un guion (—) es un dato que el servicio no ha enviado.";
 
 /** Rows drawn at first and added by each "show more". */
 export const PAGE_SIZE = 100;
@@ -26,8 +44,15 @@ export function selectRoutes(routes: readonly Route[], query: string, order: Sor
   if (order === "date_asc") return found.sort(byDate);
   if (order === "date_desc") return found.sort((a, b) => byDate(b, a));
   if (order === "km_asc") return found.sort(byKm);
+  if (order === "max_speed_desc") {
+    // Fastest first; a route without a maximum goes last; a tie, oldest first.
+    const fastest = (route: Route): number => route.maxSpeed ?? -1;
+    return found.sort((a, b) => fastest(b) - fastest(a) || byDate(a, b));
+  }
   return found.sort((a, b) => byKm(b, a));
 }
+
+const speedCell = (speed: number | null): string => (speed === null ? "—" : formatNumber(speed));
 
 function weekday(ms: number): string {
   return WEEKDAYS_SHORT[(new Date(ms).getDay() + 6) % 7] as string;
@@ -67,9 +92,12 @@ export function renderRoutes(data: RiderData, onOpen: (route: Route) => void): H
         ),
       ),
       el("td", {}, formatTime(route.startMs)),
+      el("td", {}, formatEndTime(route.startMs, route.endMs)),
       el("td", {}, formatDuration(route.durationS)),
       el("td", { class: "num" }, formatNumber(route.distanceKm, 1)),
-      el("td", { class: "num" }, route.averageSpeed === null ? "—" : formatNumber(route.averageSpeed)),
+      el("td", { class: "num" }, speedCell(route.averageSpeed)),
+      el("td", { class: "num" }, speedCell(route.maxSpeed)),
+      el("td", {}, formatInferred(route.hasInferredSegments)),
     );
   }
 
@@ -131,14 +159,18 @@ export function renderRoutes(data: RiderData, onOpen: (route: Route) => void): H
             {},
             el("th", { attrs: { scope: "col" } }, "Fecha"),
             el("th", { attrs: { scope: "col" } }, "Salida"),
+            el("th", { attrs: { scope: "col" } }, "Llegada"),
             el("th", { attrs: { scope: "col" } }, "Duración"),
             el("th", { class: "num", attrs: { scope: "col" } }, "Km"),
             el("th", { class: "num", attrs: { scope: "col" } }, "Vel. media (km/h)"),
+            el("th", { class: "num", attrs: { scope: "col" } }, "Vel. máx. (km/h)"),
+            el("th", { attrs: { scope: "col" } }, "Tramos inferidos"),
           ),
         ),
         body,
       ),
     ),
     more,
+    el("p", { class: "notes" }, ROUTES_NOTE),
   );
 }

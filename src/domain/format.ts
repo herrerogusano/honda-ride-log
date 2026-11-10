@@ -42,6 +42,38 @@ export function formatTime(ms: number): string {
   return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
+/**
+ * The end time of a ride, `07:35`; with the days it adds when it ends on a
+ * later local day, `00:15 (+1 día)`; a dash when unknown.
+ */
+export function formatEndTime(startMs: number, endMs: number | null): string {
+  if (endMs === null) return "—";
+  const start = new Date(startMs);
+  const end = new Date(endMs);
+  // Local midnights, so a day changed by daylight saving still counts as one.
+  const days = Math.round(
+    (new Date(end.getFullYear(), end.getMonth(), end.getDate()).getTime() -
+      new Date(start.getFullYear(), start.getMonth(), start.getDate()).getTime()) /
+      86_400_000,
+  );
+  const time = formatTime(endMs);
+  return days > 0 ? `${time} (+${days} ${days === 1 ? "día" : "días"})` : time;
+}
+
+/** A speed as the service gives it, `58 km/h`; a dash when unknown. The unit is unconfirmed by the service. */
+export function formatSpeed(speed: number | null): string {
+  return speed === null ? "—" : `${formatNumber(speed)} km/h`;
+}
+
+/**
+ * The service's descriptive flag for inferred segments: `Sí`, `No` or a dash.
+ * It is a label, not a statement about GPS accuracy.
+ */
+export function formatInferred(flag: boolean | null): string {
+  if (flag === null) return "—";
+  return flag ? "Sí" : "No";
+}
+
 /** `noviembre de 2026`. */
 export function formatMonth(year: number, month: number): string {
   return `${MONTHS_LONG[month]} de ${year}`;

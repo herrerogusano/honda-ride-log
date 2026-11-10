@@ -1,7 +1,8 @@
 /**
  * The only module that reads raw service answers. It copies an allowlist of
  * fields into the app model and drops everything else on the spot: plate,
- * VIN, dealer, current position, speeds we do not show, raw payloads.
+ * VIN, dealer, current position, the vehicle's current speed, route
+ * odometers and time zones, raw payloads.
  *
  * Unknown extra fields are ignored (the service may grow); a missing or
  * mistyped field we depend on raises `ShapeError`, whose message names the
@@ -70,6 +71,15 @@ function nonNegativeOrNull(value: unknown, path: string): number | null {
   return number !== null && number >= 0 ? number : null;
 }
 
+/**
+ * A finite, non-negative number, or null for anything else (a string, NaN, a
+ * negative). For display-only figures added later, such as the maximum speed:
+ * a mistyped one must not cost the rider the whole route list.
+ */
+function nonNegativeOrAbsent(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
 const MAX_LABEL_LENGTH = 60;
 
 /** A short display label: control characters removed, length capped. */
@@ -122,6 +132,7 @@ function sanitizeRoute(raw: unknown, path: string): Route | null {
     durationS: endMs === null ? null : (endMs - startMs) / 1000,
     distanceKm,
     averageSpeed: nonNegativeOrNull(item["average_speed"], `${path}.average_speed`),
+    maxSpeed: nonNegativeOrAbsent(item["maximum_speed"]),
     hasInferredSegments: boolOrNull(item["has_inferred_segments"], `${path}.has_inferred_segments`),
   };
 }

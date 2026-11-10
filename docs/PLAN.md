@@ -5,7 +5,8 @@ repo. Dice qué se construye, qué está decidido, qué se ha comprobado y qué 
 y cómo se reparte el trabajo. Actualízalo al cerrar cada fase.
 
 Última actualización: 2026-11-10, cierre de la fase 2; módulos de la fase 3
-y su conexión con la interfaz (apartado 10).
+y su conexión con la interfaz (apartado 10); toda la información de cada
+ruta, velocidad máxima incluida (apartados 2 y 3).
 
 ## 1. Qué es
 
@@ -28,7 +29,8 @@ Una web estática en la que cada persona invitada entra con su cuenta de MAPIT
 |---|---|
 | Forma | Web estática, repo propio, privado al crearlo; el propietario lo hace público y activa Pages. |
 | Alcance | Tres pestañas (Resumen, Mapa, Rutas), tarjeta para compartir solo con cifras, modo demo sin login. |
-| Fuera | Atlas 3D, sección de territorio, velocidad máxima en cualquier parte, filtros de «geometría inferida», exportación JSON, fuentes incrustadas (se usan las del sistema). |
+| Fuera | Atlas 3D, sección de territorio, filtros de «geometría inferida», exportación JSON, fuentes incrustadas (se usan las del sistema). |
+| Velocidad máxima | Se enseña en cada ruta (lista, mapa y CSV), nunca en la tarjeta para compartir. Decisión del propietario del 2026-11-10 («de cada trayecto quiero que aparezca toda la información»), que sustituye en este punto a «velocidad máxima: fuera en cualquier parte». Que la tarjeta no la lleve es decisión del director: la tarjeta sale de la web. |
 | Privacidad | Ver el apartado 4. Son requisitos. |
 | Unidades | «km» a secas, con nota al pie: se usan los campos `*_km` del servicio, que el propio servicio marca como conversión sin confirmar. Nunca se convierte la distancia nativa. |
 | Zona horaria | Una sola: la del navegador. El campo `timezone` de cada ruta no se usa. |
@@ -62,8 +64,11 @@ Concretado al construirlo en la fase 2 (`src/domain/stats.ts`):
 - En un empate (dos rutas, días, meses o rachas con la misma cifra) gana lo
   más antiguo.
 - Los números separan siempre los miles («6.125 km»).
-- La velocidad media es la del servicio y se rotula «km/h»; el servicio no
-  confirma sus unidades, igual que no confirma los km (pregunta abierta 8).
+- Las velocidades media y máxima son las del servicio (`average_speed` y
+  `maximum_speed`) y se rotulan «km/h»; el servicio no confirma sus unidades,
+  igual que no confirma los km (pregunta abierta 8). Una velocidad máxima
+  negativa, no numérica o que no llegue se enseña como «—» sin perder la
+  ruta; la media, como antes, rompe la respuesta entera si no es un número.
 
 ### Resumen
 
@@ -108,9 +113,17 @@ se cuentan y cuántas se han descartado por venir sin fecha o sin km.
 
 ### Rutas
 
-- Lista con fecha, hora de salida, duración, km y velocidad media.
+- Lista con toda la información útil de cada ruta (decisión del propietario
+  del 2026-11-10): fecha, hora de salida, hora de llegada, duración, km,
+  velocidad media, velocidad máxima y si tiene tramos inferidos («Sí», «No»
+  o «—»; es una etiqueta descriptiva del servicio, no una garantía de
+  precisión del GPS). Un dato que el servicio no envía se escribe «—». Si la
+  llegada cae en otro día local, se añade «(+1 día)». Una nota bajo la lista
+  dice que las dos velocidades tienen unidades sin confirmar. La pestaña Mapa
+  enseña lo mismo de la ruta abierta, en una línea bajo el título.
 - Búsqueda por texto sobre la fecha (día, mes, año, día de la semana) y orden
-  por fecha o por distancia. Cada palabra de la búsqueda tiene que cuadrar:
+  por fecha, por distancia o por velocidad máxima (de mayor a menor; en un
+  empate, la más antigua primero; las que no la tienen, al final). Cada palabra de la búsqueda tiene que cuadrar:
   un número suelto es el día o el año enteros («2» es el día 2, no el
   principio de 2025); una fecha con barras o guiones se compara como
   números («7/3», «07/03/2026», «2026-03»); lo demás es el principio del
@@ -119,14 +132,15 @@ se cuentan y cuántas se han descartado por venir sin fecha o sin km.
   una palabra se ignora, para que la lista no se vacíe mientras se escribe
   una fecha («7/»).
 - Al pulsar una ruta se abre en la pestaña Mapa.
-- Exportar CSV de lo que se ve, con esas mismas columnas. Sin identificadores
-  ni coordenadas. Las celdas que empiecen por `=`, `+`, `-` o `@` se protegen
+- Exportar CSV de lo que se ve, con esas mismas columnas (un dato que falta
+  es una celda vacía). Sin identificadores ni coordenadas. Las celdas que empiecen por `=`, `+`, `-` o `@` se protegen
   para que una hoja de cálculo no las ejecute.
 
 ### Tarjeta para compartir y modo demo
 
 - Tarjeta «Tu 2026 en moto» (el año elegido): solo cifras (km, salidas,
-  horas, ruta más larga, mes con más km). Sin mapa ni coordenadas. Se dibuja
+  horas, ruta más larga, mes con más km). Sin mapa, sin coordenadas y sin
+  velocidades (la máxima tampoco: la tarjeta sale de la web). Se dibuja
   en un `<canvas>` y se descarga como PNG.
 - Modo demo: funciona sin login con `createDemoService(generateRider(...))`
   de `src/demo/`. Recorre el mismo camino de código que los datos reales
@@ -144,7 +158,7 @@ alternativo con las mismas cifras, nada que dependa solo del color.
 
 | Regla | Cómo se cumple |
 |---|---|
-| Nunca matrícula, bastidor, datos del concesionario ni posición actual | `src/domain/sanitize.ts` copia una lista cerrada de campos y descarta el resto al recibir la respuesta. Que ningún otro módulo lea respuestas sin sanear es una convención: ninguna herramienta lo impide. |
+| Nunca matrícula, bastidor, datos del concesionario ni posición actual; de cada ruta, tampoco su odómetro ni su zona horaria | `src/domain/sanitize.ts` copia una lista cerrada de campos y descarta el resto al recibir la respuesta. De una ruta copia fechas, km, velocidad media, velocidad máxima (desde el 2026-11-10, decisión del propietario; antes no se copiaba) y la etiqueta de tramos inferidos; `tests/sanitize.test.ts` fija esa lista exacta. Que ningún otro módulo lea respuestas sin sanear es una convención: ninguna herramienta lo impide. |
 | Nunca identificadores de ruta en pantalla ni en exportaciones | El identificador vive detrás de un `RouteRef` opaco y sin campos; solo `serviceRouteId` lo recupera, y ESLint solo deja importar esa función desde `src/service/` (donde irá la petición de detalle). Serializar una ruta no lo incluye. |
 | Recortar 400 m al inicio y al final de cada traza antes de dibujarla | `TRIM_METERS` en `src/domain/privacy.ts` y `trimTrace` en `src/domain/trim.ts` (fase 2). Se cumple con una regla más fuerte: **no se dibuja nada a menos de 401 m en línea recta del inicio ni del final** (ver «Cómo quedó el recorte»). El radio no es un parámetro: nadie puede pedir un corte más corto. La pestaña Mapa solo guarda en memoria las líneas ya recortadas. El saneador devuelve un `UntrimmedTrace` sellado, sin campos legibles; sus líneas solo salen con `untrimmedLines` y los dos puntos de inicio y final con `sensitivePlaces`, y ESLint solo deja importar esas dos funciones desde ese archivo (`tests/lint-seals.test.ts`). |
 | Ocultar rutas de menos de 300 m | `hideShortRoutes` en `src/domain/privacy.ts`. |
@@ -597,9 +611,11 @@ fallos de ejecuciones reales y despliegue (no hay nada desplegado).
    Pages, que fallará hasta que se active Pages con origen «GitHub
    Actions». Conviene activar las dos cosas seguidas, y la protección de
    `main` en ese momento.
-8. La velocidad media de cada ruta se enseña tal como la da el servicio y
-   rotulada «km/h». El servicio no confirma esa unidad. ¿Se deja, se quita
-   el rótulo o se calcula a partir de los km y la duración?
+8. Las velocidades media y máxima de cada ruta se enseñan tal como las da el
+   servicio y rotuladas «km/h». El servicio no confirma esa unidad para
+   ninguna de las dos. ¿Se deja, se quita el rótulo o se calcula la media a
+   partir de los km y la duración? (La máxima no se puede calcular así: solo
+   la da el servicio.)
 9. Además de las cuatro cifras, siguen al selector de periodo los hábitos,
    los récords, los trayectos cortos y la tarjeta; las rachas y los km por
    mes no. ¿Es lo que se quiere?
@@ -617,7 +633,19 @@ fallos de ejecuciones reales y despliegue (no hay nada desplegado).
 14. «Exportar CSV» exporta todas las rutas que cumplen la búsqueda, en el
     orden elegido, no solo las 100 filas dibujadas.
 15. En un móvil la tabla de Rutas es más ancha que la pantalla y hay que
-    desplazarla de lado para ver la velocidad.
+    desplazarla de lado para ver las velocidades. Con las columnas de
+    llegada, velocidad máxima y tramos inferidos (2026-11-10) es más ancha
+    todavía. La tabla se desplaza dentro de su caja; la página no. Medido el
+    2026-11-10 en Chrome sin interfaz con la página construida, emulando
+    320, 340, 360, 375, 390 y 1280 px por CDP en las tres pestañas: el ancho
+    de la página no pasa nunca del de la pantalla. Ojo al medir: con
+    emulación de móvil, el navegador ensancha la ventana para que quepa lo
+    que sobresale, así que comparar `scrollWidth` con `innerWidth` no basta;
+    hay que compararlos con el ancho emulado. Así se vio que la opción de
+    orden «Velocidad máxima, de mayor a menor» ensanchaba el desplegable y la
+    página a 328 px en una pantalla de 320; se acortó a «Vel. máxima, de
+    mayor a menor» y un test impide que una opción nueva sea más larga que
+    las que ya caben.
 16. Los años del gráfico de km por mes se distinguen por color y posición;
     la leyenda, la tabla y el texto al pasar el ratón dan lo mismo sin color.
     El contraste entre los tres colores es bajo. ¿Basta, o se añade trama?

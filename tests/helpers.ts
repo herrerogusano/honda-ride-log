@@ -8,6 +8,10 @@ export interface RideSpec {
   /** Minutes; null for a ride without a usable end. Defaults to 30. */
   readonly minutes?: number | null;
   readonly speed?: number | null;
+  /** The raw `maximum_speed`; anything, so tests can send a broken one. Defaults to 60. */
+  readonly maxSpeed?: unknown;
+  /** The raw `has_inferred_segments`. Defaults to false. */
+  readonly inferred?: boolean | null;
 }
 
 let counter = 0;
@@ -24,7 +28,8 @@ export function rides(specs: readonly RideSpec[]): Route[] {
       ended_at: minutes === null ? null : new Date(startMs + minutes * 60_000).toISOString(),
       distance_km: spec.km,
       average_speed: spec.speed === undefined ? 30 : spec.speed,
-      has_inferred_segments: false,
+      maximum_speed: spec.maxSpeed === undefined ? 60 : spec.maxSpeed,
+      has_inferred_segments: spec.inferred === undefined ? false : spec.inferred,
     };
   });
   return [...sanitizeRouteList({ routes: raw, truncated: false, matched_routes: raw.length }).routes];
