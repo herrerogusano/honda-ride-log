@@ -80,7 +80,10 @@
   --w-figure: 700;
   --fs-hero: clamp(48px, 13vw, 152px);
   --fs-sec: clamp(46px, 10vw, 108px);
-  --fs-figure: clamp(42px, 6.6vw, 100px);
+  --fs-figure: clamp(48px, 6.4vw, 96px);
+  --fs-unit: clamp(18px, 2vw, 26px);
+  /* Gap between figures; the skewed divider lives inside it and never reaches the text. */
+  --gut: clamp(28px, 3.2vw, 44px);
   --fs-h3: 24px;
   --fs-body: 15px;
   --fs-small: 13px;
@@ -594,6 +597,7 @@ select:focus-visible {
   position: relative;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
+  column-gap: var(--gut);
   padding-bottom: var(--s5);
   /* A ruler of thin ticks along the top. */
   background: repeating-linear-gradient(90deg, var(--line) 0 1px, transparent 1px 12px) 0 0 / 100% 7px no-repeat;
@@ -605,20 +609,22 @@ select:focus-visible {
   flex-direction: column;
   gap: var(--s2);
   min-width: 0;
-  padding: var(--s5) var(--s4) 0 0;
+  padding-top: var(--s5);
 }
 
-.readout .m + .m {
-  padding-left: clamp(14px, 2.4vw, 32px);
-}
-
+/*
+ * The divider sits in the middle of the gap. Skewed by 14 degrees, a line of
+ * height h leans h * tan(14deg) = 0.25h sideways; at 3.2 gaps tall that is
+ * 0.8 of the gap, centred, so it stays 0.1 gap away from the text on each side.
+ */
 .readout .m + .m::before {
   content: "";
   position: absolute;
-  left: 0;
+  left: calc(var(--gut) / -2);
   top: var(--s5);
-  bottom: 0;
   width: 1px;
+  /* Never longer than the cell; shorter only leans less. */
+  height: min(calc(var(--gut) * 3.2), calc(100% - var(--s5)));
   background: var(--line);
   transform: skewX(-14deg);
 }
@@ -636,7 +642,8 @@ select:focus-visible {
   gap: var(--s2);
 }
 
-.mv {
+/* Two classes: it must win over the generic `.tile-value`, which comes later. */
+.readout .mv {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -645,8 +652,8 @@ select:focus-visible {
   letter-spacing: -0.01em;
 }
 
-.mv-unit {
-  font: 700 clamp(18px, 2vw, 28px) / 1 var(--display);
+.readout .mv-unit {
+  font: 700 var(--fs-unit) / 1 var(--display);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--red-hi);
@@ -901,15 +908,16 @@ h3 {
   flex-direction: column;
   gap: var(--s2);
   min-width: 0;
-  padding: 0 var(--s4) 0 clamp(14px, 2vw, 24px);
+  padding: 0 var(--s4) 0 var(--gut);
 }
 
+/* Same rule as the readout: centred in the left padding, short enough to lean only within it. */
 .tiles .tile::before {
   content: "";
   position: absolute;
-  left: 0;
+  left: calc(var(--gut) / 2);
   top: 2px;
-  bottom: 2px;
+  height: min(calc(var(--gut) * 3), calc(100% - 4px));
   width: 1px;
   background: var(--line);
   transform: skewX(-14deg);
@@ -1385,11 +1393,7 @@ h3 {
 
   /* Two columns leave room for bigger figures. */
   .readout .mv {
-    font-size: clamp(42px, 10vw, 84px);
-  }
-
-  .readout .m:nth-child(3) {
-    padding-left: 0;
+    font-size: clamp(48px, 10vw, 84px);
   }
 
   .readout .m:nth-child(3)::before {
@@ -1441,11 +1445,6 @@ h3 {
 @media (max-width: 359px) {
   .readout {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .readout .m,
-  .readout .m + .m {
-    padding-left: 0;
   }
 
   .readout .m + .m::before {
