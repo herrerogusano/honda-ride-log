@@ -259,11 +259,11 @@ describe("one page with numbered sections", () => {
     await loaded();
     expect(root.querySelector('[role="tab"], [role="tablist"], [role="tabpanel"]')).toBeNull();
     const sections = [...root.querySelectorAll<HTMLElement>("section.page-sec")];
-    expect(sections.map((one) => one.querySelector(".sec-tag")?.textContent)).toEqual(["01 Resumen", "02 Ritmo", "03 Hábitos", "04 Rutas", "05 Taller"]);
+    expect(sections.map((one) => one.querySelector(".sec-tag")?.textContent)).toEqual(["01 Resumen", "02 Ritmo", "03 Hábitos", "04 Rutas", "05 Atlas", "06 Taller"]);
     expect(sections.every((one) => !one.hidden && one.closest("[hidden]") === null)).toBe(true);
     // The links are buttons, in the bar, one per section and in the same order.
     const links = [...root.querySelectorAll<HTMLButtonElement>(".page-nav button")];
-    expect(links.map((one) => one.textContent)).toEqual(["Resumen", "Ritmo", "Hábitos", "Rutas", "Taller"]);
+    expect(links.map((one) => one.textContent)).toEqual(["Resumen", "Ritmo", "Hábitos", "Rutas", "Atlas", "Taller"]);
     expect(links.map((one) => one.dataset["section"])).toEqual(sections.map((one) => one.dataset["section"]));
     expect(links.every((one) => one.type === "button" && one.closest("header.topbar") !== null)).toBe(true);
     // No link marks a section as current at the top of the page (the hero).

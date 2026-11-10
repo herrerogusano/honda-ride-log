@@ -89,9 +89,8 @@ function tile(label: string, value: string, note?: string | null): HTMLElement {
 }
 
 /**
- * The vehicle state, as the slanted plate of the hero. The plate is the
- * place where the 3D atlas will go (a later phase): it has a head, a body
- * and a foot, and the state can share it.
+ * The vehicle state, as the slanted plate of the hero. The atlas of section
+ * «Atlas» uses the same plate (src/ui/atlas/atlasView.ts).
  */
 function statusPlate(data: RiderData): HTMLElement {
   const { vehicle, info } = data;
@@ -749,6 +748,8 @@ export interface RiderPageOptions {
   readonly signal?: AbortSignal | undefined;
   /** The content of section «Rutas» (map and list), built by the page; without it there is no such section. */
   readonly archive?: HTMLElement | undefined;
+  /** Section «Atlas», after «Rutas»; it follows the period chosen in the bar. */
+  readonly atlas?: { readonly element: HTMLElement; setPeriod(period: Period): void } | undefined;
 }
 
 export function renderRiderPage(data: RiderData, scope: StorageScope, options: RiderPageOptions = {}): RiderPage {
@@ -800,6 +801,7 @@ export function renderRiderPage(data: RiderData, scope: StorageScope, options: R
     section("habitos", "Hábitos", ["Cada salida", "cuenta"], slots.calendar, slots.habits, slots.numbers);
   }
   if (options.archive !== undefined) section("rutas", "Rutas", ["El archivo", "de salidas"], options.archive);
+  if (options.atlas !== undefined && !empty) section("atlas", "Atlas", ["Tus rutas,", "en capas"], options.atlas.element);
   section("taller", "Taller", ["A punto"], el("div", { class: "grid-2 grid-taller" }, maintenanceBlock(data, scope), empty ? null : slots.card));
 
   const page = { hero: hero(data), footer: footer(data) };
@@ -820,6 +822,7 @@ export function renderRiderPage(data: RiderData, scope: StorageScope, options: R
     drawing = motion;
     const label = period === "all" ? "Todo el historial" : `Año ${period}`;
     summary.header.setTitle(figuresTitle(period, currentYear));
+    options.atlas?.setPeriod(period);
     periodScope.textContent = label;
     // The first count lasts the hero duration; a period change counts again, shorter.
     const durationMs = first ? undefined : durationToken("--dur-reveal", 520);
