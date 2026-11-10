@@ -41,6 +41,8 @@ export interface SectionNav {
   readonly progress: HTMLElement;
   /** The section marked as current, or null above the first one. */
   current(): string | null;
+  /** Brings a section into view as its link does (the atlas uses it to show «Rutas»). */
+  go(id: string): void;
 }
 
 /** Room left between the bar and the section that a link brings up. */
@@ -261,5 +263,6 @@ export function sectionNav(sections: readonly NavSection[], options: NavOptions)
     element,
     progress,
     current: () => sections[active]?.id ?? null,
+    go: (id) => go(sections.findIndex((section) => section.id === id)),
   };
 }

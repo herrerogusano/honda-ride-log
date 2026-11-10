@@ -18,17 +18,18 @@ import {
   formatSpeed,
   formatTime,
 } from "../domain/format";
-import type { Route, RouteRef } from "../domain/model";
+import type { Route } from "../domain/model";
 import { TRIM_METERS } from "../domain/privacy";
-import { trimTrace, type TrimmedTrace } from "../domain/trim";
+import type { TrimmedTrace } from "../domain/trim";
 import type { ToolCaller } from "../service/contract";
-import { loadRouteTrace, LoadError } from "../service/loader";
+import { LoadError } from "../service/loader";
 import type { RiderData } from "./data";
 import { clear, el } from "./dom";
 import { errorText } from "./errors";
 import { createLeafletSurface, type MapSurface, type SurfaceFactory } from "./leafletSurface";
 import { canAnimate, countUp, durationToken, scanLine } from "./motion";
 import { drawDuration, drawTrace, planTrace, type Drawing } from "./traceDraw";
+import { createTraceStore, type TraceStore } from "./traceStore";
 
 export interface MapView {
   readonly element: HTMLElement;
@@ -47,6 +48,11 @@ export interface MapViewOptions {
   readonly signIn: (() => void) | null;
   /** Told about every route the view opens, also with its own «anterior / siguiente» buttons. */
   readonly onOpen?: ((route: Route) => void) | undefined;
+  /**
+   * The trimmed traces shared with the atlas, owned by the page. Without it
+   * the view keeps its own and forgets them when it is destroyed.
+   */
+  readonly traces?: TraceStore | undefined;
 }
 
 /** Everything the Rutas list says about one route, as one sentence (read out; the figures below show it). */
@@ -73,14 +79,13 @@ export function createMapView(
   options: MapViewOptions = { signIn: null },
   createSurface: SurfaceFactory = createLeafletSurface,
 ): MapView {
-  /** Trimmed traces already known, and the requests still on their way. */
-  const traces = new Map<RouteRef, TrimmedTrace>();
-  const pending = new Map<RouteRef, Promise<TrimmedTrace>>();
+  /** Trimmed traces already known, and the requests still on their way (shared with the atlas when given). */
+  const traces = options.traces ?? createTraceStore(caller);
+  const ownTraces = options.traces === undefined;
   let surface: MapSurface | null = null;
   let current: Route | null = null;
   /** Each opening gets a number; an answer that is no longer the latest is not drawn. */
   let opening = 0;
-  let destroyed = false;
   /** The drawing under way, a drawing waiting for the map to be seen, and the counts of the figures. */
   let drawing: Drawing | null = null;
   let waiting: (() => void) | null = null;
@@ -268,26 +273,6 @@ export function createMapView(
     );
   }
 
-  /** The trimmed trace of a route: from memory, from a request on its way, or from a new request. */
-  function traceOf(route: Route): Promise<TrimmedTrace> {
-    const known = traces.get(route.ref);
-    if (known !== undefined) return Promise.resolve(known);
-    let request = pending.get(route.ref);
-    if (request === undefined) {
-      request = loadRouteTrace(caller, route.ref)
-        .then((untrimmed) => {
-          // Only the trimmed lines are kept; the untrimmed trace is dropped here.
-          const trimmed = trimTrace(untrimmed);
-          // An answer that arrives after the view is gone is not kept.
-          if (!destroyed) traces.set(route.ref, trimmed);
-          return trimmed;
-        })
-        .finally(() => pending.delete(route.ref));
-      pending.set(route.ref, request);
-    }
-    return request;
-  }
-
   /** The large figures of the chosen route; they count up when they change on screen. */
   function showFigures(route: Route): void {
     figures?.abort();
@@ -344,15 +329,15 @@ export function createMapView(
     }
     options.onOpen?.(route);
 
-    const known = traces.get(route.ref);
-    if (known === undefined) {
+    if (traces.known(route.ref) === undefined) {
       surface?.clear();
       setState("loading");
       say("Cargando el recorrido…");
     }
     // One handler for everything that can go wrong, the drawing included:
     // the map never stays blank without a message.
-    traceOf(route)
+    traces
+      .get(route)
       .then((trace) => {
         if (mine === opening) draw(route, trace, mine);
       })
@@ -407,15 +392,14 @@ export function createMapView(
     destroy() {
       // Answers still on their way must not draw on a map that is gone.
       opening += 1;
-      destroyed = true;
       stopMotion();
       figures?.abort();
       observer?.disconnect();
       document.removeEventListener("visibilitychange", onVisibility);
       surface?.destroy();
       surface = null;
-      // The trimmed traces leave memory with the view (sign-out, another load).
-      traces.clear();
+      // The trimmed traces leave memory with the view (sign-out, another load); a shared store goes with the page.
+      if (ownTraces) traces.dispose();
       current = null;
     },
   };

@@ -11,6 +11,7 @@ import type { VehicleState } from "../domain/model";
 import type { ToolCaller } from "../service/contract";
 import { loadAllRoutes, loadVehicleInfo, loadVehicleState, LoadError, signInError } from "../service/loader";
 import type { StorageScope } from "../storage/maintenance";
+import { createAtlasView, type AtlasView } from "./atlas/atlasView";
 import { buildRiderData, type RiderData } from "./data";
 import { clear, el, uniqueId } from "./dom";
 import { errorText } from "./errors";
@@ -19,6 +20,7 @@ import { createMapView, type MapFactory, type MapView } from "./mapView";
 import { sectionNav } from "./nav";
 import { createRouteList } from "./routesView";
 import { heroTitle, PROMISES, renderRiderPage } from "./summary";
+import { createTraceStore, type TraceStore } from "./traceStore";
 
 /**
  * The way in and out of a real account, given only when the build has a
@@ -73,6 +75,9 @@ export function startApp(options: AppOptions): App {
   let generation = 0;
   /** The map of the view on screen; released when another view replaces it. */
   let activeMap: MapView | null = null;
+  /** The atlas of the view on screen and the trimmed traces it shares with the map; released with the view. */
+  let activeAtlas: AtlasView | null = null;
+  let activeTraces: TraceStore | null = null;
   /**
    * Motion and listeners of the view on screen (counts, reveals, the section
    * links, the scroll spy, the progress bar); aborted when another view
@@ -198,6 +203,11 @@ export function startApp(options: AppOptions): App {
   function stopView(): void {
     activeMap?.destroy();
     activeMap = null;
+    activeAtlas?.destroy();
+    activeAtlas = null;
+    // The trimmed traces leave memory with the view (sign-out, another load).
+    activeTraces?.dispose();
+    activeTraces = null;
     viewMotion?.abort();
     viewMotion = null;
   }
@@ -346,13 +356,28 @@ export function startApp(options: AppOptions): App {
       },
       { visibleTop },
     );
+    // One read per route detail, shared by the map and the atlas.
+    const traces = createTraceStore(caller);
+    const signInOffer = account === undefined || data.demo ? null : signIn;
     const map = mapFactory(data, caller, {
-      signIn: account === undefined || data.demo ? null : signIn,
+      signIn: signInOffer,
+      traces,
       // The map's own «anterior / siguiente» keep the list's chosen row in view.
       onOpen: (route) => list.mark(route, !fromList),
     });
     mapBox.append(map.element);
     activeMap = map;
+    activeTraces = traces;
+    const atlas = createAtlasView(data, "all", {
+      traces,
+      signIn: signInOffer,
+      showOnMap: (route) => {
+        // The route opens in the map of «Rutas» (its row marked) and the page goes there.
+        map.open(route);
+        nav.go("rutas");
+      },
+    });
+    activeAtlas = atlas;
     viewMotion = motion;
     // Map and list together (side by side on wide screens, the map pinned above the list on narrow ones).
     const archive = el(
@@ -368,7 +393,7 @@ export function startApp(options: AppOptions): App {
       watcher.observe(topbar);
       motion.signal.addEventListener("abort", () => watcher.disconnect(), { once: true });
     }
-    const page = renderRiderPage(data, scope, { signal: motion.signal, archive });
+    const page = renderRiderPage(data, scope, { signal: motion.signal, archive, atlas });
     const nav = sectionNav(page.sections, { signal: motion.signal, offset: barHeight });
     navSlot.append(nav.element);
     topbar.prepend(nav.progress);

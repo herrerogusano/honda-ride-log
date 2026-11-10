@@ -33,8 +33,8 @@ Una web estática en la que cada persona invitada entra con su cuenta de MAPIT
 | Tema | Decisión |
 |---|---|
 | Forma | Web estática, repo propio, privado al crearlo; el propietario lo hace público y activa Pages. |
-| Alcance | Una sola página que se desplaza, con secciones numeradas (Resumen, Ritmo, Hábitos, Rutas con el mapa y la lista, Taller) bajo una barra fija; hasta la etapa 2, fase 2, eran tres pestañas (Resumen, Mapa, Rutas). Tarjeta para compartir solo con cifras, modo demo sin login. |
-| Fuera | Atlas 3D, sección de territorio, filtros de «geometría inferida», exportación JSON. (Las fuentes incrustadas estuvieron fuera hasta la decisión D-025 del propietario: ver «Aspecto».) |
+| Alcance | Una sola página que se desplaza, con secciones numeradas (Resumen, Ritmo, Hábitos, Rutas con el mapa y la lista, Atlas, Taller) bajo una barra fija; hasta la etapa 2, fase 2, eran tres pestañas (Resumen, Mapa, Rutas). Tarjeta para compartir solo con cifras, modo demo sin login. |
+| Fuera | Sección de territorio, filtros de «geometría inferida», exportación JSON. (Las fuentes incrustadas estuvieron fuera hasta la decisión D-025 del propietario: ver «Aspecto». El atlas 3D estuvo fuera hasta el orden de la etapa 2 del propietario, que lo pone como su fase 5: ver el apartado 15.) |
 | Velocidad máxima | Se enseña en cada ruta (lista, mapa y CSV), nunca en la tarjeta para compartir. Decisión del propietario del 2026-11-10 («de cada trayecto quiero que aparezca toda la información»), que sustituye en este punto a «velocidad máxima: fuera en cualquier parte». Que la tarjeta no la lleve es decisión del director: la tarjeta sale de la web. |
 | Aspecto | Solo tema oscuro (D-026). Fuentes propias servidas por la web, Barlow Condensed y Manrope (D-025). Movimiento sin librería, con unas duraciones fijas (D-027). Detalle en el apartado 11. |
 | Privacidad | Ver el apartado 4. Son requisitos. |
@@ -1524,4 +1524,142 @@ instantáneo (el calendario se calcula en el acto).
 - Unos puntos blancos sueltos en algunas letras grandes de Barlow en las
   capturas sin cabeza (también en la tarjeta); parecen del rasterizado de
   Chrome sin cabeza, no se ha confirmado en un navegador con pantalla.
+- Una cuenta real (no hay servicio desplegado).
+
+## 15. Etapa 2, fase 5: el atlas
+
+Escrito el 2026-11-10. Orden del propietario para la etapa 2: el atlas 3D es
+su fase 5 (estaba en «Fuera», apartado 2). Sección «05 Atlas» («Tus rutas,
+en capas»), entre «04 Rutas» y «06 Taller»; la numeración sigue siendo
+consecutiva y no hay atlas si la cuenta no tiene salidas. Código en
+`src/ui/atlas/` (`geometry.ts`, `render.ts`, `atlasView.ts`) y
+`src/ui/traceStore.ts`. No cambia el saneador, el recorte, los sellos de
+ESLint, el login, las cifras ni la política de seguridad de contenido.
+
+### Técnica: Canvas 2D con proyección propia (decisión del director)
+
+Sin WebGL y sin librería. Motivos: ocho polilíneas de unos cientos de puntos
+no necesitan GPU; ninguna dependencia nueva y ningún cambio en la política
+(sombreadores o workers de WebGL añadirían riesgo a cambio de nada); funciona
+donde WebGL está bloqueado; el código es nuestro y va en el único paquete
+(`import()` está prohibido, así que el peso cuenta: el JS pasa de 251,33 kB
+a 272,09 kB, de 79,87 a 87,78 kB comprimido); y la alternativa sin canvas es
+trivial. Si el navegador no da contexto 2D, la sección dice «Este navegador
+no puede dibujar el atlas», enseña la lista de las rutas que apilaría y no
+lee nada.
+
+- Plano: las líneas recortadas pasan a km sobre un plano local
+  equirectangular centrado en el conjunto y luego a la placa (de −1 a 1, con
+  un 8 % de margen). Cuadrícula con escala real, la menor de 1, 2, 5, 10,
+  20, 50… km que deja como mucho diez celdas; su valor va escrito en la placa
+  y en el nombre accesible del lienzo.
+- Cámara: giro sobre la vertical, inclinación y división de perspectiva
+  escritas a mano. Una recta en el espacio se proyecta en una recta, así que
+  un punto sobre un tramo proyectado está sobre la traza.
+- Capas por fecha (la más antigua abajo), huellas tenues de todas en el
+  suelo, marcas de corte por capa, palos en las esquinas con una muesca del
+  color de cada capa, norte en el borde de la placa que gira con ella,
+  pintadas de lejos a cerca, rampa de rojo apagado (antigua) a rojo vivo
+  (reciente), tramos inferidos discontinuos y ámbar.
+- **Sin marcas de inicio ni de fin.** El concepto de origen pintaba un punto
+  de salida: aquí no. Solo hay un punto (la cabeza) mientras una traza se
+  dibuja, y va sobre las líneas recortadas (`partialTrace` de
+  `src/ui/traceDraw.ts`, la misma del mapa).
+- El texto del lienzo usa Manrope y se repinta cuando `document.fonts.ready`.
+  DPR limitado a 2.
+
+### Datos (reglas duras)
+
+- Al cargar la página no se pide nada. El botón «Reconstruir en 3D» lee como
+  mucho **8** detalles (`ATLAS_MAX`), **uno detrás de otro**, sin reintentos.
+  El conjunto se elige con «Las 8 más largas» (por defecto) o «Las 8
+  últimas», dentro del periodo de la barra. Antes de pulsar se dice cuántas
+  lecturas hará («Hará hasta 8 lecturas al servicio»; menos si ya están en
+  memoria) y la cifra sigue a lo que lea el mapa.
+- El mapa de «04 Rutas» y el atlas comparten las trazas recortadas en un
+  único almacén por vista (`createTraceStore`): una ruta abierta en el mapa
+  no se vuelve a leer, una ruta leída por el atlas se abre en el mapa sin
+  esperar, y una petición en vuelo se comparte. Se vacía al soltar la vista
+  (salir, cambiar de escenario, otra carga). Solo guarda líneas recortadas.
+- Una serie para **antes de su siguiente petición** con «Cancelar», al
+  cambiar de periodo o de conjunto y al soltar la vista. La petición en vuelo
+  no se cancela; su respuesta no se dibuja.
+- Una traza que el recorte deja sin nada, o sin recorrido, se salta y se
+  cuenta («1 traza oculta por privacidad»); no es un error.
+- Una lectura fallida para la serie y conserva lo que llegó, con el
+  tratamiento de error de siempre (código y acción): «Reintentar» sigue
+  desde donde paró (lo leído no se vuelve a leer); si la sesión acabó,
+  «Volver a entrar».
+
+### Movimiento
+
+Fotogramas solo mientras algo se mueve (una capa que sube, una traza que se
+dibuja, la entrada, la inercia, el paralaje que se asienta, «Trazar»); nunca
+fuera de pantalla ni con la pestaña oculta. Al llegar cada traza su capa
+sube a su sitio y se dibuja; la línea de barrido de la casa recorre la placa
+y una cifra cuenta «3 / 8». Al acabar, la pila gira desde un giro desplazado
+hasta el de reposo mientras las capas se separan. Arrastrar gira (con
+inercia; con ratón, el movimiento vertical inclina); con el dedo, el
+arrastre horizontal gira y el vertical desplaza la página (`touch-action:
+pan-y`). Paralaje leve con puntero fino. Doble clic o «Restablecer» vuelven
+al reposo. Elegir una capa (desplegable, clic o toque sobre su traza, ↑/↓
+en el lienzo, Escape para soltarla) la eleva, apaga las demás, enseña sus
+cifras (fecha, km, duración, media y máxima) y activa «Ver en el mapa», que
+abre esa ruta en «04 Rutas» y lleva allí la página. «Trazar» repite el
+dibujo de la elegida o de todas; «Progreso» lo recorre a mano; «Separación»
+abre o junta la pila. Con movimiento reducido: sin entrada, inercia,
+paralaje ni «Trazar»; dibujo completo; los controles siguen funcionando.
+
+Accesibilidad: el lienzo es `role="img"` con un nombre que resume lo que
+hay; todo se puede hacer con controles reales; ← → giran, ↑ ↓ cambian de
+capa; una región `role="status"` dice el principio, el final, la
+cancelación y la capa elegida (no cada fotograma); «Ver las trazas en
+tabla» lista las capas con sus cifras.
+
+### Qué se ha comprobado y dónde
+
+- jsdom (Vitest), `tests/atlas.test.ts`, con un contexto 2D que graba, el
+  servicio de demo detrás de un llamador que cuenta, y observador y
+  fotogramas manejados a mano: la geometría (centro, escala, cuadrícula,
+  giro sin espejo, inclinación, orden de lejos a cerca); qué rutas; nada
+  pedido antes del botón; como mucho 8 lecturas y nunca dos a la vez; lo que
+  ya tiene el almacén no se relee y la estimación lo sigue; cancelar, cambiar
+  de periodo o de conjunto y soltar la vista paran antes de la siguiente;
+  traza oculta saltada y contada; lectura fallida que conserva lo llegado y
+  sigue al reintentar; «Volver a entrar» si la sesión acabó; **todo punto de
+  trazo, huella y cabeza está sobre los tramos proyectados de las líneas
+  recortadas** (también con una capa elevada y el dibujo a medias); sin
+  puntos con el dibujo completo; elegir, teclado y «Ver en el mapa»; ningún
+  fotograma en reposo, fuera de pantalla u oculta y fin de los fotogramas al
+  asentarse; movimiento reducido; limpieza; sin canvas; el mapa abre sin
+  leer una ruta que leyó el atlas. Es el contrato tal como lo leemos, contra
+  dobles: no prueba el servicio real.
+- Roturas: 25, una cada vez, contra `tests/atlas.test.ts`. Fallaron 22. De
+  las tres que sobrevivieron, una era un hueco (el giro en espejo) y se cubrió
+  con una aserción que ya falla; las otras dos son guardas dobles (la
+  comprobación antes de cada lectura la cubre también la de después de cada
+  respuesta; sin contexto 2D el botón está oculto y desactivado). Muestra del
+  implementador, no la del revisor independiente.
+- Navegador real (Chrome sin cabeza, build de producción con la política,
+  `vite preview`, 2026-11-10), demo, a 320, 360, 390, 768, 1024, 1280, 1920 y
+  2560 px: sin desplazamiento lateral, nada del atlas fuera de la pantalla,
+  ningún control de menos de 44 px, ningún error de consola ni infracción de
+  la política, solo peticiones al propio origen y a `tile.openstreetmap.org`.
+  Lecturas de detalle contadas con un punto de ruptura condicional en el
+  código: 8 por construcción, 0 al pulsar «Ver en el mapa». Coste de los
+  fotogramas al girar con el ratón (1280) y con el dedo (390), medido con la
+  traza de DevTools (tiempo dentro de los `requestAnimationFrame`): mediana
+  0,5 ms; con la CPU 4 veces más lenta, mediana 2,2 a 3,0 ms, p95 6 a 10 ms,
+  máximo 6,5 a 18 ms. En reposo, ningún fotograma. Con el dedo, un deslizar
+  vertical desplazó la página 225 px sin girar la placa. Con movimiento
+  reducido: 8 lecturas, ninguna animación.
+
+### Qué no se ha comprobado
+
+- Safari, Firefox y un móvil físico (el tacto real, el rendimiento en un
+  teléfono de gama media: el ×4 de Chrome es una aproximación).
+- Un lector de pantalla real con el lienzo y sus anuncios.
+- Trazas de muchos puntos: las de la demo tienen como mucho 181; no se
+  diezman puntos.
+- La vista previa del atlas en la placa del héroe (opcional): no se hizo.
 - Una cuenta real (no hay servicio desplegado).

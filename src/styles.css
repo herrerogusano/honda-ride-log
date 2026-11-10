@@ -3904,3 +3904,304 @@ select:focus-visible {
     display: none;
   }
 }
+
+/* ---------- 05 Atlas (docs/PLAN.md, section 15) ---------- */
+.atlas {
+  display: grid;
+  gap: var(--s5) var(--s6);
+  align-items: start;
+}
+
+@media (min-width: 1024px) {
+  .atlas {
+    grid-template-columns: minmax(0, 1.6fr) minmax(300px, 1fr);
+  }
+
+  .atlas-foot {
+    grid-column: 1 / -1;
+  }
+}
+
+.atlas-plate {
+  padding: var(--s4) var(--s4) var(--s4) var(--s5);
+}
+
+.atlas-plate-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--s1) var(--s4);
+  margin: 0 0 var(--s3) var(--s3);
+  font: 700 var(--fs-eyebrow) / 1.3 var(--text);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fg-3);
+}
+
+.atlas-plate-title {
+  color: var(--fg-2);
+}
+
+.atlas-stage {
+  position: relative;
+  aspect-ratio: 5 / 4;
+  overflow: hidden;
+  border: 1px solid var(--line-soft);
+  background:
+    radial-gradient(ellipse at 50% 46%, transparent 0 42%, oklch(13% 0.006 25 / 0.8) 100%),
+    radial-gradient(circle, var(--line) 1px, transparent 1.4px) 0 0 / 22px 22px,
+    var(--bg);
+}
+
+.atlas-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* Horizontal drags turn the stack; vertical ones keep scrolling the page. */
+  touch-action: pan-y;
+  cursor: grab;
+  outline: none;
+}
+
+.atlas-canvas.dragging {
+  cursor: grabbing;
+}
+
+.atlas-stage[data-state="idle"] .atlas-canvas,
+.atlas-stage[data-state="empty"] .atlas-canvas {
+  cursor: default;
+}
+
+.atlas-stage:has(.atlas-canvas:focus-visible) {
+  outline: 2px solid var(--red-hi);
+  outline-offset: 2px;
+}
+
+.atlas-scan {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: none;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.atlas-stage[data-state="loading"] .atlas-scan {
+  display: block;
+}
+
+.atlas-count {
+  position: absolute;
+  z-index: 3;
+  left: var(--s4);
+  bottom: var(--s3);
+  font: var(--w-title) clamp(36px, 6vw, 64px) / 1 var(--display);
+  letter-spacing: 0.01em;
+  color: var(--fg);
+  pointer-events: none;
+}
+
+.atlas-count:empty {
+  display: none;
+}
+
+.atlas-overlay {
+  position: absolute;
+  z-index: 3;
+  top: var(--s3);
+  left: var(--s3);
+  right: var(--s3);
+}
+
+.atlas-overlay:empty {
+  display: none;
+}
+
+.atlas-overlay .error {
+  max-width: 440px;
+  background: oklch(13% 0.006 25 / 0.92);
+}
+
+.atlas-stage[data-state="fallback"] .atlas-overlay {
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: var(--s5);
+}
+
+.atlas-fallback {
+  display: grid;
+  gap: var(--s2);
+  max-width: 420px;
+}
+
+.atlas-fallback-title {
+  font: var(--w-title) clamp(24px, 3vw, 34px) / 1 var(--display);
+  text-transform: uppercase;
+}
+
+.atlas-fallback-list {
+  display: grid;
+  gap: 2px;
+  color: var(--fg-2);
+}
+
+.atlas-panel {
+  display: grid;
+  gap: var(--s4);
+  min-width: 0;
+}
+
+.atlas-readout {
+  display: grid;
+  gap: var(--s2);
+  min-height: 92px;
+  padding-left: var(--s4);
+  border-left: 2px solid var(--red);
+}
+
+.atlas-lead {
+  font: var(--w-title) clamp(26px, 2.6vw, 36px) / 1.02 var(--display);
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+}
+
+.atlas-sub {
+  color: var(--fg-2);
+}
+
+.atlas-skipped {
+  font-size: var(--fs-small);
+  color: var(--amber);
+}
+
+.atlas-figs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s2) var(--s4);
+}
+
+.atlas-fig dt,
+.atlas-label {
+  font: 700 var(--fs-eyebrow) / 1.3 var(--text);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fg-3);
+}
+
+.atlas-fig dd {
+  margin: 0;
+  font: var(--w-figure) 24px / 1.1 var(--display);
+}
+
+.atlas-set {
+  display: grid;
+  gap: 6px;
+}
+
+.atlas-set-opts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s2);
+}
+
+.atlas-set-opt {
+  padding: 0 var(--s3);
+  white-space: normal;
+  text-align: center;
+  line-height: 1.15;
+}
+
+.atlas-set-opt[aria-pressed="true"] {
+  border-color: var(--red);
+  box-shadow: inset 0 -2px 0 var(--red);
+  color: var(--fg);
+}
+
+.atlas-go {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+}
+
+.atlas-go .button {
+  flex: 1 1 auto;
+}
+
+.atlas-cost {
+  font-size: var(--fs-small);
+  color: var(--fg-2);
+}
+
+.atlas-controls {
+  display: grid;
+  gap: var(--s4);
+  padding-top: var(--s4);
+  border-top: 1px solid var(--line-soft);
+  animation: fade-up var(--dur-reveal) var(--ease-out) both;
+}
+
+.atlas-select {
+  width: 100%;
+}
+
+.atlas-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 112px), 1fr));
+  gap: var(--s2);
+}
+
+.atlas-actions .button {
+  padding: 0 var(--s2);
+  white-space: normal;
+  text-align: center;
+  line-height: 1.15;
+}
+
+.atlas-ranges {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s2) var(--s4);
+}
+
+input[type="range"] {
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  background: transparent;
+  accent-color: var(--red);
+  cursor: pointer;
+}
+
+input[type="range"]:focus-visible {
+  outline: 2px solid var(--red-hi);
+  outline-offset: 2px;
+}
+
+.atlas-foot {
+  display: grid;
+  gap: var(--s4);
+  min-width: 0;
+}
+
+.atlas-note {
+  max-width: 78ch;
+  font-size: var(--fs-small);
+  color: var(--fg-3);
+}
+
+@media (max-width: 639px) {
+  .atlas-stage {
+    aspect-ratio: 1 / 1;
+  }
+
+  .atlas-plate {
+    padding: var(--s3) var(--s3) var(--s3) var(--s4);
+  }
+
+  .atlas-plate-head {
+    margin-left: var(--s4);
+  }
+}
