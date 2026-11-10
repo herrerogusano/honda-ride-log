@@ -63,6 +63,28 @@ describe("motion tokens (D-027)", () => {
   });
 });
 
+describe("what moves", () => {
+  it("animates only transform and opacity in every keyframe", () => {
+    const keyframes = [...css.matchAll(/@keyframes\s+([\w-]+)\s*\{/g)].map((match) => match[1] as string);
+    expect(keyframes).toEqual(expect.arrayContaining(["wedge", "rise", "sweep", "sweep-again", "tag-in", "swap-in", "shimmer"]));
+    for (const name of keyframes) {
+      const body = block(`@keyframes ${name}`);
+      const properties = [...body.matchAll(/([\w-]+)\s*:/g)].map((match) => match[1]);
+      // transform-origin only fixes where a scale starts from; it is not animated on its own.
+      for (const property of properties) expect(["transform", "opacity", "transform-origin"], `${name}: ${property}`).toContain(property);
+    }
+  });
+
+  it("slides one underline and one pill with a transform, and paints the reading progress with a transform", () => {
+    expect(declaration(rule(".nav-ink"), "transform")).toBe("translateX(var(--ink-x, 0)) scaleX(var(--ink-w, 0))");
+    expect(declaration(rule(".nav-ink.ready"), "transition")).toMatch(/^transform var\(--dur-ui\) var\(--ease-out\)/);
+    expect(declaration(rule(".period-pill"), "transform")).toBe("translateX(var(--pill-x, 0)) scaleX(var(--pill-w, 0))");
+    expect(declaration(rule(".period-pill.ready"), "transition")).toBe("transform var(--dur-ui) var(--ease-out)");
+    expect(declaration(rule(".nav-progress"), "transform")).toBe("scaleX(var(--progress, 0))");
+    expect(declaration(rule(".topbar"), "position")).toBe("sticky");
+  });
+});
+
 describe("reduced motion and revealed state", () => {
   it("turns every animation and transition off and shows hidden parts in their final state", () => {
     const reduced = block("@media (prefers-reduced-motion: reduce)");
@@ -90,7 +112,10 @@ describe("focus and targets", () => {
   it("makes every control at least 44 px tall", () => {
     expect(px(declaration(rule(".button"), "min-height"))).toBeGreaterThanOrEqual(44);
     expect(px(declaration(rule('select,\ninput[type="search"],\ninput[type="number"]'), "min-height"))).toBeGreaterThanOrEqual(44);
-    expect(px(declaration(rule(".tab"), "min-height"))).toBeGreaterThanOrEqual(44);
+    // The section links of the bar, also on the strip of narrow screens, and the period options.
+    expect(px(declaration(rule(".nav-link"), "min-height"))).toBeGreaterThanOrEqual(44);
+    expect(px(declaration(rule(".nav-link", block("@media (max-width: 1100px)")), "min-height"))).toBeGreaterThanOrEqual(44);
+    expect(px(declaration(rule(".period-opt span"), "min-height"))).toBeGreaterThanOrEqual(44);
     expect(px(declaration(rule(".row-button"), "min-height"))).toBeGreaterThanOrEqual(44);
     expect(px(declaration(rule(".chart-data summary"), "min-height"))).toBeGreaterThanOrEqual(44);
     const zoom = rule(".map-canvas.leaflet-container .leaflet-bar a,\n.map-canvas.leaflet-touch .leaflet-bar a");

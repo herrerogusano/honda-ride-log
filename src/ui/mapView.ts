@@ -1,5 +1,5 @@
 /**
- * The Mapa tab: one map and the route chosen in the Rutas tab. A route's
+ * The map of section «Rutas»: one map and the route chosen in the list. A route's
  * trace is requested when the route is opened, never earlier, and only its
  * trimmed lines are kept in memory, so the same route is not asked twice.
  */
@@ -18,7 +18,7 @@ export interface MapView {
   readonly element: HTMLElement;
   /** Shows one route. Its trace is requested now, never before. */
   open(route: Route): void;
-  /** Tells the view its tab has just become visible. */
+  /** Tells the view its container may have changed size or just became visible: lines are framed again. */
   shown(): void;
   /** Releases the map. The view must not be used afterwards. */
   destroy(): void;
@@ -59,8 +59,9 @@ export function createMapView(
   let opening = 0;
   let destroyed = false;
 
-  const heading = el("h2", {}, "Mapa");
-  const facts = el("p", { class: "lead" }, "Elige una ruta en la pestaña Rutas para verla aquí.");
+  // Focusable by script only: choosing a route in the list moves the keyboard focus here.
+  const heading = el("h3", { class: "map-title", attrs: { tabindex: -1 } }, "Mapa");
+  const facts = el("p", { class: "lead" }, "Elige una ruta en la lista de abajo para verla aquí.");
   // A live region that exists from the start, so that what is written in it later is announced.
   const status = el("div", { class: "map-status", attrs: { role: "status" } });
   const canvas = el("div", { class: "map-canvas", attrs: { role: "region", "aria-label": "Mapa de la ruta elegida" } });
@@ -162,7 +163,7 @@ export function createMapView(
       say("Cargando el recorrido…");
     }
     // One handler for everything that can go wrong, the drawing included:
-    // the tab never stays blank without a message.
+    // the map never stays blank without a message.
     traceOf(route)
       .then((trace) => {
         if (mine === opening) draw(route, trace);

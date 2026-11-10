@@ -40,17 +40,22 @@ function mount(hash = ""): App {
 
 const page = (): string => new XMLSerializer().serializeToString(document);
 const text = (): string => document.body.textContent ?? "";
-const tab = (name: string): HTMLButtonElement => {
-  const found = [...root.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find((one) => one.textContent === name);
-  if (found === undefined) throw new Error(`no tab ${name}`);
+/** A link of the top bar, by its label. */
+const link = (name: string): HTMLButtonElement => {
+  const found = [...root.querySelectorAll<HTMLButtonElement>(".page-nav button")].find((one) => one.textContent === name);
+  if (found === undefined) throw new Error(`no link ${name}`);
   return found;
 };
-const panelOf = (name: string): HTMLElement => {
-  const panel = document.getElementById(tab(name).getAttribute("aria-controls") ?? "");
-  if (panel === null) throw new Error(`no panel for ${name}`);
-  return panel;
+/** Where each former tab now lives on the single page: the figures, the map and the list. */
+const panelOf = (name: "Resumen" | "Mapa" | "Rutas"): HTMLElement => {
+  const selector = { Resumen: ".content", Mapa: ".archive-map", Rutas: ".archive-list" }[name];
+  const found = root.querySelector<HTMLElement>(selector);
+  if (found === null) throw new Error(`no part ${name}`);
+  return found;
 };
-const loaded = (): Promise<void> => vi.waitFor(() => expect(root.querySelector('[role="tablist"]')).not.toBeNull());
+/** The rider's page is on screen once the bar has its section links. */
+const loaded = (): Promise<void> => vi.waitFor(() => expect(root.querySelector('nav[aria-label="Secciones"]')).not.toBeNull());
+const pageNav = (): Element | null => root.querySelector('nav[aria-label="Secciones"]');
 const button = (label: string, within: ParentNode = document): HTMLButtonElement => {
   const found = [...within.querySelectorAll("button")].find((one) => (one.textContent ?? "").includes(label));
   if (found === undefined) throw new Error(`no button ${label}`);
@@ -100,7 +105,7 @@ describe("landing and demo mode", () => {
   it("opens on a landing page that offers the demo and asks the service for nothing", () => {
     mount();
     expect(text()).toContain("Ver la demo");
-    expect(root.querySelector('[role="tablist"]')).toBeNull();
+    expect(pageNav()).toBeNull();
     expect(root.querySelector(".demo-banner")?.hasAttribute("hidden")).toBe(true);
   });
 
@@ -128,7 +133,7 @@ describe("landing and demo mode", () => {
     mount("#demo");
     await loaded();
     button("Salir de la demo").click();
-    expect(root.querySelector('[role="tablist"]')).toBeNull();
+    expect(pageNav()).toBeNull();
     expect(location.hash).toBe("");
     expect(text()).toContain("Ver la demo");
   });
@@ -140,7 +145,7 @@ describe("landing and demo mode", () => {
     await Promise.all([first, second]);
     await loaded();
     expect(text()).toContain("Todavía no hay rutas");
-    expect(root.querySelectorAll('[role="tablist"]').length).toBe(1);
+    expect(root.querySelectorAll('nav[aria-label="Secciones"]').length).toBe(1);
   });
 });
 
@@ -148,7 +153,6 @@ describe("privacy of the rendered page", () => {
   it("never renders identifiers, the plate, the VIN, the dealer or the position", async () => {
     mount("#demo");
     await loaded();
-    tab("Rutas").click();
     button("Mostrar más rutas").click();
     panelOf("Rutas").querySelector<HTMLButtonElement>(".row-button")?.click();
     for (const details of root.querySelectorAll("details")) details.open = true;
@@ -184,11 +188,11 @@ describe("load states", () => {
     const done = app.load(slow, { demo: false });
     expect(root.querySelector('[role="status"]')?.textContent).toContain("Leyendo el estado de la moto");
     await vi.waitFor(() => expect(root.querySelector('[role="status"]')?.textContent).toContain("Cargando rutas"));
-    expect(text()).toContain(`Batería ${rider.status.battery} %`);
-    expect(root.querySelector('[role="tablist"]')).toBeNull();
+    expect(text()).toContain(`Batería ${rider.status.battery}\u00A0%`);
+    expect(pageNav()).toBeNull();
     release();
     await done;
-    expect(root.querySelector('[role="tablist"]')).not.toBeNull();
+    expect(pageNav()).not.toBeNull();
     expect(root.querySelector(".demo-banner")?.hasAttribute("hidden")).toBe(true);
   });
 
@@ -216,7 +220,7 @@ describe("load states", () => {
     expect(alert.textContent).toContain("No se han podido cargar las rutas.");
     expect(alert.querySelector("code")?.textContent).toBe("routes/tool_error (upstream_unavailable)");
     expect(text()).toContain("Batería");
-    expect(root.querySelector('[role="tablist"]')).toBeNull();
+    expect(pageNav()).toBeNull();
     button("Reintentar", alert).click();
     expect(root.querySelector('[role="alert"]')).toBeNull();
     await vi.waitFor(() => expect(root.querySelector('[role="alert"]')).not.toBeNull());
@@ -231,7 +235,7 @@ describe("load states", () => {
       },
     };
     await mount().load(partial, { demo: false });
-    expect(root.querySelector('[role="tablist"]')).not.toBeNull();
+    expect(pageNav()).not.toBeNull();
     expect(text()).toContain("No se han podido leer los datos del vehículo.");
     expect(text()).toContain("details/tool_error (upstream_unavailable)");
     expect(text()).not.toContain("Demo 125");
@@ -249,43 +253,61 @@ describe("load states", () => {
   });
 });
 
-describe("tabs", () => {
-  it("follows the ARIA tabs pattern", async () => {
+describe("one page with numbered sections", () => {
+  it("shows every section at once, no tabs, with one link per section in the bar", async () => {
     mount("#demo");
     await loaded();
-    const tabs = [...root.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
-    expect(tabs.map((one) => one.textContent)).toEqual(["Resumen", "Mapa", "Rutas"]);
-    expect(tabs.map((one) => one.getAttribute("aria-selected"))).toEqual(["true", "false", "false"]);
-    expect(tabs.map((one) => one.tabIndex)).toEqual([0, -1, -1]);
-    for (const one of tabs) {
-      const panel = document.getElementById(one.getAttribute("aria-controls") ?? "");
-      expect(panel?.getAttribute("role")).toBe("tabpanel");
-      expect(panel?.getAttribute("aria-labelledby")).toBe(one.id);
-    }
-    expect([panelOf("Resumen").hidden, panelOf("Mapa").hidden, panelOf("Rutas").hidden]).toEqual([false, true, true]);
+    expect(root.querySelector('[role="tab"], [role="tablist"], [role="tabpanel"]')).toBeNull();
+    const sections = [...root.querySelectorAll<HTMLElement>("section.page-sec")];
+    expect(sections.map((one) => one.querySelector(".sec-tag")?.textContent)).toEqual(["01 Resumen", "02 Ritmo", "03 Hábitos", "04 Rutas", "05 Taller"]);
+    expect(sections.every((one) => !one.hidden && one.closest("[hidden]") === null)).toBe(true);
+    // The links are buttons, in the bar, one per section and in the same order.
+    const links = [...root.querySelectorAll<HTMLButtonElement>(".page-nav button")];
+    expect(links.map((one) => one.textContent)).toEqual(["Resumen", "Ritmo", "Hábitos", "Rutas", "Taller"]);
+    expect(links.map((one) => one.dataset["section"])).toEqual(sections.map((one) => one.dataset["section"]));
+    expect(links.every((one) => one.type === "button" && one.closest("header.topbar") !== null)).toBe(true);
+    // No link marks a section as current at the top of the page (the hero).
+    expect(root.querySelector(".page-nav [aria-current]")).toBeNull();
+    // The map and the list are in the same section, the map first.
+    const archive = root.querySelector('section[data-section="rutas"]') as HTMLElement;
+    expect(archive.contains(panelOf("Mapa")) && archive.contains(panelOf("Rutas"))).toBe(true);
+    expect(panelOf("Mapa").compareDocumentPosition(panelOf("Rutas")) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
   });
 
-  it("moves with the arrow keys, Home and End, and wraps around", async () => {
+  it("scrolls to the section below the bar and moves the focus to its title, without touching the address", async () => {
     mount("#demo");
     await loaded();
-    const press = (name: string, key: string): void => {
-      tab(name).dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
-    };
-    const selected = (): string | null => root.querySelector('[role="tab"][aria-selected="true"]')?.textContent ?? null;
-    press("Resumen", "ArrowRight");
-    expect(selected()).toBe("Mapa");
-    expect(document.activeElement).toBe(tab("Mapa"));
-    expect([panelOf("Resumen").hidden, panelOf("Mapa").hidden]).toEqual([true, false]);
-    press("Mapa", "End");
-    expect(selected()).toBe("Rutas");
-    press("Rutas", "ArrowRight");
-    expect(selected()).toBe("Resumen");
-    press("Resumen", "ArrowLeft");
-    expect(selected()).toBe("Rutas");
-    press("Rutas", "Home");
-    expect(selected()).toBe("Resumen");
-    press("Resumen", "a");
-    expect(selected()).toBe("Resumen");
+    const scrolled: ScrollToOptions[] = [];
+    const scrollTo = vi.fn((options: ScrollToOptions) => void scrolled.push(options));
+    vi.stubGlobal("scrollTo", scrollTo);
+    const hashChanges = vi.fn();
+    window.addEventListener("hashchange", hashChanges);
+    const replaced = vi.spyOn(history, "replaceState");
+    const pushed = vi.spyOn(history, "pushState");
+    // jsdom lays nothing out: give the bar and the section header a place.
+    const bar = root.querySelector("header.topbar") as HTMLElement;
+    vi.spyOn(bar, "getBoundingClientRect").mockReturnValue({ height: 100 } as DOMRect);
+    const target = root.querySelector<HTMLElement>('section[data-section="habitos"]') as HTMLElement;
+    vi.spyOn(target.querySelector(".sec-head") as HTMLElement, "getBoundingClientRect").mockReturnValue({ top: 2500, bottom: 3500 } as DOMRect);
+    Object.defineProperty(document.documentElement, "scrollHeight", { configurable: true, value: 9000 });
+    try {
+      link("Hábitos").click();
+      expect(scrolled).toEqual([{ top: 2500 - 100 - 16, behavior: "smooth" }]);
+      expect(document.activeElement).toBe(target.querySelector("h2"));
+      expect((document.activeElement as HTMLElement).tabIndex).toBe(-1);
+      expect(link("Hábitos").getAttribute("aria-current")).toBe("true");
+      expect(root.querySelectorAll(".page-nav [aria-current]")).toHaveLength(1);
+      expect(location.hash).toBe("#demo");
+      expect(hashChanges).not.toHaveBeenCalled();
+      expect(replaced).not.toHaveBeenCalled();
+      expect(pushed).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener("hashchange", hashChanges);
+      replaced.mockRestore();
+      pushed.mockRestore();
+      Reflect.deleteProperty(document.documentElement, "scrollHeight");
+      vi.unstubAllGlobals();
+    }
   });
 });
 
@@ -298,22 +320,25 @@ describe("Resumen", () => {
     expect(thisYear.length).toBeGreaterThan(100);
     expect(thisYear.length).toBeLessThan(visible.length);
     expect(tileValue("Salidas")).toBe(formatNumber(thisYear.length));
-    expect(tileValue("Kilómetros")).toBe(`${formatNumber(km(thisYear))} km`);
+    expect(tileValue("Kilómetros")).toBe(`${formatNumber(km(thisYear))}\u00A0km`);
 
-    const period = root.querySelector<HTMLSelectElement>(".period select") as HTMLSelectElement;
-    expect([...period.options].map((option) => option.textContent)).toEqual(["2026", "2025", "2024", "Todo"]);
-    choose(period, "all");
+    // The period selector is in the top bar, and there is only one.
+    expect(root.querySelectorAll(".period-control")).toHaveLength(1);
+    const period = root.querySelector("header.topbar .period-control") as HTMLElement;
+    expect([...period.querySelectorAll("label")].map((option) => option.textContent)).toEqual(["2026", "2025", "2024", "Todo"]);
+    const pick = (value: string): void => period.querySelector<HTMLInputElement>(`input[value="${value}"]`)?.click();
+    pick("all");
     expect(tileValue("Salidas")).toBe(formatNumber(visible.length));
-    expect(tileValue("Kilómetros")).toBe(`${formatNumber(km(visible))} km`);
-    choose(period, "2025");
+    expect(tileValue("Kilómetros")).toBe(`${formatNumber(km(visible))}\u00A0km`);
+    pick("2025");
     expect(tileValue("Salidas")).toBe(formatNumber(visible.filter((route) => localYear(route.started_at) === 2025).length));
   });
 
   it("shows battery, last use and odometer, and nothing about where the bike is", async () => {
     mount("#demo");
     await loaded();
-    expect(tileValue("Batería")).toBe(`${rider.status.battery} %`);
-    expect(tileValue("Odómetro")).toBe(`${formatNumber(rider.status.odometer as number)} km`);
+    expect(tileValue("Batería")).toBe(`${rider.status.battery}\u00A0%`);
+    expect(tileValue("Odómetro")).toBe(`${formatNumber(rider.status.odometer as number)}\u00A0km`);
     expect(tileValue("Último uso")).toBe(formatDate(lastEnd));
     expect(text()).not.toMatch(/posici[oó]n actual:/i);
   });
@@ -338,7 +363,7 @@ describe("Resumen", () => {
     for (const label of ["Más días seguidos saliendo", "Más días seguidos parada, entre dos salidas", "Racha en curso saliendo", "Días parada ahora"]) {
       expect(labels).toContain(label);
     }
-    expect(tileValue("Más días seguidos saliendo")).toMatch(/^\d+ días?$/);
+    expect(tileValue("Más días seguidos saliendo")).toMatch(/^\d+\xA0días?$/);
   });
 
   it("gives every chart a title and a table with the same figures", async () => {
@@ -362,7 +387,7 @@ describe("Resumen", () => {
   it("offers the share card with figures only", async () => {
     mount("#demo");
     await loaded();
-    const card = [...panelOf("Resumen").querySelectorAll("section")].find((one) => one.textContent?.includes("Tarjeta para compartir"));
+    const card = [...panelOf("Resumen").querySelectorAll("section")].find((one) => one.querySelector("h3")?.textContent === "Tarjeta para compartir");
     expect(card?.textContent).toContain("Tu 2026 en moto (datos de ejemplo)");
     expect(card?.textContent).toContain("Kilómetros:");
     expect(card?.textContent).toContain("Mes con más km:");
@@ -390,7 +415,7 @@ describe("maintenance", () => {
     // The form must never be sent anywhere: the page cancels the submission.
     expect(submit(form)).toBe(false);
     const remaining = Math.floor(odometer) - 1000 + 6000 - odometer;
-    expect(result.textContent).toContain(`Te faltan ${formatNumber(remaining)} km para la revisión`);
+    expect(result.textContent).toContain(`Te faltan ${formatNumber(remaining)}\u00A0km para la revisión`);
     expect(result.textContent).toContain("Guardado en este navegador.");
     expect(stored.size).toBe(1);
     expect([...stored.keys()][0]).toBe("ride-log.demo.maintenance.v1");
@@ -414,7 +439,7 @@ describe("maintenance", () => {
     interval.value = "1000";
     last.value = String(Math.floor(odometer) - 1500);
     submit(form);
-    expect(result.textContent).toContain(`Te has pasado ${formatNumber(odometer - (Math.floor(odometer) - 500))} km de la revisión`);
+    expect(result.textContent).toContain(`Te has pasado ${formatNumber(odometer - (Math.floor(odometer) - 500))}\u00A0km de la revisión`);
   });
 
   it("rejects numbers that make no sense and stores nothing", async () => {
@@ -459,7 +484,6 @@ describe("Rutas", () => {
   const open = async (): Promise<void> => {
     mount("#demo");
     await loaded();
-    tab("Rutas").click();
   };
 
   it("lists the newest routes first, a page at a time, and never the short ones", async () => {
@@ -512,12 +536,30 @@ describe("Rutas", () => {
     }
   });
 
-  it("opens the route in the Mapa tab when its date is pressed", async () => {
+  it("opens the route in the map of the same section when its date is pressed, and brings the map into view", async () => {
     await open();
-    rows()[0]?.querySelector("button")?.click();
-    expect(tab("Mapa").getAttribute("aria-selected")).toBe("true");
-    expect(panelOf("Mapa").hidden).toBe(false);
-    expect(panelOf("Mapa").textContent).toContain(formatDateLong(newestStart));
+    const scrolled: ScrollToOptions[] = [];
+    vi.stubGlobal("scrollTo", (options: ScrollToOptions) => void scrolled.push(options));
+    const hashBefore = location.hash;
+    const map = panelOf("Mapa");
+    // The map is out of view (below the screen here): it is brought up below the bar.
+    vi.spyOn(map.firstElementChild as HTMLElement, "getBoundingClientRect").mockReturnValue({ top: 1500, bottom: 2300 } as DOMRect);
+    vi.spyOn(root.querySelector("header.topbar") as HTMLElement, "getBoundingClientRect").mockReturnValue({ height: 64 } as DOMRect);
+    try {
+      rows()[0]?.querySelector("button")?.click();
+      expect(map.hidden).toBe(false);
+      expect(map.textContent).toContain(formatDateLong(newestStart));
+      expect(document.activeElement).toBe(map.querySelector("h3"));
+      expect(scrolled).toEqual([{ top: 1500 - 64 - 16, behavior: "smooth" }]);
+      // Still the same page: no section link changed, no address changed.
+      expect(location.hash).toBe(hashBefore);
+      // A map already in view is not scrolled to.
+      vi.spyOn(map.firstElementChild as HTMLElement, "getBoundingClientRect").mockReturnValue({ top: 120, bottom: 700 } as DOMRect);
+      rows()[1]?.querySelector("button")?.click();
+      expect(scrolled).toHaveLength(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("exports what the list shows as a CSV file without identifiers", async () => {

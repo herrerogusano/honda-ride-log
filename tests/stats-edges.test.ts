@@ -42,9 +42,9 @@ describe("statistics, edge cases", () => {
 
 describe("formatting, edge cases", () => {
   it("rounds shares to the nearest whole percentage", () => {
-    expect(formatPercent(0.376)).toBe("38 %");
-    expect(formatPercent(0.004)).toBe("0 %");
-    expect(formatPercent(0.996)).toBe("100 %");
+    expect(formatPercent(0.376)).toBe("38\u00A0%");
+    expect(formatPercent(0.004)).toBe("0\u00A0%");
+    expect(formatPercent(0.996)).toBe("100\u00A0%");
   });
 
   it("writes no negative zero with any number of decimals", () => {
@@ -53,8 +53,8 @@ describe("formatting, edge cases", () => {
   });
 
   it("writes very long durations in hours", () => {
-    expect(formatDuration(100 * 3600)).toBe("100 h 00 min");
-    expect(formatDuration(36 * 3600 + 5 * 60)).toBe("36 h 05 min");
+    expect(formatDuration(100 * 3600)).toBe("100\u00A0h 00\u00A0min");
+    expect(formatDuration(36 * 3600 + 5 * 60)).toBe("36\u00A0h 05\u00A0min");
   });
 
   it("folds every accent and the tilde of the ñ", () => {

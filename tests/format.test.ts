@@ -1,3 +1,4 @@
+import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   fold,
@@ -9,12 +10,16 @@ import {
   formatMonth,
   formatNumber,
   formatPercent,
+  formatSpeed,
   formatTime,
+  formatWholeKm,
   matchesSearch,
   MONTHS_LONG,
   MONTHS_SHORT,
+  NBSP,
   WEEKDAYS_LONG,
   WEEKDAYS_SHORT,
+  withUnit,
 } from "../src/domain/format";
 import { ride } from "./helpers";
 
@@ -52,12 +57,12 @@ describe("dates and times", () => {
 
   it("writes durations in hours and minutes", () => {
     expect(formatDuration(null)).toBe("—");
-    expect(formatDuration(20)).toBe("menos de 1 min");
-    expect(formatDuration(1500)).toBe("25 min");
-    expect(formatDuration(3540)).toBe("59 min");
-    expect(formatDuration(3599)).toBe("1 h 00 min");
-    expect(formatDuration(3900)).toBe("1 h 05 min");
-    expect(formatDuration(9000)).toBe("2 h 30 min");
+    expect(formatDuration(20)).toBe("menos de 1\u00A0min");
+    expect(formatDuration(1500)).toBe("25\u00A0min");
+    expect(formatDuration(3540)).toBe("59\u00A0min");
+    expect(formatDuration(3599)).toBe("1\u00A0h 00\u00A0min");
+    expect(formatDuration(3900)).toBe("1\u00A0h 05\u00A0min");
+    expect(formatDuration(9000)).toBe("2\u00A0h 30\u00A0min");
   });
 });
 
@@ -78,11 +83,39 @@ describe("numbers", () => {
   });
 
   it("writes km with one decimal and shares as whole percentages", () => {
-    expect(formatKm(8.26)).toBe("8,3 km");
-    expect(formatKm(120)).toBe("120,0 km");
-    expect(formatPercent(0.374)).toBe("37 %");
-    expect(formatPercent(1)).toBe("100 %");
-    expect(formatPercent(0)).toBe("0 %");
+    expect(formatKm(8.26)).toBe("8,3\u00A0km");
+    expect(formatKm(120)).toBe("120,0\u00A0km");
+    expect(formatPercent(0.374)).toBe("37\u00A0%");
+    expect(formatPercent(1)).toBe("100\u00A0%");
+    expect(formatPercent(0)).toBe("0\u00A0%");
+  });
+});
+
+describe("number and unit on one line", () => {
+  const NO_BREAK = String.fromCharCode(0xa0);
+
+  it("joins every number to its unit with a no-break space, and only there", () => {
+    expect(NBSP).toBe(NO_BREAK);
+    expect(withUnit("−236", "km")).toBe(`−236${NO_BREAK}km`);
+    expect(formatWholeKm(6125.4)).toBe(`6.125${NO_BREAK}km`);
+    expect(formatSpeed(58)).toBe(`58${NO_BREAK}km/h`);
+    expect(formatKm(8.26)).toBe(`8,3${NO_BREAK}km`);
+    expect(formatPercent(0.37)).toBe(`37${NO_BREAK}%`);
+    expect(formatDuration(3900)).toBe(`1${NO_BREAK}h 05${NO_BREAK}min`);
+    // A line may still break between two figures, never inside one.
+    expect(formatDuration(3900).split(" ")).toEqual([`1${NO_BREAK}h`, `05${NO_BREAK}min`]);
+    expect(formatSpeed(null)).toBe("—");
+  });
+
+  it("is written in the source as an escape, never as the invisible character itself", () => {
+    // docs/PLAN.md, section 8: an agent's tool once slipped an invisible character into the source.
+    const roots = ["src", "tests"].map((folder) => new URL(`../${folder}/`, import.meta.url));
+    const files = roots.flatMap((root) =>
+      (readdirSync(root, { recursive: true }) as string[]).filter((name) => /\.(ts|css)$/.test(name)).map((name) => new URL(name.replaceAll("\\", "/"), root)),
+    );
+    expect(files.length).toBeGreaterThan(40);
+    const withRaw = files.filter((file) => readFileSync(file, "utf8").includes(NO_BREAK)).map((file) => file.pathname);
+    expect(withRaw).toEqual([]);
   });
 });
 

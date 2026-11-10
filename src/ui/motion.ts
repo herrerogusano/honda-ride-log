@@ -29,8 +29,36 @@ export function prefersReducedMotion(): boolean {
   return typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
-function canAnimate(): boolean {
+export function canAnimate(): boolean {
   return typeof IntersectionObserver === "function" && typeof requestAnimationFrame === "function" && !prefersReducedMotion();
+}
+
+/** How the page scrolls when a button moves it: smoothly, or at once with reduced motion. */
+export function scrollBehavior(): ScrollBehavior {
+  return prefersReducedMotion() ? "instant" : "smooth";
+}
+
+/**
+ * Keeps track of which of `targets` are on screen now, so a change can
+ * animate only what can be seen. Without IntersectionObserver or with
+ * reduced motion nothing counts as on screen (nothing will animate) and no
+ * observer is made. The observer goes when `signal` aborts.
+ */
+export function watchOnScreen(targets: readonly Element[], options: MotionOptions = {}): (target: Element) => boolean {
+  if (!canAnimate() || targets.length === 0) return () => false;
+  const onScreen = new Set<Element>();
+  const observer = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (entry.isIntersecting) onScreen.add(entry.target);
+      else onScreen.delete(entry.target);
+    }
+  });
+  for (const target of targets) observer.observe(target);
+  onAbort(options.signal, () => {
+    observer.disconnect();
+    onScreen.clear();
+  });
+  return (target) => onScreen.has(target);
 }
 
 function onAbort(signal: AbortSignal | undefined, cancel: () => void): void {

@@ -2,9 +2,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { formatNumber } from "../src/domain/format";
 import { barChart } from "../src/ui/charts";
-import { countUp, durationToken, MAX_STAGGER, prefersReducedMotion, reveal } from "../src/ui/motion";
+import { countUp, durationToken, MAX_STAGGER, prefersReducedMotion, reveal, scrollBehavior, watchOnScreen } from "../src/ui/motion";
+import { periodControl } from "../src/ui/period";
 import { sectionHeader } from "../src/ui/sectionHeader";
-import { createTabs } from "../src/ui/tabs";
 
 /**
  * Motion helpers in jsdom, with a hand-driven IntersectionObserver and
@@ -266,24 +266,97 @@ describe("section header", () => {
   });
 });
 
-describe("tab underline", () => {
-  it("is one decorative element that follows the selected tab", () => {
-    const tabs = createTabs("Secciones", [
-      { id: "a", label: "A", panel: document.createElement("div") },
-      { id: "b", label: "B", panel: document.createElement("div") },
-    ]);
-    document.body.append(tabs.element);
-    const [first, second] = [...tabs.element.querySelectorAll<HTMLElement>('[role="tab"]')] as [HTMLElement, HTMLElement];
-    Object.defineProperties(first, { offsetLeft: { value: 0 }, offsetWidth: { value: 80 } });
-    Object.defineProperties(second, { offsetLeft: { value: 104 }, offsetWidth: { value: 64 } });
-    const inks = tabs.element.querySelectorAll<HTMLElement>(".tab-ink");
-    expect(inks).toHaveLength(1);
-    const ink = inks[0] as HTMLElement;
-    expect(ink.getAttribute("aria-hidden")).toBe("true");
-    tabs.select("b");
-    expect([ink.style.getPropertyValue("--ink-x"), ink.style.getPropertyValue("--ink-w")]).toEqual(["104px", "64"]);
-    tabs.select("a");
-    expect([ink.style.getPropertyValue("--ink-x"), ink.style.getPropertyValue("--ink-w")]).toEqual(["0px", "80"]);
+describe("section header replay", () => {
+  it("plays the entrance again on demand, with the red rule only when asked, and not at all with reduced motion", () => {
+    installMotion();
+    const header = sectionHeader("02", "Ritmo", ["El pulso", "de los meses"], "h-2");
+    document.body.append(header.element);
+    const rule = header.element.querySelector(".sec-rule");
+    expect(rule?.getAttribute("aria-hidden")).toBe("true");
+    expect(header.heading.tabIndex).toBe(-1);
+    header.replay();
+    expect([...header.element.classList]).toEqual(["sec-head", "rv", "in", "replay"]);
+    header.replay({ sweep: true });
+    expect([...header.element.classList]).toEqual(["sec-head", "rv", "in", "replay", "sweep"]);
+    // A replay without the rule takes the rule away.
+    header.replay();
+    expect(header.element.classList.contains("sweep")).toBe(false);
+
+    installMotion(true);
+    const still = sectionHeader("03", "Hábitos", ["Cada salida", "cuenta"], "h-3");
+    still.replay({ sweep: true });
+    expect([...still.element.classList]).toEqual(["sec-head", "rv"]);
+  });
+});
+
+describe("watchOnScreen", () => {
+  it("says what is on screen now, from an observer that goes with the signal", () => {
+    installMotion();
+    const a = document.createElement("div");
+    const b = document.createElement("div");
+    const controller = new AbortController();
+    const seen = watchOnScreen([a, b], { signal: controller.signal });
+    const observer = FakeObserver.all[0] as FakeObserver;
+    expect([seen(a), seen(b)]).toEqual([false, false]);
+    observer.show(a);
+    expect([seen(a), seen(b)]).toEqual([true, false]);
+    observer.callback([{ target: a, isIntersecting: false }] as unknown as IntersectionObserverEntry[], observer as unknown as IntersectionObserver);
+    expect(seen(a)).toBe(false);
+    observer.show(b);
+    controller.abort();
+    expect(observer.disconnected).toBe(true);
+    expect(seen(b)).toBe(false);
+  });
+
+  it("counts nothing as on screen and watches nothing with reduced motion or without an observer", () => {
+    installMotion(true);
+    const a = document.createElement("div");
+    expect(watchOnScreen([a])(a)).toBe(false);
+    expect(FakeObserver.all).toHaveLength(0);
+    expect(scrollBehavior()).toBe("instant");
+    installMotion(false);
+    expect(scrollBehavior()).toBe("smooth");
+  });
+});
+
+describe("period control", () => {
+  it("is a group of radio buttons whose red pill follows the chosen one", () => {
+    installMotion();
+    const chosen: (number | "all")[] = [];
+    const controller = new AbortController();
+    const observed: Element[] = [];
+    let disconnected = false;
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe(target: Element): void {
+          observed.push(target);
+        }
+        disconnect(): void {
+          disconnected = true;
+        }
+      },
+    );
+    const control = periodControl([2026, 2025], 2026, (period) => chosen.push(period), { signal: controller.signal });
+    document.body.append(control.element);
+    const labels = [...control.element.querySelectorAll<HTMLElement>("label")];
+    expect(labels.map((label) => label.textContent)).toEqual(["2026", "2025", "Todo"]);
+    labels.forEach((label, index) => Object.defineProperties(label, { offsetLeft: { value: 2 + index * 60 }, offsetWidth: { value: 56 } }));
+    const pills = control.element.querySelectorAll<HTMLElement>(".period-pill");
+    expect(pills).toHaveLength(1);
+    const pill = pills[0] as HTMLElement;
+    expect(pill.getAttribute("aria-hidden")).toBe("true");
+    control.place();
+    expect([pill.style.getPropertyValue("--pill-x"), pill.style.getPropertyValue("--pill-w")]).toEqual(["2px", "56"]);
+    labels[2]?.querySelector("input")?.click();
+    expect(chosen).toEqual(["all"]);
+    expect([pill.style.getPropertyValue("--pill-x"), pill.style.getPropertyValue("--pill-w")]).toEqual(["122px", "56"]);
+    labels[1]?.querySelector("input")?.click();
+    expect(chosen).toEqual(["all", 2025]);
+    // Its observer of sizes goes with the view.
+    expect(observed).toEqual([control.element.querySelector(".period-track")]);
+    controller.abort();
+    expect(disconnected).toBe(true);
   });
 });
 

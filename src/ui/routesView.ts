@@ -1,4 +1,4 @@
-/** The Rutas tab: a searchable, sortable list and the CSV export of what it shows. */
+/** The list of section «Rutas»: searchable, sortable, and the CSV export of what it shows. */
 import { routesToCsv } from "../domain/csv";
 import {
   formatDate,
@@ -28,7 +28,7 @@ const SORTS: readonly { readonly id: SortOrder; readonly label: string }[] = [
   { id: "max_speed_desc", label: "Vel. máxima, de mayor a menor" },
 ];
 
-/** The footnote under the list; the map tab repeats the same caveats in its legend. */
+/** The footnote under the list; the map repeats the same caveats in its legend. */
 export const ROUTES_NOTE =
   "Los km y las velocidades media y máxima son los que entrega el servicio; el propio servicio avisa de que sus unidades están sin confirmar. " +
   "«Tramos inferidos» es una etiqueta descriptiva del servicio, no una garantía de precisión del GPS. Un guion (—) es un dato que el servicio no ha enviado.";
@@ -171,6 +171,6 @@ export function renderRoutes(data: RiderData, onOpen: (route: Route) => void): H
       ),
     ),
     more,
-    el("p", { class: "notes" }, ROUTES_NOTE),
+    el("p", { class: "fine-print" }, ROUTES_NOTE),
   );
 }

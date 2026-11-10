@@ -11,7 +11,6 @@ import type { RiderData } from "../src/ui/data";
 import { downloadBlob } from "../src/ui/download";
 import type { MapView } from "../src/ui/mapView";
 import { PAGE_SIZE, renderRoutes } from "../src/ui/routesView";
-import { createTabs } from "../src/ui/tabs";
 import { rides } from "./helpers";
 
 /** Wiring of the page that an independent review found without a test. */
@@ -41,9 +40,7 @@ function mount(hash = ""): App {
 }
 
 const text = (): string => document.body.textContent ?? "";
-const tab = (name: string): HTMLButtonElement =>
-  [...root.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find((one) => one.textContent === name) as HTMLButtonElement;
-const loaded = (): Promise<void> => vi.waitFor(() => expect(root.querySelector('[role="tablist"]')).not.toBeNull());
+const loaded = (): Promise<void> => vi.waitFor(() => expect(root.querySelector('nav[aria-label="Secciones"]')).not.toBeNull());
 const button = (label: string): HTMLButtonElement =>
   [...document.querySelectorAll("button")].find((one) => (one.textContent ?? "").includes(label)) as HTMLButtonElement;
 const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
@@ -108,7 +105,7 @@ describe("a load that is replaced", () => {
       expect(text(), `left after ${answersBeforeLeaving} answers`).toContain("Ver la demo");
       expect(text()).not.toContain("Batería");
       expect(text()).not.toContain("Cargando rutas");
-      expect(root.querySelector('[role="tablist"]')).toBeNull();
+      expect(root.querySelector('nav[aria-label="Secciones"]')).toBeNull();
       expect(root.querySelector('[role="alert"]')).toBeNull();
       expect(old.calls.length, `left after ${answersBeforeLeaving} answers`).toBe(callsWhenLeft);
     }
@@ -140,7 +137,7 @@ describe("progress of a load", () => {
     await steps.release();
     expect(status()).toBe("Leyendo los datos del vehículo…");
     const line = root.querySelector(".vehicle-line") as HTMLElement;
-    expect(line.textContent).toBe(`Batería ${rider.status.battery} % · Odómetro ${new Intl.NumberFormat("es-ES", { maximumFractionDigits: 0 }).format(rider.status.odometer as number)} km`);
+    expect(line.textContent).toBe(`Batería ${rider.status.battery}\u00A0% · Odómetro ${new Intl.NumberFormat("es-ES", { maximumFractionDigits: 0 }).format(rider.status.odometer as number)}\u00A0km`);
     // The vehicle comes first on the page, the progress under it.
     expect(line.compareDocumentPosition(root.querySelector('[role="status"]') as Node) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
     await steps.release();
@@ -203,7 +200,7 @@ describe("demo controls", () => {
     history.replaceState(null, "", "/#demo");
     window.dispatchEvent(new HashChangeEvent("hashchange"));
     await tick();
-    expect(root.querySelector(".tabs")).toBeNull();
+    expect(root.querySelector("section.page-sec")).toBeNull();
     expect(root.querySelector(".loading")).toBeNull();
     expect(text()).toContain("Ver la demo");
   });
@@ -211,10 +208,10 @@ describe("demo controls", () => {
   it("does not start again when the address names the scenario already on screen", async () => {
     mount("#demo=heavy");
     await loaded();
-    const view = root.querySelector(".tabs");
+    const view = root.querySelector("section.page-sec");
     window.dispatchEvent(new HashChangeEvent("hashchange"));
     await tick();
-    expect(root.querySelector(".tabs")).toBe(view);
+    expect(root.querySelector("section.page-sec")).toBe(view);
     expect(root.querySelector(".loading")).toBeNull();
   });
 
@@ -223,7 +220,7 @@ describe("demo controls", () => {
     await loaded();
     history.replaceState(null, "", "/");
     window.dispatchEvent(new HashChangeEvent("hashchange"));
-    expect(root.querySelector(".tabs")).toBeNull();
+    expect(root.querySelector("section.page-sec")).toBeNull();
     expect(text()).toContain("Ver la demo");
     expect(root.querySelector(".demo-banner")?.hasAttribute("hidden")).toBe(true);
     // Nothing happens on the landing page while the address asks for nothing.
@@ -238,18 +235,18 @@ describe("demo controls", () => {
   it("never replaces the view of a real account with the demo because of the address", async () => {
     const app = mount();
     await app.load(createDemoService(rider), { demo: false });
-    const view = root.querySelector(".tabs");
+    const view = root.querySelector("section.page-sec");
     expect(view).not.toBeNull();
     history.replaceState(null, "", "/#demo=empty");
     window.dispatchEvent(new HashChangeEvent("hashchange"));
     await tick();
-    expect(root.querySelector(".tabs")).toBe(view);
+    expect(root.querySelector("section.page-sec")).toBe(view);
     // And the request for the demo does not stay in the address, where a reload would obey it.
     expect(location.hash).toBe("");
     expect(root.querySelector(".demo-banner")?.hasAttribute("hidden")).toBe(true);
     history.replaceState(null, "", "/");
     window.dispatchEvent(new HashChangeEvent("hashchange"));
-    expect(root.querySelector(".tabs")).toBe(view);
+    expect(root.querySelector("section.page-sec")).toBe(view);
     // Back on the landing page, the address works again.
     app.showLanding();
     history.replaceState(null, "", "/#demo=empty");
@@ -286,51 +283,49 @@ describe("demo controls", () => {
   });
 });
 
-describe("tabs and the map", () => {
-  it("tells the map when its tab is shown, and opens a route there with the focus on the tab", async () => {
+describe("the map in the page", () => {
+  it("opens a route chosen in the list in place, and releases the map with the view", async () => {
     mount("#demo");
     await loaded();
     expect(mapCalls).toEqual([]);
-    tab("Mapa").click();
-    expect(mapCalls).toEqual(["shown"]);
-    tab("Rutas").click();
-    expect(mapCalls).toEqual(["shown"]);
+    // Moving around the page asks nothing of the map: it is always on the page.
+    root.querySelector<HTMLButtonElement>('.page-nav button[data-section="rutas"]')?.click();
+    expect(mapCalls).toEqual([]);
     root.querySelector<HTMLButtonElement>(".row-button")?.click();
-    expect(mapCalls).toEqual(["shown", "shown", "open"]);
-    expect(document.activeElement).toBe(tab("Mapa"));
-    // Leaving the view releases its map; so does replacing it with another load.
+    expect(mapCalls).toEqual(["open"]);
+    // The list stays where it was: nothing in the page was replaced or hidden.
+    expect(root.querySelector(".archive-list")?.closest("[hidden]")).toBeNull();
+    // Leaving the view releases its map.
     button("Salir de la demo").click();
-    expect(mapCalls).toEqual(["shown", "shown", "open", "destroy"]);
+    expect(mapCalls).toEqual(["open", "destroy"]);
     // So does replacing the view with another load.
     mount("#demo");
     await loaded();
-    tab("Mapa").click();
     const select = root.querySelector<HTMLSelectElement>(".demo-banner select") as HTMLSelectElement;
     select.value = "empty";
     select.dispatchEvent(new Event("change", { bubbles: true }));
-    expect(mapCalls).toEqual(["shown", "destroy"]);
+    expect(mapCalls).toEqual(["destroy"]);
   });
 
-  it("calls back once per change, keeps panels reachable and names the tab list", () => {
-    const seen: string[] = [];
-    const panels = [document.createElement("div"), document.createElement("div")] as [HTMLElement, HTMLElement];
-    const tabs = createTabs("Secciones", [{ id: "a", label: "A", panel: panels[0] }, { id: "b", label: "B", panel: panels[1] }], (id) => seen.push(id));
-    document.body.append(tabs.element);
-    expect(seen).toEqual([]);
-    expect(tabs.element.querySelector('[role="tablist"]')?.getAttribute("aria-label")).toBe("Secciones");
-    expect(panels.map((panel) => panel.tabIndex)).toEqual([0, 0]);
-    tabs.select("b");
-    tabs.select("b");
-    tabs.select("missing");
-    expect(seen).toEqual(["b"]);
-    expect(tabs.selected()).toBe("b");
-    const arrow = new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, cancelable: true });
-    tabs.element.querySelectorAll('[role="tab"]')[1]?.dispatchEvent(arrow);
-    expect(arrow.defaultPrevented).toBe(true);
-    expect(seen).toEqual(["b", "a"]);
-    const other = new KeyboardEvent("keydown", { key: "x", bubbles: true, cancelable: true });
-    tabs.element.querySelector('[role="tab"]')?.dispatchEvent(other);
-    expect(other.defaultPrevented).toBe(false);
+  it("empties the bar of the links and the period when the view goes, and fills it again with the next one", async () => {
+    const app = mount("#demo");
+    await loaded();
+    const bar = root.querySelector("header.topbar") as HTMLElement;
+    expect(bar.querySelectorAll(".page-nav")).toHaveLength(1);
+    expect(bar.querySelectorAll(".period-control")).toHaveLength(1);
+    expect(bar.querySelectorAll(".nav-progress")).toHaveLength(1);
+    app.showLanding();
+    expect(bar.querySelector(".page-nav, .period-control, .nav-progress")).toBeNull();
+    await app.startDemo("heavy");
+    await loaded();
+    expect(bar.querySelectorAll(".page-nav")).toHaveLength(1);
+    expect(bar.querySelectorAll(".period-control")).toHaveLength(1);
+    expect(bar.querySelectorAll(".nav-progress")).toHaveLength(1);
+    // An account without rides has links but no period to choose.
+    await app.startDemo("empty");
+    await loaded();
+    expect(bar.querySelectorAll(".page-nav")).toHaveLength(1);
+    expect(bar.querySelector(".period-control")).toBeNull();
   });
 });
 
@@ -375,8 +370,8 @@ describe("Rutas, cell by cell", () => {
     show(list);
     expect(rows()).toEqual([
       ["mar 10 mar 2026", "10:00", "—", "—", "3,0", "12", "60", "No"],
-      ["lun 9 mar 2026", "07:05", "08:40", "1 h 35 min", "120,0", "—", "60", "No"],
-      ["sáb 7 mar 2026", "23:30", "23:55", "25 min", "8,3", "31", "60", "No"],
+      ["lun 9 mar 2026", "07:05", "08:40", "1\u00A0h 35\u00A0min", "120,0", "—", "60", "No"],
+      ["sáb 7 mar 2026", "23:30", "23:55", "25\u00A0min", "8,3", "31", "60", "No"],
     ]);
     expect(count()).toBe("3 rutas.");
     expect(more().hidden).toBe(true);
@@ -477,11 +472,11 @@ describe("share card drawing", () => {
     expect([demo.canvas.width, demo.canvas.height]).toEqual([CARD_SIZE, CARD_SIZE]);
     expect(demo.texts).toEqual([
       "TU 2026 EN MOTO",
-      "KILÓMETROS", "70 km",
+      "KILÓMETROS", "70\u00A0km",
       "SALIDAS", "1",
-      "HORAS EN MARCHA", "1 h",
-      "RUTA MÁS LARGA", "70,0 km",
-      "MES CON MÁS KM", "julio · 70 km",
+      "HORAS EN MARCHA", "1\u00A0h",
+      "RUTA MÁS LARGA", "70,0\u00A0km",
+      "MES CON MÁS KM", "julio · 70\u00A0km",
       "Ride Log · km según el servicio, unidades sin confirmar",
       "DATOS DE EJEMPLO",
     ]);

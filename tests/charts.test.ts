@@ -143,6 +143,39 @@ describe("barChart", () => {
   });
 });
 
+describe("barChart for phones", () => {
+  it("adds a second drawing, as wide as a phone, with short labels, and keeps one table", () => {
+    const chart = barChart({
+      title: "Km por mes",
+      categories: ["ene", "feb", "mar"],
+      categoryNames: ["enero", "febrero", "marzo"],
+      categoryHeader: "Mes",
+      series: [
+        { label: "2025", values: [10, 0, 1200], tone: "tone-prev" },
+        { label: "2026", values: [20, 5, 0], tone: "tone-now" },
+      ],
+      formatValue: (value) => `${value} km`,
+      narrow: { categories: ["E", "F", "M"], formatTick: String },
+    });
+    const [wide, narrow] = [...chart.querySelectorAll("svg")] as [SVGSVGElement, SVGSVGElement];
+    expect(chart.querySelectorAll("svg")).toHaveLength(2);
+    expect([wide.getAttribute("class"), narrow.getAttribute("class")]).toEqual(["chart-svg chart-wide", "chart-svg chart-narrow"]);
+    expect(chart.classList.contains("chart-dual")).toBe(true);
+    expect(narrow.getAttribute("viewBox")).toBe("0 0 400 300");
+    expect([...narrow.querySelectorAll('text[text-anchor="middle"]')].map((label) => label.textContent)).toEqual(["E", "F", "M"]);
+    // Axis labels without the unit; the bars still say it in their titles.
+    expect([...narrow.querySelectorAll(".chart-tick-y")].map((label) => label.textContent)).toEqual(["0", "500", "1000", "1500"]);
+    expect(narrow.querySelector("rect title")?.textContent).toBe("enero, 2025: 10 km");
+    // Both drawings are titled for whoever meets them; the figures are in one table only.
+    for (const drawing of [wide, narrow]) expect((drawing.getAttribute("aria-labelledby") ?? "").split(" ")).toHaveLength(2);
+    expect(wide.getAttribute("aria-labelledby")).not.toBe(narrow.getAttribute("aria-labelledby"));
+    expect(chart.querySelectorAll("table")).toHaveLength(1);
+    // Without the option there is one drawing, as before.
+    const single = barChart({ title: "x", categories: ["a"], categoryHeader: "x", series: [{ label: "x", values: [1] }], formatValue: String });
+    expect([single.querySelectorAll("svg").length, single.classList.contains("chart-dual"), single.querySelector("svg")?.getAttribute("class")]).toEqual([1, false, "chart-svg"]);
+  });
+});
+
 describe("dom helpers", () => {
   it("put text in as text, never as markup", () => {
     const node = el("p", {}, "<img src=x onerror=alert(1)>", el("b", {}, "ok"));

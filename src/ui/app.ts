@@ -1,10 +1,12 @@
 /**
  * The page: landing, demo mode, the load with its visible states (loading,
- * empty, error) and the three tabs. It talks to the service only through a
- * `ToolCaller`, so the demo and the real client share every line below.
+ * empty, error) and the rider's page, one scrolling page of numbered
+ * sections under a sticky top bar (docs/PLAN.md, section 12). It talks to
+ * the service only through a `ToolCaller`, so the demo and the real client
+ * share every line below.
  */
 import { createDemoCaller, DEMO_SCENARIOS, isDemoScenario, scenarioFromHash, type DemoScenario } from "../demo/scenarios";
-import { formatNumber } from "../domain/format";
+import { formatNumber, formatWholeKm, withUnit } from "../domain/format";
 import type { VehicleState } from "../domain/model";
 import type { ToolCaller } from "../service/contract";
 import { loadAllRoutes, loadVehicleInfo, loadVehicleState, LoadError, signInError } from "../service/loader";
@@ -13,9 +15,10 @@ import { buildRiderData, type RiderData } from "./data";
 import { clear, el, uniqueId } from "./dom";
 import { errorText } from "./errors";
 import { createMapView, type MapFactory, type MapView } from "./mapView";
+import { scrollBehavior } from "./motion";
+import { sectionNav } from "./nav";
 import { renderRoutes } from "./routesView";
-import { renderSummary } from "./summary";
-import { createTabs } from "./tabs";
+import { heroTitle, PROMISES, renderRiderPage } from "./summary";
 
 /**
  * The way in and out of a real account, given only when the build has a
@@ -61,6 +64,9 @@ function setHash(hash: string): void {
   history.replaceState(null, "", hash === "" ? location.pathname + location.search : hash);
 }
 
+/** Room left between the sticky bar and what a button brings into view. */
+const VIEW_GAP = 16;
+
 export function startApp(options: AppOptions): App {
   const { root, account } = options;
   const now = options.now ?? Date.now;
@@ -69,14 +75,12 @@ export function startApp(options: AppOptions): App {
   let generation = 0;
   /** The map of the view on screen; released when another view replaces it. */
   let activeMap: MapView | null = null;
-  /** Motion of the view on screen (counts, reveals); aborted when another view replaces it. */
+  /**
+   * Motion and listeners of the view on screen (counts, reveals, the section
+   * links, the scroll spy, the progress bar); aborted when another view
+   * replaces it.
+   */
   let viewMotion: AbortController | null = null;
-  const releaseMap = (): void => {
-    activeMap?.destroy();
-    activeMap = null;
-    viewMotion?.abort();
-    viewMotion = null;
-  };
 
   /** The demo scenario on screen, or null outside the demo. */
   let scenarioShown: DemoScenario | null = null;
@@ -101,7 +105,7 @@ export function startApp(options: AppOptions): App {
       "p",
       { class: "demo-text" },
       el("strong", { class: "demo-flag" }, "Modo demo: datos de ejemplo. "),
-      "Nada de lo que ves aquí viene de una moto ni de una cuenta real.",
+      el("span", { class: "demo-more" }, "Nada de lo que ves aquí viene de una moto ni de una cuenta real."),
     ),
     el(
       "div",
@@ -126,6 +130,9 @@ export function startApp(options: AppOptions): App {
     ),
   );
   banner.hidden = true;
+  // Always in the bar while the demo is on screen; the banner above scrolls away.
+  const demoBadge = el("span", { class: "demo-badge" }, "Demo");
+  demoBadge.hidden = true;
   // Focusable by script only, to move the focus to what a button just replaced.
   const content = el("div", { class: "content", attrs: { tabindex: -1 } });
 
@@ -164,80 +171,113 @@ export function startApp(options: AppOptions): App {
     "Salir",
   );
   signOutButton.hidden = true;
-  clear(root);
-  root.append(
+
+  // The bar holds the section links and the period of the rider's page; other views leave them empty.
+  const navSlot = el("div", { class: "bar-nav" });
+  const periodSlot = el("div", { class: "bar-period" });
+  const topbar = el(
+    "header",
+    { class: "topbar" },
     el(
-      "header",
-      { class: "topbar" },
+      "div",
+      { class: "topbar-in" },
       el(
         "div",
-        { class: "topbar-in" },
-        el("h1", { class: "brand" }, el("span", { class: "brand-mark", attrs: { "aria-hidden": "true" } }), el("b", {}, "Ride"), " Log"),
-        signOutButton,
+        { class: "bar-brand" },
+        el("h1", { class: "brand" }, el("span", { class: "brand-mark", attrs: { "aria-hidden": "true" } }), el("b", {}, "Ride"), el("span", { class: "brand-word" }, " Log")),
+        demoBadge,
       ),
+      navSlot,
+      el("div", { class: "bar-end" }, periodSlot, signOutButton),
     ),
-    banner,
-    content,
   );
+  clear(root);
+  root.append(topbar, banner, content);
+
+  const barHeight = (): number => topbar.getBoundingClientRect().height;
+
+  /** Stops what the view on screen runs: its map, its motion, its observers and listeners. */
+  function stopView(): void {
+    activeMap?.destroy();
+    activeMap = null;
+    viewMotion?.abort();
+    viewMotion = null;
+  }
+
+  /** Stops the view on screen and takes its parts out of the bar. */
+  function releaseView(): void {
+    stopView();
+    clear(navSlot);
+    clear(periodSlot);
+    topbar.querySelector(".nav-progress")?.remove();
+    topbar.classList.remove("has-nav");
+  }
+
+  function showDemoMarks(shown: boolean): void {
+    banner.hidden = !shown;
+    demoBadge.hidden = !shown;
+  }
 
   function showLanding(problem?: LoadError): void {
     generation += 1;
-    releaseMap();
+    releaseView();
     scenarioShown = null;
     accountShown = false;
-    banner.hidden = true;
+    showDemoMarks(false);
     signOutButton.hidden = true;
     setHash("");
     clear(content);
     if (problem !== undefined) content.append(errorPanel(problem, null));
+    const titleId = uniqueId("hero");
     content.append(
       el(
         "section",
-        { class: "landing" },
-        el("p", { class: "eyebrow" }, "Ride Log · estadísticas de tus rutas"),
-        el(
-          "h2",
-          { class: "hero-title" },
-          el("span", { class: "ln" }, el("span", { class: "ln-in" }, "Tus rutas,")),
-          " ",
-          el("span", { class: "ln" }, el("span", { class: "ln-in red" }, "en cifras.")),
-        ),
-        el(
-          "p",
-          { class: "lead" },
-          "Esta web enseña a cada persona invitada las estadísticas de sus propias rutas, a partir de su cuenta de MAPIT. Es un proyecto personal, sin relación con Honda ni con MAPIT.",
-        ),
-        el(
-          "ul",
-          { class: "promises" },
-          el("li", {}, "Los datos se leen y se calculan en tu navegador; esta web no tiene servidor propio ni analítica."),
-          el("li", {}, "Nunca se muestran la matrícula, el bastidor, el concesionario ni la posición actual de la moto."),
-          el("li", {}, "Los mapas ocultan los primeros y los últimos 400 m de cada ruta."),
-        ),
-        account === undefined
-          ? el("p", {}, "El acceso con tu cuenta todavía no está disponible. Mientras tanto puedes ver cómo funciona con datos de ejemplo.")
-          : el(
-              "p",
-              {},
-              "Entra con tu cuenta de MAPIT: el login es la página del servicio, no esta web, y esta web no ve tu contraseña. También puedes ver cómo funciona con datos de ejemplo.",
-            ),
+        { class: "hero landing", attrs: { "aria-labelledby": titleId } },
         el(
           "div",
-          { class: "landing-actions" },
-          account === undefined ? null : signInButton("Entrar", true),
+          { class: "hero-grid" },
           el(
-            "button",
-            {
-              class: account === undefined ? "button button-primary" : "button",
-              attrs: { type: "button" },
-              on: {
-                click: () => {
-                  void startDemo("commuter");
-                  content.focus();
+            "div",
+            { class: "hero-copy" },
+            el("p", { class: "eyebrow hero-eyebrow" }, "Ride Log · estadísticas de tus rutas"),
+            heroTitle(titleId, ["Tus rutas,", "en cifras."]),
+            el(
+              "p",
+              { class: "lead" },
+              "Esta web enseña a cada persona invitada las estadísticas de sus propias rutas, a partir de su cuenta de MAPIT. Es un proyecto personal, sin relación con Honda ni con MAPIT.",
+            ),
+            account === undefined
+              ? el("p", { class: "hero-note" }, "El acceso con tu cuenta todavía no está disponible. Mientras tanto puedes ver cómo funciona con datos de ejemplo.")
+              : el(
+                  "p",
+                  { class: "hero-note" },
+                  "Entra con tu cuenta de MAPIT: el login es la página del servicio, no esta web, y esta web no ve tu contraseña. También puedes ver cómo funciona con datos de ejemplo.",
+                ),
+            el(
+              "div",
+              { class: "landing-actions" },
+              account === undefined ? null : signInButton("Entrar", true),
+              el(
+                "button",
+                {
+                  class: account === undefined ? "button button-primary" : "button",
+                  attrs: { type: "button" },
+                  on: {
+                    click: () => {
+                      void startDemo("commuter");
+                      content.focus();
+                    },
+                  },
                 },
-              },
-            },
-            "Ver la demo",
+                "Ver la demo",
+              ),
+            ),
+          ),
+          el(
+            "aside",
+            { class: "plate promises-plate", attrs: { "aria-label": "Lo que esta web promete" } },
+            el("p", { class: "eyebrow plate-head" }, "Lo que esta web promete"),
+            el("ul", { class: "promises" }, ...PROMISES.map((promise) => el("li", {}, promise))),
           ),
         ),
       ),
@@ -275,52 +315,98 @@ export function startApp(options: AppOptions): App {
       { class: "error", attrs: { role: "alert" } },
       el("h2", {}, text.title),
       el("p", {}, text.explanation),
-      el("p", {}, "Código: ", el("code", {}, text.code)),
+      el("p", { class: "error-code" }, "Código: ", el("code", {}, text.code)),
       action,
     );
   }
 
   function vehicleLine(vehicle: VehicleState): HTMLElement {
     const parts = [
-      vehicle.batteryPercent === null ? null : `Batería ${formatNumber(vehicle.batteryPercent)} %`,
-      vehicle.odometer === null ? null : `Odómetro ${formatNumber(vehicle.odometer)} km`,
+      vehicle.batteryPercent === null ? null : `Batería ${withUnit(formatNumber(vehicle.batteryPercent), "%")}`,
+      vehicle.odometer === null ? null : `Odómetro ${formatWholeKm(vehicle.odometer)}`,
     ].filter((part): part is string => part !== null);
     return el("p", { class: "vehicle-line" }, parts.length > 0 ? parts.join(" · ") : "Estado de la moto recibido.");
   }
 
+  /**
+   * The shape of the rider's page while it loads: the hero and the readout
+   * as grey blocks, with the progress in a status line, so the page does not
+   * jump when the data arrives. Only `copy` and `progress` carry text.
+   */
+  function skeleton(progress: HTMLElement): { element: HTMLElement; copy: HTMLElement } {
+    const bone = (kind: string): HTMLElement => el("span", { class: `bone ${kind}` });
+    const copy = el(
+      "div",
+      { class: "hero-copy" },
+      el("div", { class: "bones", attrs: { "aria-hidden": "true" } }, bone("bone-eyebrow"), bone("bone-title"), bone("bone-title"), bone("bone-title short")),
+      progress,
+    );
+    const element = el(
+      "div",
+      { class: "skeleton" },
+      el(
+        "div",
+        { class: "hero hero-skeleton" },
+        el("div", { class: "hero-grid" }, copy, el("div", { class: "plate bone bone-plate", attrs: { "aria-hidden": "true" } })),
+      ),
+      el(
+        "div",
+        { class: "bone-readout", attrs: { "aria-hidden": "true" } },
+        ...Array.from({ length: 4 }, () => el("span", { class: "bone-cell" }, bone("bone-label"), bone("bone-figure"))),
+      ),
+    );
+    return { element, copy };
+  }
+
+  /** Scrolls so that `target` starts just below the bar, unless it is already in view. */
+  function bringIntoView(target: HTMLElement): void {
+    const box = target.getBoundingClientRect();
+    const top = barHeight();
+    if (box.top >= top && box.top < window.innerHeight * 0.5) return;
+    window.scrollTo({ top: Math.max(0, box.top + window.scrollY - top - VIEW_GAP), behavior: scrollBehavior() });
+  }
+
   function showLoaded(data: RiderData, caller: ToolCaller, warnings: readonly string[]): void {
     const scope: StorageScope = data.demo ? "demo" : "account";
+    const motion = new AbortController();
     // A failed trace that needs a new sign-in offers it, never a retry.
     const map = mapFactory(data, caller, { signIn: account === undefined || data.demo ? null : signIn });
     activeMap = map;
-    viewMotion = new AbortController();
-    const summaryPanel = el("div", {}, renderSummary(data, scope, { signal: viewMotion.signal }));
-    const mapPanel = el("div", {}, map.element);
-    const routesPanel = el("div", {});
-    const tabs = createTabs(
-      "Secciones",
-      [
-        { id: "resumen", label: "Resumen", panel: summaryPanel },
-        { id: "mapa", label: "Mapa", panel: mapPanel },
-        { id: "rutas", label: "Rutas", panel: routesPanel },
-      ],
-      (id) => {
-        if (id === "mapa") map.shown();
-      },
+    viewMotion = motion;
+    // Map first, list after; a later phase puts them side by side.
+    const archive = el(
+      "div",
+      { class: "archive" },
+      el("div", { class: "archive-map" }, map.element),
+      el(
+        "div",
+        { class: "archive-list" },
+        renderRoutes(data, (route) => {
+          // The route opens in place: the map is in the same section, above the list.
+          map.open(route);
+          map.element.querySelector<HTMLElement>(".map-title")?.focus({ preventScroll: true });
+          bringIntoView(map.element);
+        }),
+      ),
     );
-    routesPanel.append(
-      renderRoutes(data, (route) => {
-        tabs.select("mapa", true);
-        map.open(route);
-      }),
-    );
+    const page = renderRiderPage(data, scope, { signal: motion.signal, archive });
+    const nav = sectionNav(page.sections, { signal: motion.signal, offset: barHeight });
+    navSlot.append(nav.element);
+    topbar.prepend(nav.progress);
+    topbar.classList.add("has-nav");
+    if (page.period !== null) periodSlot.append(page.period);
     clear(content);
-    content.append(...warnings.map((warning) => el("p", { class: "notice", attrs: { role: "status" } }, warning)), tabs.element);
+    content.append(
+      ...warnings.map((warning) => el("p", { class: "notice", attrs: { role: "status" } }, warning)),
+      page.hero,
+      ...page.sections.map((section) => section.element),
+      page.footer,
+    );
   }
 
   async function load(caller: ToolCaller, loadOptions: { readonly demo: boolean }): Promise<void> {
     generation += 1;
-    releaseMap();
+    releaseView();
     const mine = generation;
     const current = (): boolean => mine === generation;
     const retry = (): void => void load(caller, loadOptions);
@@ -328,13 +414,14 @@ export function startApp(options: AppOptions): App {
       // A real account: nothing of the demo may stay on screen or in the address.
       scenarioShown = null;
       accountShown = true;
-      banner.hidden = true;
+      showDemoMarks(false);
       signOutButton.hidden = account === undefined;
       if (scenarioFromHash(location.hash) !== null) setHash("");
     }
     const progress = el("p", { class: "loading", attrs: { role: "status" } }, "Leyendo el estado de la moto…");
+    const shape = skeleton(progress);
     clear(content);
-    content.append(progress);
+    content.append(shape.element);
 
     let vehicle: VehicleState;
     try {
@@ -350,7 +437,8 @@ export function startApp(options: AppOptions): App {
       return;
     }
     if (!current()) return;
-    content.prepend(vehicleLine(vehicle));
+    const line = vehicleLine(vehicle);
+    shape.copy.prepend(line);
     progress.textContent = "Leyendo los datos del vehículo…";
 
     const warnings: string[] = [];
@@ -363,7 +451,6 @@ export function startApp(options: AppOptions): App {
       warnings.push(`${errorText(error).title} El resto funciona. Código: ${errorText(error).code}`);
     }
     if (!current()) return;
-
 
     try {
       // A load that was replaced stops asking the service, not only drawing.
@@ -380,8 +467,9 @@ export function startApp(options: AppOptions): App {
     } catch (error) {
       if (!current()) return;
       if (!(error instanceof LoadError)) throw error;
-      progress.remove();
-      content.append(errorPanel(error, retry));
+      // The shapes go; what is known of the vehicle stays above the error.
+      clear(content);
+      content.append(line, errorPanel(error, retry));
     }
   }
 
@@ -390,7 +478,7 @@ export function startApp(options: AppOptions): App {
     scenarioShown = scenario;
     accountShown = false;
     scenarioSelect.value = scenario;
-    banner.hidden = false;
+    showDemoMarks(true);
     signOutButton.hidden = true;
     await load(createDemoCaller(scenario, now(), options.demoDelayMs ?? 120), { demo: true });
   }
@@ -426,7 +514,7 @@ export function startApp(options: AppOptions): App {
     dispose() {
       generation += 1;
       window.removeEventListener("hashchange", onHashChange);
-      releaseMap();
+      stopView();
     },
   };
 }

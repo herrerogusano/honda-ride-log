@@ -58,8 +58,8 @@ describe("the Rutas table", () => {
   it("writes the end time, the maximum speed and the inferred label of each route", () => {
     const { rows } = table();
     // Newest first: plain, bare, overnight.
-    expect(rows[0]).toEqual(["10:00", "10:30", "30 min", "20,0", "40", "0", "No"]);
-    expect(rows[2]).toEqual(["23:30", "00:20 (+1 día)", "50 min", "12,3", "31", "75", "Sí"]);
+    expect(rows[0]).toEqual(["10:00", "10:30", "30\u00A0min", "20,0", "40", "0", "No"]);
+    expect(rows[2]).toEqual(["23:30", "00:20 (+1 día)", "50\u00A0min", "12,3", "31", "75", "Sí"]);
   });
 
   it("writes a dash for every figure the service did not send", () => {
@@ -69,7 +69,7 @@ describe("the Rutas table", () => {
 
   it("says under the list that both speeds have unconfirmed units and what the inferred label means", () => {
     const { root } = table();
-    const note = root.querySelector(".notes")?.textContent ?? "";
+    const note = root.querySelector(".fine-print")?.textContent ?? "";
     expect(note).toBe(ROUTES_NOTE);
     expect(note).toContain("velocidades media y máxima");
     expect(note).toContain("sin confirmar");
@@ -91,7 +91,7 @@ describe("the Rutas table", () => {
   it("never writes a minus sign for a maximum speed of negative zero", () => {
     const [route] = rides([{ start: "2026-03-07T10:00:00-08:00", km: 5, maxSpeed: -0 }]) as [Route];
     expect(Object.is(route.maxSpeed, 0)).toBe(true);
-    expect(routeFacts(route)).toContain("Vel. máxima: 0 km/h");
+    expect(routeFacts(route)).toContain("Vel. máxima: 0\u00A0km/h");
   });
 
   it("offers the maximum speed as a sort order and applies it", () => {
@@ -126,17 +126,17 @@ describe("the Mapa description of the open route", () => {
 
   it("shows the same figures as the list", () => {
     expect(opened(overnight)).toBe(
-      "Salida: 23:30 · Llegada: 00:20 (+1 día) · Duración: 50 min · 12,3 km · Vel. media: 31 km/h · Vel. máxima: 75 km/h · Tramos inferidos: Sí",
+      "Salida: 23:30 · Llegada: 00:20 (+1 día) · Duración: 50\u00A0min · 12,3\u00A0km · Vel. media: 31\u00A0km/h · Vel. máxima: 75\u00A0km/h · Tramos inferidos: Sí",
     );
     expect(opened(plain)).toBe(
-      "Salida: 10:00 · Llegada: 10:30 · Duración: 30 min · 20,0 km · Vel. media: 40 km/h · Vel. máxima: 0 km/h · Tramos inferidos: No",
+      "Salida: 10:00 · Llegada: 10:30 · Duración: 30\u00A0min · 20,0\u00A0km · Vel. media: 40\u00A0km/h · Vel. máxima: 0\u00A0km/h · Tramos inferidos: No",
     );
     expect(opened(overnight)).toBe(routeFacts(overnight));
   });
 
   it("writes a dash for every figure the service did not send", () => {
     expect(opened(bare)).toBe(
-      "Salida: 07:05 · Llegada: — · Duración: — · 8,0 km · Vel. media: — · Vel. máxima: — · Tramos inferidos: —",
+      "Salida: 07:05 · Llegada: — · Duración: — · 8,0\u00A0km · Vel. media: — · Vel. máxima: — · Tramos inferidos: —",
     );
   });
 
@@ -179,9 +179,9 @@ describe("the new figures' texts", () => {
 
   it("labels speeds in km/h and the inferred flag without claiming accuracy", () => {
     expect(formatSpeed(null)).toBe("—");
-    expect(formatSpeed(0)).toBe("0 km/h");
-    expect(formatSpeed(104.6)).toBe("105 km/h");
-    expect(formatSpeed(1234)).toBe("1.234 km/h");
+    expect(formatSpeed(0)).toBe("0\u00A0km/h");
+    expect(formatSpeed(104.6)).toBe("105\u00A0km/h");
+    expect(formatSpeed(1234)).toBe("1.234\u00A0km/h");
     expect([true, false, null].map(formatInferred)).toEqual(["Sí", "No", "—"]);
   });
 });
