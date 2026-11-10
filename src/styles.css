@@ -605,9 +605,12 @@ select:focus-visible {
 
 .readout .m {
   position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: var(--s2);
+  /* Label and value share the strip's rows, so a label on two lines does not push its figure below the others. */
+  display: grid;
+  grid-row: span 2;
+  grid-template-rows: subgrid;
+  align-content: start;
+  row-gap: var(--s2);
   min-width: 0;
   padding-top: var(--s5);
 }
@@ -732,7 +735,7 @@ select:focus-visible {
 }
 
 .hero-title .ln + .ln .ln-in {
-  animation-delay: calc(var(--stagger) + 10ms);
+  animation-delay: var(--stagger);
 }
 
 @keyframes rise {
@@ -768,7 +771,7 @@ select:focus-visible {
 
 .landing .eyebrow {
   max-width: none;
-  animation-delay: 0ms;
+  animation-delay: 0s;
 }
 
 .lead {
