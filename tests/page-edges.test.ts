@@ -34,6 +34,7 @@ function mount(hash = ""): App {
     element: document.createElement("div"),
     open: () => void mapCalls.push("open"),
     shown: () => void mapCalls.push("shown"),
+    destroy: () => void mapCalls.push("destroy"),
   });
   mounted = startApp({ root, now: () => NOW, demoDelayMs: 0, createMap });
   return mounted;
@@ -297,6 +298,17 @@ describe("tabs and the map", () => {
     root.querySelector<HTMLButtonElement>(".row-button")?.click();
     expect(mapCalls).toEqual(["shown", "shown", "open"]);
     expect(document.activeElement).toBe(tab("Mapa"));
+    // Leaving the view releases its map; so does replacing it with another load.
+    button("Salir de la demo").click();
+    expect(mapCalls).toEqual(["shown", "shown", "open", "destroy"]);
+    // So does replacing the view with another load.
+    mount("#demo");
+    await loaded();
+    tab("Mapa").click();
+    const select = root.querySelector<HTMLSelectElement>(".demo-banner select") as HTMLSelectElement;
+    select.value = "empty";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(mapCalls).toEqual(["shown", "destroy"]);
   });
 
   it("calls back once per change, keeps panels reachable and names the tab list", () => {

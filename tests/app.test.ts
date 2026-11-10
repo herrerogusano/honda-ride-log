@@ -9,6 +9,7 @@ import { loadAllRoutes, loadVehicleState } from "../src/service/loader";
 import { startApp, type App } from "../src/ui/app";
 import { buildRiderData } from "../src/ui/data";
 import { downloadBlob } from "../src/ui/download";
+import { createMapView } from "../src/ui/mapView";
 import { PAGE_SIZE } from "../src/ui/routesView";
 
 vi.mock("../src/ui/download", () => ({ downloadBlob: vi.fn() }));
@@ -32,7 +33,9 @@ function mount(hash = ""): App {
   document.body.replaceChildren();
   root = document.createElement("main");
   document.body.append(root);
-  return startApp({ root, now: () => NOW, demoDelayMs: 0 });
+  // jsdom cannot lay out a real map: the Mapa tab gets a surface that draws nothing.
+  const surface = { show: () => undefined, clear: () => undefined, resize: () => undefined, destroy: () => undefined };
+  return startApp({ root, now: () => NOW, demoDelayMs: 0, createMap: (data, caller) => createMapView(data, caller, () => surface) });
 }
 
 const page = (): string => new XMLSerializer().serializeToString(document);
