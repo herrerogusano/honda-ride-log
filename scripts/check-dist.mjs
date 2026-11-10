@@ -6,7 +6,7 @@
 // loosened policy), written with regular expressions over the HTML that Vite
 // emits. It is not an HTML parser and does not defend against someone who
 // edits dist/ by hand: whoever can do that can also skip this script.
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const expected = JSON.parse(read("../csp.config.json"));
@@ -76,6 +76,21 @@ if (/<(iframe|object|embed|base)\b/i.test(html)) problems.push("frame, plugin or
 for (const url of html.matchAll(/\s(?:src|href|srcset|ping)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi)) {
   const value = (url[1] ?? url[2] ?? url[3] ?? "").trim();
   if (/^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(value)) problems.push(`resource from another origin: ${value}`);
+}
+
+// Fonts come from this site only (font-src 'self', docs/PLAN.md D-025): the
+// stylesheets must not point anywhere else, and the font files must be there.
+const assets = readdirSync(new URL("../dist/assets/", import.meta.url));
+const fonts = assets.filter((name) => name.endsWith(".woff2"));
+if (fonts.length === 0) problems.push("no .woff2 font in dist/assets");
+for (const name of assets.filter((one) => one.endsWith(".css"))) {
+  const sheet = read(`../dist/assets/${name}`);
+  for (const url of sheet.matchAll(/url\(\s*["']?([^"')]*)/gi)) {
+    if (/^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(url[1].trim()) && !/^data:image\/svg\+xml/i.test(url[1].trim())) {
+      problems.push(`stylesheet ${name} loads from another origin: ${url[1].slice(0, 60)}`);
+    }
+  }
+  if (/@import/i.test(sheet)) problems.push(`stylesheet ${name} has an @import`);
 }
 
 if (problems.length > 0) {

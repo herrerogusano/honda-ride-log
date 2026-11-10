@@ -6,7 +6,7 @@
     "style-src": ["'self'"],
     "img-src": ["'self'", "https://tile.openstreetmap.org"],
     "connect-src": ["'self'"],
-    "font-src": ["'none'"],
+    "font-src": ["'self'"],
     "base-uri": ["'none'"],
     "form-action": ["'none'"]
   }

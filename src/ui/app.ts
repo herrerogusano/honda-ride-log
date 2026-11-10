@@ -69,9 +69,13 @@ export function startApp(options: AppOptions): App {
   let generation = 0;
   /** The map of the view on screen; released when another view replaces it. */
   let activeMap: MapView | null = null;
+  /** Motion of the view on screen (counts, reveals); aborted when another view replaces it. */
+  let viewMotion: AbortController | null = null;
   const releaseMap = (): void => {
     activeMap?.destroy();
     activeMap = null;
+    viewMotion?.abort();
+    viewMotion = null;
   };
 
   /** The demo scenario on screen, or null outside the demo. */
@@ -93,7 +97,12 @@ export function startApp(options: AppOptions): App {
   const banner = el(
     "div",
     { class: "demo-banner", attrs: { role: "note" } },
-    el("p", {}, el("strong", {}, "Modo demo: datos de ejemplo. "), "Nada de lo que ves aquí viene de una moto ni de una cuenta real."),
+    el(
+      "p",
+      { class: "demo-text" },
+      el("strong", { class: "demo-flag" }, "Modo demo: datos de ejemplo. "),
+      "Nada de lo que ves aquí viene de una moto ni de una cuenta real.",
+    ),
     el(
       "div",
       { class: "demo-controls" },
@@ -160,8 +169,12 @@ export function startApp(options: AppOptions): App {
     el(
       "header",
       { class: "topbar" },
-      el("h1", { class: "brand" }, el("span", { class: "brand-mark", attrs: { "aria-hidden": "true" } }), "Ride Log"),
-      signOutButton,
+      el(
+        "div",
+        { class: "topbar-in" },
+        el("h1", { class: "brand" }, el("span", { class: "brand-mark", attrs: { "aria-hidden": "true" } }), el("b", {}, "Ride"), " Log"),
+        signOutButton,
+      ),
     ),
     banner,
     content,
@@ -181,7 +194,14 @@ export function startApp(options: AppOptions): App {
       el(
         "section",
         { class: "landing" },
-        el("h2", {}, "Tus rutas, en cifras"),
+        el("p", { class: "eyebrow" }, "Ride Log · estadísticas de tus rutas"),
+        el(
+          "h2",
+          { class: "hero-title" },
+          el("span", { class: "ln" }, el("span", { class: "ln-in" }, "Tus rutas,")),
+          " ",
+          el("span", { class: "ln" }, el("span", { class: "ln-in red" }, "en cifras.")),
+        ),
         el(
           "p",
           { class: "lead" },
@@ -273,7 +293,8 @@ export function startApp(options: AppOptions): App {
     // A failed trace that needs a new sign-in offers it, never a retry.
     const map = mapFactory(data, caller, { signIn: account === undefined || data.demo ? null : signIn });
     activeMap = map;
-    const summaryPanel = el("div", {}, renderSummary(data, scope));
+    viewMotion = new AbortController();
+    const summaryPanel = el("div", {}, renderSummary(data, scope, { signal: viewMotion.signal }));
     const mapPanel = el("div", {}, map.element);
     const routesPanel = el("div", {});
     const tabs = createTabs(
