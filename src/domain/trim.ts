@@ -34,6 +34,8 @@ const toRad = (degrees: number): number => (degrees * Math.PI) / 180;
 const toDeg = (radians: number): number => (radians * 180) / Math.PI;
 /** The projection has no poles: latitudes are held inside this, as map libraries do. */
 const MAX_LATITUDE = 85.0511;
+/** Segments shorter than this on the projection (one millimetre) are treated as a repeated point. */
+const MIN_SEGMENT = 0.001;
 /** Width of the whole world on the projection. */
 const WORLD = 2 * Math.PI * EARTH_RADIUS_M;
 
@@ -118,10 +120,11 @@ function hideAround(lines: readonly TraceLine[], places: readonly Hidden[]): Tra
     for (let index = 1; index < line.points.length; index += 1) {
       const start = line.points[index - 1] as LatLng;
       const end = line.points[index] as LatLng;
-      // A repeated point adds nothing to draw.
-      if (start[0] === end[0] && start[1] === end[1]) continue;
       const a = project(start);
       const b = project(end);
+      // Two points less than a millimetre apart on the map are one point: a
+      // segment that short adds nothing to draw, and cannot be measured.
+      if ((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2 < MIN_SEGMENT ** 2) continue;
       const at = (fraction: number): LatLng => unproject([a[0] + (b[0] - a[0]) * fraction, a[1] + (b[1] - a[1]) * fraction]);
       // Visible stretches of this segment: start with all of it and take
       // away what each circle covers.
@@ -170,6 +173,10 @@ export function trimTrace(trace: UntrimmedTrace): TrimmedTrace {
   if (source.length === 0) return { lines: [], empty: "no_geometry" };
 
   const marked = sensitivePlaces(trace);
+  // Beyond the latitudes the projection covers, distances on it mean nothing:
+  // rather than trust them, nothing is drawn.
+  const everything = [...all.flatMap((line) => line.points), ...marked];
+  if (everything.some((point) => Math.abs(point[0]) > MAX_LATITUDE)) return { lines: [], empty: "hidden" };
   const ends = all.flatMap((line) => [line.points[0] as LatLng, line.points[line.points.length - 1] as LatLng]);
   // The start and the end are the two places the service marks and the two
   // ends of the lines taken together. Without the marks, which line comes

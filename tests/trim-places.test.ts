@@ -156,6 +156,37 @@ describe("trim by place", () => {
     ]);
   });
 
+  it("does not draw a start that is followed by an almost identical point", () => {
+    // Two points a hair apart cannot be measured as a segment; they must not be drawn as one either.
+    for (const hair of [1e-14, 2e-14, 5e-14, 1e-12, 1e-10, 1e-9]) {
+      const start: LatLng = [40, -0.9];
+      const result = trim({ lines: [[start, [40 + hair, -0.9], [40.0422, -0.8799]]] });
+      expect(result.lines.length, `hair ${hair}`).toBe(1);
+      expect(nearest(result.lines, start), `hair ${hair}`).toBeGreaterThanOrEqual(400);
+      const twin = trim({ lines: [[start, [40, -0.9 + hair], [40.0422, -0.8799]]] });
+      expect(nearest(twin.lines, start), `hair ${hair}`).toBeGreaterThanOrEqual(400);
+    }
+  });
+
+  it("draws nothing of a trace that reaches latitudes the map projection does not cover", () => {
+    for (const lines of [
+      [[[86, 0], [87, 0]]],
+      [[[85.2, 10], [85.1, 10], [84, 10]]],
+      [[[-90, 0], [-85.5, 0], [-80, 0]]],
+      [[[88, 0], [88, 0.05], [88, 0.2], [88, 5]]],
+      [[[60, 0], [60.5, 0.5], [86, 1]]],
+    ] as LatLng[][][]) {
+      expect(trim({ lines })).toEqual({ lines: [], empty: "hidden" });
+    }
+    // A mark beyond those latitudes hides the route too.
+    expect(trim({ lines: [[north(0), north(5000)]], ends: [[0, 89, 0]] })).toEqual({ lines: [], empty: "hidden" });
+    // Just inside them, the rule still holds.
+    const high = trim({ lines: [[[84.9, 20], [84.95, 20.4]]] });
+    expect(high.lines.length).toBe(1);
+    expect(nearest(high.lines, [84.9, 20])).toBeGreaterThanOrEqual(400);
+    expect(nearest(high.lines, [84.95, 20.4])).toBeGreaterThanOrEqual(400);
+  });
+
   it("treats a line of a single point as a place where the ride was", () => {
     const far = [[LON0, LAT0 + 9000 / M_PER_DEG, 0], [LON0, LAT0 + 9500 / M_PER_DEG, 0]];
     const result = trim({ lines: [[north(0)], [north(300), north(3000)]], ends: far });
