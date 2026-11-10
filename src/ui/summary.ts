@@ -35,6 +35,8 @@ import { barChart } from "./charts";
 import type { RiderData } from "./data";
 import { clear, el, uniqueId } from "./dom";
 import { downloadBlob } from "./download";
+import { countUp, durationToken, reveal } from "./motion";
+import { sectionHeader } from "./sectionHeader";
 
 const days = (count: number): string => (count === 1 ? "1 día" : `${formatNumber(count)} días`);
 const plural = (count: number, one: string, many: string): string => `${formatNumber(count)} ${count === 1 ? one : many}`;
@@ -43,7 +45,7 @@ function section(title: string, scope: string | null, ...children: (Node | null)
   const id = uniqueId("section");
   return el(
     "section",
-    { class: "block", attrs: { "aria-labelledby": id } },
+    { class: "block rv", attrs: { "aria-labelledby": id } },
     el("div", { class: "block-head" }, el("h2", { id }, title), scope === null ? null : el("span", { class: "scope" }, scope)),
     ...children,
   );
@@ -85,34 +87,75 @@ function signedKm(km: number): string {
   return `${rounded > 0 ? "+" : "−"}${formatNumber(Math.abs(rounded))} km`;
 }
 
-function figuresSection(data: RiderData, period: Period, periodLabel: string): HTMLElement {
-  const sum = totals(inPeriod(data.figures, period));
-  const month = monthVsLastYear(data.figures, data.nowMs);
-  return section(
-    "Cifras",
-    periodLabel,
+/** The title of section 01 for a period: two lines, uppercase on screen. */
+export function figuresTitle(period: Period, currentYear: number): string[] {
+  if (period === "all") return ["Todo", "en cifras"];
+  return [period === currentYear ? "Tu año" : `Tu ${period}`, "en cifras"];
+}
+
+/**
+ * One figure of the readout strip: a huge number that counts up, a small
+ * red unit and a caption. `note` says something about this very figure
+ * (`.tile-note`); without one, `caption` says what the figure measures.
+ */
+function figure(
+  label: string,
+  value: number,
+  unit: string | null,
+  note: string | null,
+  caption: string,
+  count: (element: HTMLElement, value: number) => void,
+): HTMLElement {
+  const number = el("span", { class: "mv-num" });
+  count(number, value);
+  return el(
+    "div",
+    { class: "tile m" },
+    el("dt", {}, label),
     el(
-      "dl",
-      { class: "tiles tiles-4" },
-      tile("Kilómetros", `${formatNumber(sum.km)} km`),
-      tile("Salidas", formatNumber(sum.rides)),
-      tile(
-        "Horas en marcha",
-        `${formatNumber(sum.hours)} h`,
-        sum.ridesWithoutDuration > 0
-          ? `${plural(sum.ridesWithoutDuration, "salida", "salidas")} sin duración conocida no suman`
-          : null,
-      ),
-      tile(
-        `${MONTHS_LONG[month.month]} frente a ${MONTHS_LONG[month.month]} de ${month.year - 1}`,
-        `${formatNumber(month.km)} km`,
-        `${formatNumber(month.previousKm)} km hace un año · ${signedKm(month.differenceKm)}. No depende del periodo elegido.`,
-      ),
+      "dd",
+      {},
+      // The space keeps "84 km" as the text of the value; the layout ignores it.
+      el("span", { class: "tile-value mv" }, number, unit === null ? null : " ", unit === null ? null : el("small", { class: "mv-unit" }, unit)),
+      note === null ? el("span", { class: "mc" }, caption) : el("span", { class: "tile-note mc" }, note),
     ),
   );
 }
 
+/** The four figures of the period (docs/PLAN.md, "Resumen", item 2). */
+function figures(data: RiderData, period: Period, count: (element: HTMLElement, value: number) => void): HTMLElement[] {
+  const sum = totals(inPeriod(data.figures, period));
+  const month = monthVsLastYear(data.figures, data.nowMs);
+  return [
+    figure("Kilómetros", sum.km, "km", null, "Según el servicio; unidad sin confirmar", count),
+    figure("Salidas", sum.rides, null, null, "Rutas que cuentan en las cifras", count),
+    figure(
+      "Horas en marcha",
+      sum.hours,
+      "h",
+      sum.ridesWithoutDuration > 0 ? `${plural(sum.ridesWithoutDuration, "salida", "salidas")} sin duración conocida no suman` : null,
+      "Suma de las duraciones conocidas",
+      count,
+    ),
+    figure(
+      `${MONTHS_LONG[month.month]} frente a ${MONTHS_LONG[month.month]} de ${month.year - 1}`,
+      month.km,
+      "km",
+      `${formatNumber(month.previousKm)} km hace un año · ${signedKm(month.differenceKm)}. No depende del periodo elegido.`,
+      "",
+      count,
+    ),
+  ];
+}
+
+/** This year in red, last year in light grey, older years in dark grey. */
+function yearTone(year: number, currentYear: number): string {
+  if (year === currentYear) return "tone-now";
+  return year === currentYear - 1 ? "tone-prev" : "tone-old";
+}
+
 function monthsSection(data: RiderData): HTMLElement {
+  const currentYear = new Date(data.nowMs).getFullYear();
   const series = kmByMonth(data.figures);
   return section(
     "Km por mes",
@@ -122,7 +165,7 @@ function monthsSection(data: RiderData): HTMLElement {
       categories: MONTHS_SHORT,
       categoryNames: MONTHS_LONG,
       categoryHeader: "Mes",
-      series: series.map((one) => ({ label: String(one.year), values: one.km })),
+      series: series.map((one) => ({ label: String(one.year), values: one.km, tone: yearTone(one.year, currentYear) })),
       formatValue: (value) => `${formatNumber(value)} km`,
     }),
   );
@@ -393,7 +436,12 @@ function notes(data: RiderData): HTMLElement {
   );
 }
 
-export function renderSummary(data: RiderData, scope: StorageScope): HTMLElement {
+export interface SummaryOptions {
+  /** Aborted when the page replaces this view: running counts and reveals stop in their final state. */
+  readonly signal?: AbortSignal | undefined;
+}
+
+export function renderSummary(data: RiderData, scope: StorageScope, options: SummaryOptions = {}): HTMLElement {
   const currentYear = new Date(data.nowMs).getFullYear();
   const years = [...new Set([currentYear, ...yearsWithRoutes(data.figures)])].sort((a, b) => b - a);
   let period: Period = SUMMARY_DEFAULT_PERIOD === "all" ? "all" : currentYear;
@@ -407,22 +455,52 @@ export function renderSummary(data: RiderData, scope: StorageScope): HTMLElement
   );
   const picker = el("div", { class: "period" }, el("label", { attrs: { for: selectId } }, "Periodo"), select);
 
-  const byPeriodTop = el("div", { class: "stack" });
-  const byPeriodBottom = el("div", { class: "stack" });
   const empty = data.figures.length === 0;
+  // Section 01: the numbered header, the period and the readout strip.
+  const header = sectionHeader("01", "Resumen", figuresTitle(period, currentYear), uniqueId("section"));
+  const periodScope = el("span", { class: "scope" });
+  const readout = el("dl", { class: "readout rv" });
+  const figuresBlock = empty
+    ? null
+    : el(
+        "section",
+        { class: "readout-sec", attrs: { "aria-labelledby": header.heading.id } },
+        header.element,
+        el("div", { class: "sec-top" }, picker, periodScope),
+        readout,
+      );
+  const byPeriodBottom = el("div", { class: "stack" });
+
+  /** Motion of the current drawing; replaced on each period change. */
+  let drawing: AbortController | null = null;
+  let firstDraw = true;
+  options.signal?.addEventListener("abort", () => drawing?.abort(), { once: true });
 
   function draw(): void {
     const label = period === "all" ? "Todo el historial" : `Año ${period}`;
-    clear(byPeriodTop);
+    drawing?.abort();
+    const motion = new AbortController();
+    drawing = motion;
+    clear(readout);
     clear(byPeriodBottom);
     if (empty) return;
-    byPeriodTop.append(figuresSection(data, period, label));
+    header.setTitle(figuresTitle(period, currentYear));
+    periodScope.textContent = label;
+    // The first count lasts the hero duration; a period change counts again, shorter.
+    const durationMs = firstDraw ? undefined : durationToken("--dur-reveal", 520);
+    firstDraw = false;
+    readout.append(
+      ...figures(data, period, (element, value) => {
+        countUp(element, value, (shown) => formatNumber(shown), { signal: motion.signal, durationMs });
+      }),
+    );
     byPeriodBottom.append(
       habitsSection(data, period, label),
       recordsSection(data, period, label),
       shortTripsSection(data, period, label),
       cardSection(data, period, label),
     );
+    reveal(byPeriodBottom, { signal: motion.signal });
   }
   select.addEventListener("change", () => {
     period = select.value === "all" ? "all" : Number(select.value);
@@ -430,18 +508,20 @@ export function renderSummary(data: RiderData, scope: StorageScope): HTMLElement
   });
   draw();
 
-  return el(
+  const view = el(
     "div",
-    { class: "stack" },
-    statusSection(data),
+    { class: "stack summary" },
+    figuresBlock,
     empty
       ? el("p", { class: "notice", attrs: { role: "status" } }, "Todavía no hay rutas en esta cuenta. Cuando salgas con la moto, aquí aparecerán tus cifras.")
-      : picker,
-    byPeriodTop,
+      : null,
+    statusSection(data),
     empty ? null : monthsSection(data),
     byPeriodBottom,
     empty ? null : streaksSection(data),
     maintenanceSection(data, scope),
     notes(data),
   );
+  reveal(view, { signal: options.signal });
+  return view;
 }

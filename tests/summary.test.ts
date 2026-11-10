@@ -42,8 +42,14 @@ function show(overrides: Partial<RiderData> = {}): void {
   document.body.replaceChildren(view);
 }
 
+/** The four figures: section 01, whose title follows the period («Tu año en cifras»). */
+const FIGURES = "Cifras";
+const figuresTitle = (): string => block(FIGURES).querySelector("h2")?.textContent ?? "";
 const block = (title: string): HTMLElement => {
-  const found = [...view.querySelectorAll("section")].find((one) => one.querySelector("h2")?.textContent === title);
+  const found =
+    title === FIGURES
+      ? (view.querySelector<HTMLElement>("section.readout-sec") ?? undefined)
+      : [...view.querySelectorAll("section")].find((one) => one.querySelector("h2")?.textContent === title);
   if (found === undefined) throw new Error(`no block ${title}`);
   return found;
 };
@@ -111,6 +117,8 @@ describe("Resumen, block by block", () => {
 
   it("shows the four figures of the current year", () => {
     show();
+    expect(figuresTitle()).toBe("Tu año en cifras");
+    expect(block(FIGURES).querySelector(".sec-tag")?.textContent).toBe("01 Resumen");
     expect(scope("Cifras")).toBe("Año 2026");
     expect(tiles("Cifras")).toEqual([
       ["Kilómetros", "84 km", ""],
@@ -125,6 +133,7 @@ describe("Resumen, block by block", () => {
     const options = [...view.querySelectorAll(".period option")].map((option) => option.textContent);
     expect(options).toEqual(["2026", "2025", "Todo"]);
     choose("2025");
+    expect(figuresTitle()).toBe("Tu 2025 en cifras");
     expect(scope("Cifras")).toBe("Año 2025");
     expect(tiles("Cifras").map((tile) => tile.slice(0, 2))).toEqual([
       ["Kilómetros", "42 km"],
@@ -134,6 +143,7 @@ describe("Resumen, block by block", () => {
     ]);
     expect(tiles("Cifras")[2]?.[2]).toBe("");
     choose("all");
+    expect(figuresTitle()).toBe("Todo en cifras");
     expect(scope("Cifras")).toBe("Todo el historial");
     expect(tiles("Cifras").map((tile) => tile[1])).toEqual(["126 km", "7", "4 h", "10 km"]);
   });
@@ -282,9 +292,11 @@ describe("Resumen, block by block", () => {
 
   it("labels the period of each block and uses one heading level for all of them", () => {
     show();
+    // Section 01 (the four figures and the period) comes first, with its own header.
+    expect(view.querySelector("section h2")?.textContent).toBe("Tu año en cifras");
+    expect(view.querySelector("section")?.contains(view.querySelector(".period"))).toBe(true);
     expect([...view.querySelectorAll("section > .block-head > h2")].map((heading) => heading.textContent)).toEqual([
       "Estado",
-      "Cifras",
       "Km por mes",
       "Hábitos",
       "Récords",

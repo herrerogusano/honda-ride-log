@@ -8,6 +8,8 @@ import { el, svg, uniqueId } from "./dom";
 export interface BarSeries {
   readonly label: string;
   readonly values: readonly number[];
+  /** Extra class for the bars and the legend key of this series (a colour of the stylesheet). */
+  readonly tone?: string;
 }
 
 export interface BarChartOptions {
@@ -26,7 +28,6 @@ export interface BarChartOptions {
   readonly compact?: boolean;
 }
 
-const LEFT = 48;
 const RIGHT = 8;
 const TOP = 12;
 const BOTTOM = 26;
@@ -50,8 +51,12 @@ export function axisTicks(peak: number): number[] {
 export function barChart(options: BarChartOptions): HTMLElement {
   const { categories, series, formatValue } = options;
   const names = options.categoryNames ?? categories;
-  const WIDTH = options.compact === true ? 440 : 720;
-  const HEIGHT = options.compact === true ? 230 : 250;
+  // A wide chart is drawn about as wide as it is shown on a desktop, so its labels keep their
+  // size; the stylesheet enlarges them on phones, where the drawing is scaled down.
+  const WIDTH = options.compact === true ? 440 : 1100;
+  const HEIGHT = options.compact === true ? 230 : 340;
+  // Room for the longest axis label («1.500 km») at the largest tick size of the stylesheet.
+  const LEFT = options.compact === true ? 56 : 104;
   const peak = Math.max(0, ...series.flatMap((one) => one.values));
   const ticks = axisTicks(peak);
   const top = ticks[ticks.length - 1] as number;
@@ -99,11 +104,13 @@ export function barChart(options: BarChartOptions): HTMLElement {
       if (!(value > 0)) return;
       const height = Math.max(1, (value / top) * plotHeight);
       const owner = series.length > 1 ? `, ${one.label}` : "";
-      drawing.append(
-        svg(
+      const tone = one.tone === undefined ? "" : ` ${one.tone}`;
+      // In a one-series chart the tallest bars wear the bright red.
+      const peakClass = series.length === 1 && value === peak ? " peak" : "";
+      const bar = svg(
           "rect",
           {
-            class: `chart-bar series-${s}`,
+            class: `chart-bar series-${s}${tone}${peakClass}`,
             attrs: {
               x: groupX + barWidth * s + 1,
               y: TOP + plotHeight - height,
@@ -113,8 +120,10 @@ export function barChart(options: BarChartOptions): HTMLElement {
             },
           },
           svg("title", {}, `${names[c]}${owner}: ${formatValue(value)}`),
-        ),
-      );
+        );
+      // Bars grow from the base on reveal, one category after another.
+      bar.style.setProperty("--i", String(c));
+      drawing.append(bar);
     });
     if (c % every === 0) {
       drawing.append(
@@ -123,13 +132,17 @@ export function barChart(options: BarChartOptions): HTMLElement {
     }
   });
 
-  const figure = el("figure", { class: series.length === 1 ? "chart chart-single" : "chart" }, drawing);
+  const classes = ["chart", series.length === 1 ? "chart-single" : null, options.compact === true ? "chart-compact" : null, "rv"];
+  // On a narrow screen a wide chart keeps a readable size and scrolls inside this box, never the page.
+  const figure = el("figure", { class: classes.filter(Boolean).join(" ") }, el("div", { class: "chart-scroll" }, drawing));
   if (series.length > 1) {
     figure.append(
       el(
         "ul",
         { class: "chart-legend", attrs: { "aria-label": "Leyenda" } },
-        ...series.map((one, s) => el("li", {}, el("span", { class: `chart-key series-${s}`, attrs: { "aria-hidden": "true" } }), one.label)),
+        ...series.map((one, s) =>
+          el("li", {}, el("span", { class: `chart-key series-${s}${one.tone === undefined ? "" : ` ${one.tone}`}`, attrs: { "aria-hidden": "true" } }), one.label),
+        ),
       ),
     );
   }

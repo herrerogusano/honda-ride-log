@@ -1,8 +1,17 @@
 /**
  * Tabs with the ARIA tabs pattern: arrow keys, Home and End move between
  * tabs and select them; only the selected tab is in the Tab order.
+ *
+ * The underline of the selected tab is one element (`.tab-ink`) that slides
+ * between tabs with a transform; its place and width are custom properties
+ * set here and read by the stylesheet.
  */
 import { el, uniqueId } from "./dom";
+
+const requestFrame = (callback: () => void): void => {
+  if (typeof requestAnimationFrame === "function") requestAnimationFrame(callback);
+  else callback();
+};
 
 export interface TabSpec {
   readonly id: string;
@@ -34,6 +43,19 @@ export function createTabs(label: string, specs: readonly TabSpec[], onSelect?: 
     spec.panel.classList.add("tabpanel");
   });
 
+  // Decorative: hidden from assistive technology, outside the tabs' roles.
+  const ink = el("span", { class: "tab-ink", attrs: { "aria-hidden": "true" } });
+
+  /** Puts the underline under the selected tab. Without layout (jsdom) both numbers are 0. */
+  function placeInk(): void {
+    const button = buttons[specs.findIndex((spec) => spec.id === current)];
+    if (button === undefined) return;
+    ink.style.setProperty("--ink-x", `${button.offsetLeft}px`);
+    ink.style.setProperty("--ink-w", String(button.offsetWidth));
+    // The first placement does not slide in from the left edge.
+    if (button.offsetWidth > 0) requestFrame(() => ink.classList.add("ready"));
+  }
+
   function select(id: string, focus = false): void {
     if (!specs.some((spec) => spec.id === id)) return;
     const changed = id !== current;
@@ -46,10 +68,14 @@ export function createTabs(label: string, specs: readonly TabSpec[], onSelect?: 
       spec.panel.hidden = !active;
       if (active && focus) button.focus();
     });
+    placeInk();
     if (changed) onSelect?.(id);
   }
 
-  const list = el("div", { class: "tablist", attrs: { role: "tablist", "aria-label": label } }, ...buttons);
+  const list = el("div", { class: "tablist", attrs: { role: "tablist", "aria-label": label } }, ...buttons, ink);
+  // Tab widths change when the list is laid out, resized or the fonts arrive.
+  if (typeof ResizeObserver === "function") new ResizeObserver(placeInk).observe(list);
+  void document.fonts?.ready.then(placeInk);
   buttons.forEach((button, index) => {
     button.addEventListener("click", () => select((specs[index] as TabSpec).id));
     button.addEventListener("keydown", (event) => {

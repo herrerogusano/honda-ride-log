@@ -113,7 +113,7 @@ describe("security policy per environment", () => {
       "default-src 'none'; script-src 'self'; style-src 'self'; " +
         "img-src 'self' https://tile.openstreetmap.org; " +
         "connect-src 'self' https://api.example.test https://login.example.test; " +
-        "font-src 'none'; base-uri 'none'; form-action 'none'",
+        "font-src 'self'; base-uri 'none'; form-action 'none'",
     );
     expect(cspContent(directivesFor({ kind: "demo" }))).toBe(cspContent());
   });

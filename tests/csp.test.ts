@@ -11,8 +11,12 @@ describe("content security policy", () => {
     expect(cspContent()).toBe(
       "default-src 'none'; script-src 'self'; style-src 'self'; " +
         "img-src 'self' https://tile.openstreetmap.org; connect-src 'self'; " +
-        "font-src 'none'; base-uri 'none'; form-action 'none'",
+        "font-src 'self'; base-uri 'none'; form-action 'none'",
     );
+  });
+
+  it("loads fonts from this site only: the files in src/assets/fonts (docs/PLAN.md, D-025)", () => {
+    expect(CSP_DIRECTIVES["font-src"]).toEqual(["'self'"]);
   });
 
   it("never allows inline or evaluated code, wildcards or plain http", () => {

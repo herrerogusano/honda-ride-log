@@ -5,7 +5,8 @@ repo. Dice qué se construye, qué está decidido, qué se ha comprobado y qué 
 y cómo se reparte el trabajo. Actualízalo al cerrar cada fase.
 
 Última actualización: 2026-11-10, cierre de la fase 2; módulos de la fase 3
-y su conexión con la interfaz (apartado 10).
+y su conexión con la interfaz (apartado 10); etapa 2 (aspecto y
+movimiento), fase 1: sistema visual (apartado 11).
 
 ## 1. Qué es
 
@@ -28,7 +29,8 @@ Una web estática en la que cada persona invitada entra con su cuenta de MAPIT
 |---|---|
 | Forma | Web estática, repo propio, privado al crearlo; el propietario lo hace público y activa Pages. |
 | Alcance | Tres pestañas (Resumen, Mapa, Rutas), tarjeta para compartir solo con cifras, modo demo sin login. |
-| Fuera | Atlas 3D, sección de territorio, velocidad máxima en cualquier parte, filtros de «geometría inferida», exportación JSON, fuentes incrustadas (se usan las del sistema). |
+| Fuera | Atlas 3D, sección de territorio, velocidad máxima en cualquier parte, filtros de «geometría inferida», exportación JSON. (Las fuentes incrustadas estuvieron fuera hasta la decisión D-025 del propietario: ver «Aspecto».) |
+| Aspecto | Solo tema oscuro (D-026). Fuentes propias servidas por la web, Barlow Condensed y Manrope (D-025). Movimiento sin librería, con unas duraciones fijas (D-027). Detalle en el apartado 11. |
 | Privacidad | Ver el apartado 4. Son requisitos. |
 | Unidades | «km» a secas, con nota al pie: se usan los campos `*_km` del servicio, que el propio servicio marca como conversión sin confirmar. Nunca se convierte la distancia nativa. |
 | Zona horaria | Una sola: la del navegador. El campo `timezone` de cada ruta no se usa. |
@@ -137,8 +139,10 @@ se cuentan y cuántas se han descartado por venir sin fecha o sin km.
 ### Accesibilidad básica
 
 Pestañas navegables con teclado y con los roles ARIA de pestañas, contraste
-suficiente en claro y oscuro, cada gráfico SVG con título y una tabla o texto
-alternativo con las mismas cifras, nada que dependa solo del color.
+AA (solo hay tema oscuro desde D-026; `tests/contrast.test.ts` lo comprueba
+sobre los colores de la hoja de estilos), cada gráfico SVG con título y una
+tabla o texto alternativo con las mismas cifras, nada que dependa solo del
+color, foco visible y zonas de pulsación de 44 px como mínimo.
 
 ## 4. Privacidad
 
@@ -468,6 +472,9 @@ política de seguridad de contenido, tal como se publicará: `npm run build`,
 | `src/config.ts` | Las dos respuestas de producto que el propietario aún puede cambiar. |
 | `src/storage/maintenance.ts` | El único archivo que usa `localStorage`. |
 | `src/ui/` | La página: `app.ts` (entrada, demo, carga y estados), `summary.ts`, `routesView.ts`, `mapView.ts` y `leafletSurface.ts` (el mapa), `charts.ts`, `card.ts`, `tabs.ts`, `dom.ts`. |
+| `src/ui/motion.ts`, `src/ui/sectionHeader.ts`, `src/styles.css` | Etapa 2: movimiento (aparecer al entrar en pantalla, cifras que cuentan), cabecera de sección numerada y la hoja de estilos con los tokens (apartado 11). |
+| `src/assets/fonts/` | Las fuentes propias (woff2, subconjunto latino) y sus licencias SIL OFL. |
+| `public/favicon.svg` | El icono de la pestaña del navegador. |
 | `src/demo/` | Generador de datos sintéticos con semilla, servicio de demo en memoria y los escenarios de la demo. |
 | `tests/` | Tests. Los de interfaz (`app`, `map`, `charts`) corren en jsdom, que no es un navegador: sin maquetación, sin canvas, sin política de seguridad de contenido. |
 | `csp.config.json` | La política de seguridad de contenido y la de referencia. |
@@ -909,3 +916,108 @@ que `credentials`, `redirect` y la política de seguridad se comporten así en
 un navegador (Node no aplica CORS ni CSP). La primera prueba real sigue
 siendo la del apartado 9: un login y un `get_vehicle_status` desde
 `localhost` contra el entorno de pruebas.
+
+## 11. Etapa 2, fase 1: sistema visual y movimiento
+
+La etapa 2 cambia el aspecto, no las cifras: ni las definiciones del
+apartado 3, ni la privacidad, ni el login, ni el servicio, ni el recorte.
+La fase 1 deja un sistema (colores, tipos, espacios y movimiento) aplicado a
+toda la web y una sección terminada como muestra: «01 · Resumen», con el
+título grande y las cuatro cifras. La fase 2 (otra PR) cambiará las
+pestañas por una sola página que se desplaza.
+
+### Decisiones del propietario (registro de decisiones del proyecto)
+
+| Decisión | Qué dice | Por qué |
+|---|---|---|
+| D-025 | Fuentes propias: Barlow Condensed (títulos y cifras) y Manrope (texto), servidas por esta web. | La letra estrecha y gruesa es la mitad del aspecto pedido; las fuentes del sistema no la dan (Arial Narrow no existe en todos los equipos y es mucho más fina). Servirlas desde la propia web no añade terceros. |
+| D-026 | Solo tema oscuro. | El concepto es oscuro; mantener dos temas duplicaba el trabajo de contraste sin uso. |
+| D-027 | Movimiento sin librería, con estas duraciones y curvas y ninguna otra: `--dur-press` 120 ms, `--dur-ui` 200 ms, `--dur-reveal` 520 ms, `--dur-hero` 800 ms, `--stagger` 60 ms, `--ease-out` y `--ease-in-out`. | Una librería sería una segunda dependencia de ejecución; lo necesario son clases, `IntersectionObserver` y `requestAnimationFrame`. |
+
+### Política de seguridad de contenido: `font-src 'self'`
+
+Motivo del cambio (D-025): las fuentes se cargan desde la propia web.
+`font-src` pasa de `'none'` a `'self'`; nada más cambia. `tests/csp.test.ts`
+y `tests/environment.test.ts` fijan el texto nuevo, y
+`scripts/check-dist.mjs` comprueba además que el build lleve archivos
+`.woff2` y que ninguna hoja de estilos de `dist/assets` cargue de otro
+origen ni use `@import`.
+
+### Fuentes
+
+En `src/assets/fonts/`, copiadas de los paquetes npm
+`@fontsource/barlow-condensed` 5.3.0 y `@fontsource-variable/manrope` 5.3.0
+(sacadas con `npm pack` fuera del repo; no son dependencias). Solo el
+subconjunto latino en `woff2`, con la licencia SIL Open Font License de cada
+familia al lado (`OFL-*.txt`). Las declara `src/styles.css` con
+`font-display: swap` y `url()` relativas, así que Vite les pone huella.
+
+| Archivo | Peso |
+|---|---|
+| Barlow Condensed 500, 600, 700 y 800 | 21,4 + 22,3 + 22,4 + 22,5 KB |
+| Manrope variable (200 a 800) | 24,8 KB |
+| Total en el repo | 113,5 KB (110,8 KiB) |
+
+El navegador solo descarga las caras que la página usa: hoy Barlow 700 y
+800 y Manrope (unos 70 KB). La 500 y la 600 están para fases siguientes. Los
+títulos grandes usan 800 (`--w-title`): se compararon 700 y 800 con las
+fuentes reales y 800 se lee más pesado, que es lo que pidió el propietario;
+las cifras, 700 (`--w-figure`).
+
+### Cómo está hecho
+
+- Tokens en `:root` de `src/styles.css`: colores en oklch, tipos
+  (`--display`, `--text`, escala con `clamp()`), espacios y movimiento.
+- `src/ui/motion.ts`: `reveal(raíz)` añade `.in` a cada `.rv` la primera vez
+  que entra en pantalla, con un índice de escalonado en `--d`;
+  `countUp(elemento, valor, formato)` cuenta desde 0 al entrar en pantalla.
+  El texto final exacto (`format(valor)`) está siempre en el elemento; los
+  dígitos que pasan van encima, con `aria-hidden`, y se quitan al acabar.
+  Sin `IntersectionObserver` (jsdom) o con movimiento reducido, todo queda
+  en su estado final al momento y no se pide ningún fotograma. Nada empieza
+  fuera de pantalla ni con la pestaña del navegador oculta; al cambiar de
+  vista, la página aborta el movimiento en curso, que queda en su estado
+  final.
+- `src/ui/sectionHeader.ts`: número en caja roja inclinada, etiqueta y
+  título en líneas que suben al aparecer.
+- El subrayado de la pestaña elegida es un solo elemento que se desliza con
+  `transform`. Los paneles aparecen con un fundido corto. Los botones se
+  encogen al pulsarlos; el efecto de pasar por encima solo existe con ratón.
+- `@media (prefers-reduced-motion: reduce)` quita toda transición y
+  animación y deja el estado final.
+- Ancho: el contenido no pasa de 1280 px (1440 px a partir de 1800 px de
+  pantalla); las cuatro cifras pasan de 4 columnas a 2 (860 px o menos) y a
+  1 (menos de 360 px); el gráfico de 12 meses, en un móvil, conserva un
+  tamaño legible y se desplaza dentro de su propia caja; las tablas
+  también. `main` recorta cualquier desbordamiento horizontal como red.
+- Mapa: las teselas se oscurecen con un filtro CSS sobre su capa
+  (`invert` y `hue-rotate`); las líneas y la atribución no.
+
+### Qué se ha comprobado y dónde
+
+- jsdom (Vitest): `tests/motion.test.ts` (aparecer, cuenta, cancelación,
+  pestaña oculta, movimiento reducido, cabecera, subrayado, colores del
+  gráfico) con un `IntersectionObserver` y unos fotogramas manejados a
+  mano: prueban el contrato, no lo que se ve. `tests/contrast.test.ts` lee
+  los colores de la hoja de estilos, los pasa de oklch a sRGB y comprueba
+  4,5:1 para texto y 3:1 para bordes de controles, foco y series del
+  gráfico.
+- Navegador real (Chrome 156 sin cabeza, build de producción con la
+  política aplicada, `vite preview`, 2026-11-10), con emulación de
+  dispositivo por el protocolo de depuración a 320, 360, 390, 768, 1024,
+  1280, 1920 y 2560 px: entrada, demo y mapa sin desplazamiento horizontal
+  de la página, ningún título que se salga, Barlow 700 y 800 y Manrope
+  cargadas (`document.fonts`), ningún error de consola ni infracción de la
+  política, ningún control de menos de 44 px. La cuenta de las cifras se vio
+  en marcha y terminando en el texto exacto, también al cambiar de periodo;
+  el subrayado se desliza en 200 ms.
+
+### Qué no se ha comprobado
+
+- Safari y Firefox; solo se ha mirado Chrome.
+- Lectores de pantalla reales: el texto final está en el DOM y los dígitos
+  que pasan llevan `aria-hidden`, pero no se ha escuchado.
+- El contraste se calcula recortando cada canal al gamut sRGB; el navegador
+  reduce el croma, así que la luminancia real puede diferir un poco. Los
+  colores con transparencia y los del mapa no se comprueban.
+- La tarjeta para compartir (canvas) sigue con la letra del sistema.
