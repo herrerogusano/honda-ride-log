@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { csvCell, routesToCsv, rowsToCsv } from "../src/domain/csv";
-import { fold, formatDuration, formatNumber, formatPercent, matchesSearch, searchWords } from "../src/domain/format";
+import { fold, formatDuration, formatNumber, formatPercent, matchesSearch } from "../src/domain/format";
 import { monthVsLastYear, records, totals } from "../src/domain/stats";
 import { ride, rides } from "./helpers";
 
@@ -63,44 +63,54 @@ describe("formatting, edge cases", () => {
 });
 
 describe("search by date, edge cases", () => {
-  // Monday 12 May 2025 and Sunday 1 March 2026, local time.
-  const may = ride({ start: "2025-05-12T10:00:00-07:00", km: 10 });
+  // Monday 12 May 2025, Monday 5 May 2025 and Sunday 1 March 2026, local time.
+  const may12 = ride({ start: "2025-05-12T10:00:00-07:00", km: 10 });
+  const may5 = ride({ start: "2025-05-05T10:00:00-07:00", km: 10 });
   const march = ride({ start: "2026-03-01T10:00:00-08:00", km: 10 });
   // 19:00 on 31 December 2025 in Los Angeles; already 2026 in UTC.
   const newYearsEve = ride({ start: "2026-01-01T03:00:00Z", km: 10 });
+  const yes = (route: typeof may12, queries: string[]): void => {
+    for (const query of queries) expect(matchesSearch(route, query), `"${query}" should match`).toBe(true);
+  };
+  const no = (route: typeof may12, queries: string[]): void => {
+    for (const query of queries) expect(matchesSearch(route, query), `"${query}" should not match`).toBe(false);
+  };
 
-  it("matches a day number as a day, not as part of the year", () => {
-    expect(matchesSearch(may, "5 mayo")).toBe(false);
-    expect(matchesSearch(may, "12 mayo")).toBe(true);
-    expect(matchesSearch(may, "1 mayo")).toBe(true); // the beginning of "12", as when typing
-    expect(matchesSearch(march, "6")).toBe(false);
-    expect(matchesSearch(march, "26")).toBe(false);
-    expect(matchesSearch(march, "2026")).toBe(true);
-    expect(matchesSearch(march, "202")).toBe(true);
+  it("reads a number alone as the whole day or the whole year, never as a part of either", () => {
+    yes(may12, ["12 mayo", "12", "2025", "12 de mayo de 2025"]);
+    // Three digits are neither a day nor a year.
+    no(may12, ["012", "025"]);
+    no(may12, ["5 mayo", "2 mayo", "20 mayo", "1 mayo", "1", "2", "20", "202", "25", "5", "2024", "20250"]);
+    yes(may5, ["5 mayo", "05 mayo", "5", "05"]);
+    no(may5, ["12 mayo", "50", "0"]);
+    yes(march, ["1 marzo 2026", "2026", "1"]);
+    no(march, ["6", "26", "202", "3"]);
   });
 
-  it("matches the beginning of a word, never its middle", () => {
-    expect(matchesSearch(march, "dom")).toBe(true);
-    expect(matchesSearch(march, "mingo")).toBe(false);
-    expect(matchesSearch(march, "arzo")).toBe(false);
+  it("matches the beginning of the weekday and of the month, never their middle", () => {
+    yes(march, ["dom", "DOMINGO", "mar", "marzo", "m", "d"]);
+    no(march, ["mingo", "arzo", "lunes", "abril", "domingos"]);
+    // "mar" is both March and Tuesday (martes).
+    yes(ride({ start: "2026-11-10T10:00:00-08:00", km: 1 }), ["mar", "martes", "nov"]);
+    yes(ride({ start: "2026-09-02T10:00:00-07:00", km: 1 }), ["sep", "septiembre", "mie", "miércoles"]);
   });
 
-  it("accepts the date with and without leading zeros", () => {
-    for (const query of ["1/3/2026", "01/03/2026", "1/3", "2026-03-01", "2026-03"]) expect(matchesSearch(march, query), query).toBe(true);
-    for (const query of ["3/1/2026", "1/3/2025", "1/4"]) expect(matchesSearch(march, query), query).toBe(false);
+  it("reads a date with slashes or dashes as numbers, with or without zeros and with or without the year", () => {
+    yes(may5, ["5/5", "05/05", "05/5", "5/05", "5/5/2025", "05/05/2025", "5-5-2025", "5/5/25", "05-05-25", "2025-05-05", "2025-5-5", "2025-05", "2025-5"]);
+    no(may5, ["5/6", "6/5", "5/5/2026", "5/5/24", "2025-06", "2026-05-05", "2025-05-06", "5/5/025"]);
+    yes(march, ["1/3/2026", "01/03/2026", "1/3"]);
+    // Day first: 3/1 is 3 January, not 1 March.
+    no(march, ["3/1/2026", "1/3/2025", "1/4"]);
   });
 
   it("uses the local date on New Year's Eve", () => {
-    expect(matchesSearch(newYearsEve, "31/12/2025")).toBe(true);
-    expect(matchesSearch(newYearsEve, "miercoles diciembre 2025")).toBe(true);
-    expect(matchesSearch(newYearsEve, "2026")).toBe(false);
-    expect(matchesSearch(newYearsEve, "enero")).toBe(false);
+    yes(newYearsEve, ["31/12/2025", "miercoles diciembre 2025", "31", "2025-12-31"]);
+    no(newYearsEve, ["2026", "enero", "1/1/2026", "jueves"]);
   });
 
-  it("splits the query at any white space and at commas", () => {
-    expect(matchesSearch(may, "lunes,\t12\nmayo")).toBe(true);
-    expect(matchesSearch(may, "lunes, 12 de mayo de 2025")).toBe(true);
-    expect(searchWords(may)).toEqual(["lunes", "12", "de", "mayo", "de", "2025", "may", "12/05/2025", "12/5/2025", "2025-05-12"]);
+  it("needs every word to match and splits the query at any white space and at commas", () => {
+    yes(may12, ["lunes,\t12\nmayo", "lunes, 12 de mayo de 2025", "", "   ", ","]);
+    no(may12, ["lunes 13 mayo", "martes 12 mayo", "12 mayo 2024"]);
   });
 });
 

@@ -193,6 +193,53 @@ describe("demo controls", () => {
     expect(root.querySelector<HTMLSelectElement>(".demo-banner select")?.value).toBe("empty");
   });
 
+  it("does not start again when the address names the scenario already on screen", async () => {
+    mount("#demo=heavy");
+    await loaded();
+    const view = root.querySelector(".tabs");
+    window.dispatchEvent(new HashChangeEvent("hashchange"));
+    await tick();
+    expect(root.querySelector(".tabs")).toBe(view);
+    expect(root.querySelector(".loading")).toBeNull();
+  });
+
+  it("leaves the demo when the address stops asking for it, and comes back when it asks again", async () => {
+    mount("#demo");
+    await loaded();
+    history.replaceState(null, "", "/");
+    window.dispatchEvent(new HashChangeEvent("hashchange"));
+    expect(root.querySelector(".tabs")).toBeNull();
+    expect(text()).toContain("Ver la demo");
+    expect(root.querySelector(".demo-banner")?.hasAttribute("hidden")).toBe(true);
+    // Nothing happens on the landing page while the address asks for nothing.
+    window.dispatchEvent(new HashChangeEvent("hashchange"));
+    expect(text()).toContain("Ver la demo");
+    history.replaceState(null, "", "/#demo");
+    window.dispatchEvent(new HashChangeEvent("hashchange"));
+    await loaded();
+    expect(root.querySelector(".demo-banner")?.hasAttribute("hidden")).toBe(false);
+  });
+
+  it("never replaces the view of a real account with the demo because of the address", async () => {
+    const app = mount();
+    await app.load(createDemoService(rider), { demo: false });
+    const view = root.querySelector(".tabs");
+    expect(view).not.toBeNull();
+    history.replaceState(null, "", "/#demo=empty");
+    window.dispatchEvent(new HashChangeEvent("hashchange"));
+    await tick();
+    expect(root.querySelector(".tabs")).toBe(view);
+    expect(root.querySelector(".demo-banner")?.hasAttribute("hidden")).toBe(true);
+    history.replaceState(null, "", "/");
+    window.dispatchEvent(new HashChangeEvent("hashchange"));
+    expect(root.querySelector(".tabs")).toBe(view);
+    // Back on the landing page, the address works again.
+    app.showLanding();
+    history.replaceState(null, "", "/#demo=empty");
+    window.dispatchEvent(new HashChangeEvent("hashchange"));
+    await vi.waitFor(() => expect(text()).toContain("Todavía no hay rutas"));
+  });
+
   it("moves the focus to what replaced the button that was pressed", async () => {
     mount();
     button("Ver la demo").click();

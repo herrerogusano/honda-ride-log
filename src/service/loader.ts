@@ -114,7 +114,7 @@ export function loadAllRoutes(
 ): Promise<RoutesLoad> {
   return step("routes", async () => {
     // Without a usable clock there is no "current semester" to start from.
-    if (!Number.isFinite(nowMs)) throw new LoadError("routes", "unknown", "InvalidClock");
+    if (Number.isNaN(new Date(nowMs).getTime())) throw new LoadError("routes", "unknown", "InvalidClock");
     const routes: Route[] = [];
     const seen = new Set<string>();
     let skipped = 0;

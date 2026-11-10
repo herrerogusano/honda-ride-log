@@ -39,16 +39,30 @@ function detail(shape: Shape): unknown {
 
 const trim = (shape: Shape) => trimTrace(sanitizeRouteTrace(detail(shape)));
 
-/** The smallest straight distance from anything drawn (points and what lies between them) to a place. */
+/**
+ * Where a map draws: Web Mercator, the projection of the tiles. A map joins
+ * two points with a straight line on this plane, which is not a straight
+ * line in latitude and longitude. Written here apart from the code under
+ * test, from the usual formulas.
+ */
+const toMap = (point: LatLng): [number, number] => [point[1], (Math.log(Math.tan(Math.PI / 4 + (point[0] * Math.PI) / 360)) * 180) / Math.PI];
+const fromMap = (xy: readonly [number, number]): LatLng => [(Math.atan(Math.exp((xy[1] * Math.PI) / 180)) * 360) / Math.PI - 90, xy[0]];
+
+/**
+ * The smallest straight distance on the ground from anything drawn to a
+ * place: the points and the line a map draws between them, sampled about
+ * every 5 metres.
+ */
 function nearest(lines: readonly TraceLine[], place: LatLng): number {
   let best = Number.POSITIVE_INFINITY;
   for (const line of lines) {
     for (let i = 1; i < line.points.length; i += 1) {
-      const a = line.points[i - 1] as LatLng;
-      const b = line.points[i] as LatLng;
-      for (let step = 0; step <= 200; step += 1) {
-        const t = step / 200;
-        best = Math.min(best, distanceMeters([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t], place));
+      const a = toMap(line.points[i - 1] as LatLng);
+      const b = toMap(line.points[i] as LatLng);
+      const steps = Math.max(50, Math.ceil(distanceMeters(line.points[i - 1] as LatLng, line.points[i] as LatLng) / 5));
+      for (let step = 0; step <= steps; step += 1) {
+        const t = step / steps;
+        best = Math.min(best, distanceMeters(fromMap([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]), place));
       }
     }
   }
@@ -101,6 +115,51 @@ describe("trim by place", () => {
   it("ignores a malformed start or end point instead of failing the whole route", () => {
     const result = trim({ lines: [[north(0), north(2000)]], ends: [["x", "y"], null, [LON0, 95, 0]] });
     expect(northings(result.lines)).toEqual([[401, 1599]]);
+  });
+
+  it("measures a very long segment where the map draws it, not along latitude and longitude", () => {
+    // A segment of more than 200 km that passes close to the start. A map draws it as a
+    // straight line on its projection, which bulges away from the straight line in degrees.
+    const home = north(0);
+    let grazed = 0;
+    for (let shift = 0.002; shift < 0.009; shift += 0.0002) {
+      const far: LatLng[] = [[LAT0 - 1, LON0 - 1.2 + shift], [LAT0 + 1, LON0 + 1.2 + shift]];
+      const result = trim({ lines: [[home, north(2000)], far] });
+      const closest = nearest(result.lines, home);
+      expect(closest, `shift ${shift}`).toBeGreaterThanOrEqual(400);
+      if (closest < 420) grazed += 1;
+    }
+    // Some of them really do pass right at the edge, or this proves nothing.
+    expect(grazed).toBeGreaterThan(3);
+  });
+
+  it("hides the start from a line drawn on the other side of the edge of the world map", () => {
+    const start: LatLng = [0, 179.999];
+    const result = trim({ lines: [[start, [0, -179.999], [0, -179.9], [0.5, -179.5]]] });
+    expect(result.lines.length).toBeGreaterThan(0);
+    for (const line of result.lines) for (const point of line.points) expect(distanceMeters(point, start)).toBeGreaterThanOrEqual(400);
+  });
+
+  it("hides the ends of every line when the service marks no start and no end", () => {
+    // Reversed lines and no marks: which end is the real start cannot be known.
+    expect(trim({ lines: [[north(100), north(0)], [north(800), north(100)]] })).toEqual({ lines: [], empty: "hidden" });
+    const result = trim({ lines: [[north(3000), north(0)], [north(3000), north(6000)]] });
+    expect(northings(result.lines)).toEqual([
+      [2599, 401],
+      [3401, 5599],
+    ]);
+    // With the marks, the place where the two lines meet stays on the map.
+    const ends = [[LON0, LAT0, 0], [LON0, LAT0 + 6000 / M_PER_DEG, 0]];
+    expect(northings(trim({ lines: [[north(0), north(3000)], [north(3000), north(6000)]], ends }).lines)).toEqual([
+      [401, 3000],
+      [3000, 5599],
+    ]);
+  });
+
+  it("treats a line of a single point as a place where the ride was", () => {
+    const far = [[LON0, LAT0 + 9000 / M_PER_DEG, 0], [LON0, LAT0 + 9500 / M_PER_DEG, 0]];
+    const result = trim({ lines: [[north(0)], [north(300), north(3000)]], ends: far });
+    expect(northings(result.lines)).toEqual([[401, 2599]]);
   });
 
   it("keeps its distance on long slanted segments, where degrees are not metres", () => {

@@ -53,6 +53,10 @@ export default tseslint.config(
           selector: "ImportExpression",
           message: "No dynamic imports: they slip past the import rules that guard the privacy seals.",
         },
+        {
+          selector: "MemberExpression[object.type='MetaProperty'][property.name=/^glob/]",
+          message: "No import.meta.glob: it loads modules past the import rules that guard the privacy seals.",
+        },
       ],
       "no-restricted-imports": ["error", { patterns: [ROUTE_ID_SEAL, TRACE_SEAL, PLACES_SEAL] }],
     },
