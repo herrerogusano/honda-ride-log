@@ -100,7 +100,7 @@ describe("Mapa tab", () => {
     expect(h.calls).toEqual([]);
     expect(h.surfaces()).toBe(0);
     expect(canvas().hidden).toBe(true);
-    expect(text()).toContain("Elige una ruta en la pestaña Rutas");
+    expect(text()).toContain("Elige una ruta en la lista de abajo");
     h.view.shown();
     expect(h.resized()).toBe(0);
   });
@@ -197,7 +197,7 @@ describe("Mapa tab", () => {
     fail = false;
     button("Reintentar").click();
     await vi.waitFor(() => expect(h.shown.length).toBe(1));
-    expect(document.querySelector("h2")?.textContent).toBe(`Ruta del ${formatDateLong((h.data.routes[2] as RiderData["routes"][number]).startMs)}`);
+    expect(document.querySelector("h3")?.textContent).toBe(`Ruta del ${formatDateLong((h.data.routes[2] as RiderData["routes"][number]).startMs)}`);
     expect(h.shown[0]?.length).toBeGreaterThan(0);
     expect(document.querySelector('[role="alert"]')).toBeNull();
     expect(h.calls).toEqual(["get_route_detail", "get_route_detail"]);
@@ -221,7 +221,7 @@ describe("Mapa tab", () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(h.shown.length).toBe(1);
     expect(h.shown[0]).toBe(drawnForNewer);
-    expect(document.querySelector("h2")?.textContent).toBe(`Ruta del ${formatDateLong(newer.startMs)}`);
+    expect(document.querySelector("h3")?.textContent).toBe(`Ruta del ${formatDateLong(newer.startMs)}`);
     // The late answer was still kept, so going back does not ask again.
     h.view.open(older);
     await vi.waitFor(() => expect(h.shown.length).toBe(2));
@@ -260,7 +260,7 @@ describe("Mapa tab", () => {
     expect(h.calls).toEqual(["get_route_detail", "get_route_detail"]);
     for (const go of release) go();
     await vi.waitFor(() => expect(h.shown.length).toBe(1));
-    expect(document.querySelector("h2")?.textContent).toBe(`Ruta del ${formatDateLong(a.startMs)}`);
+    expect(document.querySelector("h3")?.textContent).toBe(`Ruta del ${formatDateLong(a.startMs)}`);
     // One request per route, however many times each was opened.
     expect(h.calls.length).toBe(2);
   });
@@ -296,12 +296,12 @@ describe("Mapa tab", () => {
     expect(button("Ruta siguiente").parentElement?.hidden).toBe(false);
     button("Ruta siguiente").click();
     await vi.waitFor(() => expect(h.shown.length).toBe(1));
-    expect(document.querySelector("h2")?.textContent).toBe(`Ruta del ${formatDateLong((routes[1] as RiderData["routes"][number]).startMs)}`);
+    expect(document.querySelector("h3")?.textContent).toBe(`Ruta del ${formatDateLong((routes[1] as RiderData["routes"][number]).startMs)}`);
     expect(h.calls.length).toBe(2);
     expect(button("Ruta anterior").disabled).toBe(false);
     button("Ruta anterior").click();
     await vi.waitFor(() => expect(h.shown.length).toBe(2));
-    expect(document.querySelector("h2")?.textContent).toBe(`Ruta del ${formatDateLong((routes[0] as RiderData["routes"][number]).startMs)}`);
+    expect(document.querySelector("h3")?.textContent).toBe(`Ruta del ${formatDateLong((routes[0] as RiderData["routes"][number]).startMs)}`);
     expect(button("Ruta anterior").disabled).toBe(true);
     h.view.open(routes[routes.length - 1] as RiderData["routes"][number]);
     expect(button("Ruta siguiente").disabled).toBe(true);

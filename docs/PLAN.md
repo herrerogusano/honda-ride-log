@@ -7,7 +7,9 @@ y cómo se reparte el trabajo. Actualízalo al cerrar cada fase.
 Última actualización: 2026-11-10, cierre de la fase 2; módulos de la fase 3
 y su conexión con la interfaz (apartado 10); toda la información de cada
 ruta, velocidad máxima incluida (apartados 2 y 3); etapa 2 (aspecto y
-movimiento), fase 1: sistema visual (apartado 11).
+movimiento), fase 1: sistema visual (apartado 11); etapa 2, fase 2: una sola
+página con secciones numeradas, barra fija y selector de periodo en la barra
+(apartado 12).
 
 ## 1. Qué es
 
@@ -29,7 +31,7 @@ Una web estática en la que cada persona invitada entra con su cuenta de MAPIT
 | Tema | Decisión |
 |---|---|
 | Forma | Web estática, repo propio, privado al crearlo; el propietario lo hace público y activa Pages. |
-| Alcance | Tres pestañas (Resumen, Mapa, Rutas), tarjeta para compartir solo con cifras, modo demo sin login. |
+| Alcance | Una sola página que se desplaza, con secciones numeradas (Resumen, Ritmo, Hábitos, Rutas con el mapa y la lista, Taller) bajo una barra fija; hasta la etapa 2, fase 2, eran tres pestañas (Resumen, Mapa, Rutas). Tarjeta para compartir solo con cifras, modo demo sin login. |
 | Fuera | Atlas 3D, sección de territorio, filtros de «geometría inferida», exportación JSON. (Las fuentes incrustadas estuvieron fuera hasta la decisión D-025 del propietario: ver «Aspecto».) |
 | Velocidad máxima | Se enseña en cada ruta (lista, mapa y CSV), nunca en la tarjeta para compartir. Decisión del propietario del 2026-11-10 («de cada trayecto quiero que aparezca toda la información»), que sustituye en este punto a «velocidad máxima: fuera en cualquier parte». Que la tarjeta no la lleve es decisión del director: la tarjeta sale de la web. |
 | Aspecto | Solo tema oscuro (D-026). Fuentes propias servidas por la web, Barlow Condensed y Manrope (D-025). Movimiento sin librería, con unas duraciones fijas (D-027). Detalle en el apartado 11. |
@@ -44,6 +46,12 @@ Una web estática en la que cada persona invitada entra con su cuenta de MAPIT
 | Proceso | PR pequeñas contra `main`, CI en verde y revisión de un agente independiente antes de fusionar. |
 
 ## 3. Diseño de las tres pestañas
+
+Desde la etapa 2, fase 2, las tres pestañas son secciones de una sola página
+(apartado 12): lo que aquí se llama «Resumen» se reparte entre el héroe y las
+secciones 01 Resumen, 02 Ritmo, 03 Hábitos y 05 Taller; «Mapa» y «Rutas»
+viven juntas en la sección 04 Rutas. Las definiciones de este apartado no
+cambian.
 
 Todo se calcula en el navegador a partir de la lista de rutas ya saneada
 (`Route[]` de `src/domain/model.ts`) y del estado del vehículo. No se usan las
@@ -133,7 +141,8 @@ se cuentan y cuántas se han descartado por venir sin fecha o sin km.
   relleno («de», «del», «el», «día») no cuentan, y un separador al final de
   una palabra se ignora, para que la lista no se vacíe mientras se escribe
   una fecha («7/»).
-- Al pulsar una ruta se abre en la pestaña Mapa.
+- Al pulsar una ruta se abre en el mapa de la misma sección, que se trae a la
+  vista si no se veía (antes: en la pestaña Mapa).
 - Exportar CSV de lo que se ve, con esas mismas columnas (un dato que falta
   es una celda vacía). Sin identificadores ni coordenadas. Las celdas que empiecen por `=`, `+`, `-` o `@` se protegen
   para que una hoja de cálculo no las ejecute.
@@ -152,7 +161,9 @@ se cuentan y cuántas se han descartado por venir sin fecha o sin km.
 
 ### Accesibilidad básica
 
-Pestañas navegables con teclado y con los roles ARIA de pestañas, contraste
+Navegación por secciones con botones (foco al título de la sección al
+llegar, `aria-current` en la sección que se lee; hasta la fase 2 de la etapa
+2 eran pestañas con sus roles ARIA), contraste
 AA (solo hay tema oscuro desde D-026; `tests/contrast.test.ts` lo comprueba
 sobre los colores de la hoja de estilos), cada gráfico SVG con título y una
 tabla o texto alternativo con las mismas cifras, nada que dependa solo del
@@ -485,7 +496,7 @@ política de seguridad de contenido, tal como se publicará: `npm run build`,
 | `src/domain/stats.ts`, `format.ts`, `csv.ts`, `maintenance.ts` | Cifras del Resumen, textos en español y búsqueda por fecha, exportación CSV, cálculo de la revisión. |
 | `src/config.ts` | Las dos respuestas de producto que el propietario aún puede cambiar. |
 | `src/storage/maintenance.ts` | El único archivo que usa `localStorage`. |
-| `src/ui/` | La página: `app.ts` (entrada, demo, carga y estados), `summary.ts`, `routesView.ts`, `mapView.ts` y `leafletSurface.ts` (el mapa), `charts.ts`, `card.ts`, `tabs.ts`, `dom.ts`. |
+| `src/ui/` | La página: `app.ts` (entrada, demo, carga y estados), `summary.ts`, `routesView.ts`, `mapView.ts` y `leafletSurface.ts` (el mapa), `charts.ts`, `card.ts`, `dom.ts`; `nav.ts` (enlaces de sección, seguimiento de la lectura y barra de progreso) y `period.ts` (selector de periodo de la barra), desde la etapa 2, fase 2. |
 | `src/ui/motion.ts`, `src/ui/sectionHeader.ts`, `src/styles.css` | Etapa 2: movimiento (aparecer al entrar en pantalla, cifras que cuentan), cabecera de sección numerada y la hoja de estilos con los tokens (apartado 11). |
 | `src/assets/fonts/` | Las fuentes propias (woff2, subconjunto latino) y sus licencias SIL OFL. |
 | `public/favicon.svg` | El icono de la pestaña del navegador. |
@@ -951,8 +962,8 @@ La etapa 2 cambia el aspecto, no las cifras: ni las definiciones del
 apartado 3, ni la privacidad, ni el login, ni el servicio, ni el recorte.
 La fase 1 deja un sistema (colores, tipos, espacios y movimiento) aplicado a
 toda la web y una sección terminada como muestra: «01 · Resumen», con el
-título grande y las cuatro cifras. La fase 2 (otra PR) cambiará las
-pestañas por una sola página que se desplaza.
+título grande y las cuatro cifras. La fase 2 cambió las pestañas por una
+sola página que se desplaza (apartado 12).
 
 ### Decisiones del propietario (registro de decisiones del proyecto)
 
@@ -1008,8 +1019,9 @@ las cifras, 700 (`--w-figure`).
   final.
 - `src/ui/sectionHeader.ts`: número en caja roja inclinada, etiqueta y
   título en líneas que suben al aparecer.
-- El subrayado de la pestaña elegida es un solo elemento que se desliza con
-  `transform`. Los paneles aparecen con un fundido corto. Los botones se
+- (Hasta la fase 2.) El subrayado de la pestaña elegida era un solo
+  elemento que se deslizaba con `transform`; hoy lo hacen igual el de los
+  enlaces de sección y la píldora del periodo (apartado 12). Los paneles aparecen con un fundido corto. Los botones se
   encogen al pulsarlos; el efecto de pasar por encima solo existe con ratón.
 - `@media (prefers-reduced-motion: reduce)` quita toda transición y
   animación y deja el estado final.
@@ -1049,3 +1061,150 @@ las cifras, 700 (`--w-figure`).
   reduce el croma, así que la luminancia real puede diferir un poco. Los
   colores con transparencia y los del mapa no se comprueban.
 - La tarjeta para compartir (canvas) sigue con la letra del sistema.
+
+## 12. Etapa 2, fase 2: una sola página
+
+Escrito el 2026-11-10. Las pestañas se quitan: la cuenta (o la demo) se ve en
+una sola página que se desplaza, bajo una barra fija. Cambia dónde está cada
+bloque y cómo se mueve; no cambia ninguna cifra, ninguna definición del
+apartado 3, ni la privacidad, el login, el servicio o el recorte.
+
+### Estructura
+
+| Parte | Qué lleva |
+|---|---|
+| Barra fija (`header.topbar`) | Marca, aviso «Demo» si es la demo, enlaces de sección, selector de periodo y «Salir» con una cuenta. Una línea fina de progreso de lectura en su borde superior. |
+| Franja de demo | Bajo la barra, en el flujo de la página (se va al desplazarse; el aviso «Demo» de la barra se queda): «Modo demo: datos de ejemplo», escenario y «Salir de la demo». En un móvil, la frase larga solo la oyen los lectores de pantalla. |
+| Héroe (sin número) | Modelo de la moto si se conoce, «Una moto. / Cada / trazo.», una frase con el historial entero («N salidas entre el … y el …») y la placa inclinada con el estado (batería, último uso, odómetro). La placa es el sitio del atlas 3D de la fase 5: tiene cabeza, cuerpo y pie, y el estado puede compartirla. Cuña roja detrás, a la derecha; por debajo de 960 px, diagonal al pie del héroe. |
+| 01 Resumen | «Tu año / en cifras» (sigue al periodo), el periodo que enseña y las cuatro cifras. |
+| 02 Ritmo | «El pulso / de los meses»: km por mes, récords, «Mes frente a mes» (la cuarta cifra dibujada como dos barras) y rachas. |
+| 03 Hábitos | «Cada salida / cuenta»: días y horas (los dos gráficos) y trayectos cortos. |
+| 04 Rutas | «El archivo / de salidas»: el mapa y, debajo, la lista. Elegir una ruta la abre en ese mapa, mueve el foco a su título y trae el mapa a la vista si no se veía. Están en dos cajas (`.archive-map`, `.archive-list`) para que la fase 3 las ponga lado a lado. |
+| 05 Taller | «A punto»: mantenimiento y tarjeta para compartir. |
+| Pie | Las cinco notas de siempre y las frases de privacidad. |
+
+Una cuenta sin rutas tiene 01 Resumen (con el aviso), Rutas y Taller,
+numeradas 01, 02 y 03, y no tiene selector de periodo. Los bloques dentro de
+cada sección son `h3` bajo el `h2` de la sección.
+
+### Enlaces de sección (decisión D-028)
+
+| Decisión | Qué dice | Por qué |
+|---|---|---|
+| D-028 | Los enlaces de sección son botones que desplazan la página; no escriben nada en la dirección. | El fragmento de la dirección está reservado para `#demo` y `#demo=…` (apartados 6 y 10): escribir `#ritmo` lo pisaría y una recarga perdería la demo. |
+
+- Desplazan con suavidad hasta dejar la cabecera de la sección 16 px bajo la
+  barra (con movimiento reducido, de golpe) y llevan el foco al título de la
+  sección (`tabindex="-1"`).
+- Un solo subrayado se desliza y cambia de ancho entre enlaces con
+  `transform`. Lo mueve un seguimiento de la lectura (un
+  `IntersectionObserver` sobre una línea al 35 % de la altura de la
+  pantalla); el enlace de la sección que se lee lleva `aria-current="true"`.
+  En el héroe no hay ninguno; en el pie sigue el último. Mientras un enlace
+  desplaza la página, las secciones que cruza no se llevan la marca.
+- Al llegar (evento `scrollend`, o seis fotogramas quietos donde no existe),
+  la sección vuelve a entrar: la etiqueta se desliza, las líneas del título
+  suben y una raya roja barre bajo el título. Solo si la cabecera se ve;
+  nunca con movimiento reducido. También la primera vez que una sección
+  aparece barre la raya.
+- En pantallas de 1100 px o menos, los enlaces van en una segunda fila que se
+  desplaza de lado, con los bordes difuminados; el enlace actual se trae a la
+  vista. Zonas de pulsación de 44 px. Por debajo de 520 px la marca se queda
+  en su símbolo (el nombre sigue para lectores de pantalla).
+- La línea de progreso se pinta con `transform: scaleX` en un fotograma por
+  ráfaga de desplazamiento, y solo mientras se desplaza.
+
+### Selector de periodo
+
+Uno solo, en la barra: botones de radio (los años con rutas y «Todo») en un
+control segmentado, con una píldora roja que se desliza bajo el elegido. Las
+flechas del teclado se mueven entre opciones, como en cualquier grupo de
+radio. Con muchos años, la fila se desplaza dentro de su caja y mantiene a la
+vista el elegido. Siguen al periodo exactamente los mismos bloques que antes
+(apartado 3): las cuatro cifras, los récords, días y horas, los trayectos
+cortos y la tarjeta; cada bloque dice el periodo que enseña.
+
+Al cambiar de periodo: las cifras vuelven a contar (más corto que la primera
+vez) donde se ven; los bloques que siguen al periodo y se ven aparecen con
+un fundido corto, uno tras otro (`--stagger`), y sus barras vuelven a crecer;
+los que no se ven esperan a verse; el título de 01 vuelve a subir si se ve.
+Los demás bloques son los mismos nodos y no se tocan. La página no salta (los
+bloques nuevos ocupan lo mismo que los viejos; lo comprobó el navegador).
+
+### Carga y errores
+
+La carga enseña la forma del héroe y de las cuatro cifras en gris, con el
+texto del progreso en una línea `role="status"`; el estado de la moto aparece
+encima en cuanto llega. Los paneles de error cambian de aspecto (esquina
+cortada, barra roja, código en rojo); sus códigos, textos y botones son los
+de siempre.
+
+### Movimiento
+
+Solo `transform` y `opacity` (un test lo comprueba en cada `@keyframes`), con
+las duraciones de D-027 y ninguna otra. Nada se anima fuera de pantalla; al
+cambiar de vista (otro escenario, salir de la demo, salir de la cuenta, otra
+carga) se sueltan los observadores, los fotogramas pedidos y los escuchadores
+de la barra. Con movimiento reducido, todo en su estado final, desplazamiento
+de golpe y sin repeticiones. Arreglos de la revisión de la fase 1: el
+`ResizeObserver` de las pestañas se fue con ellas y los nuevos se desconectan;
+la página ya no vigila bloques que un cambio de periodo ha quitado.
+
+### Otros cambios
+
+- Un número y su unidad no se separan al cortar la línea: los textos con
+  unidad (`formatKm`, `formatSpeed`, `formatPercent`, `formatDuration`, los
+  km enteros, la batería…) llevan un espacio duro (U+00A0), escrito en el
+  código como `\u00A0` o `String.fromCharCode(0xa0)`; un test rompe si el
+  carácter invisible entra en `src/` o `tests/`. La hora de llegada con
+  «(+1 día)» sigue con espacio normal, porque también va al CSV.
+- El saneador convierte `-0` en `0` también en la velocidad media, el
+  odómetro y el kilometraje, como ya hacía con la velocidad máxima.
+- El gráfico de 12 meses tiene un segundo dibujo para móviles (400 de ancho,
+  iniciales de los meses, ejes sin unidad) que sustituye al ancho por debajo
+  de 640 px; ya no hay que desplazarlo de lado. La tabla de datos es una.
+
+### Qué se ha comprobado y dónde
+
+- jsdom (Vitest): `tests/nav.test.ts` (enlaces, desplazamiento, foco,
+  `aria-current`, seguimiento, repetición al llegar, progreso, movimiento
+  reducido, liberación), `tests/motion-page.test.ts` (liberación al cambiar
+  de escenario, salir de la demo y salir de la cuenta; fundido escalonado del
+  periodo; nada vigila bloques quitados; movimiento reducido),
+  `tests/app.test.ts`, `tests/summary.test.ts`, `tests/page-edges.test.ts`,
+  `tests/motion.test.ts`, `tests/charts.test.ts`, `tests/styles.test.ts`,
+  `tests/format.test.ts` y `tests/sanitize.test.ts`. Prueban el contrato con
+  observadores y fotogramas manejados a mano, no lo que se ve. Los de
+  `tests/boot.test.ts` y `tests/sign-in-errors.test.ts` (servidor falso)
+  solo cambiaron el selector de «página cargada».
+- Roturas: cada test nuevo se vio fallar rompiendo el código de 55 maneras,
+  una cada vez y lanzando Vitest como `npm test` (el ejecutor se niega a
+  empezar si la suite no está en verde): enlaces (21), periodo (4), página y
+  cambio de periodo (9), `app.ts` (7), cabecera (2), movimiento (2), formato
+  (2), saneador (1), gráfico de móviles (2) y hoja de estilos (5). Fallaron
+  las 55. Es una muestra de roturas pensadas por el implementador; falta la
+  del revisor independiente.
+- Navegador real (Chrome sin cabeza, build de producción con la política,
+  `vite preview`, 2026-11-10), emulando por el protocolo de depuración 320,
+  360, 390, 768, 1024, 1280, 1920 y 2560 px en la entrada, la demo, `heavy`,
+  `empty`, `error`, el mapa abierto y la carga: sin desplazamiento lateral de
+  la página, ningún título ni cifra que se salga, ninguna cifra separada de su
+  unidad, Barlow y Manrope cargadas, ningún control de menos de 44 px, ningún
+  error de consola ni infracción de la política, y ninguna petición fuera del
+  propio origen salvo `tile.openstreetmap.org`. En vivo, a 1280 y 390 px,
+  con clics de ratón de verdad: el enlace desplaza con suavidad y deja la
+  cabecera bajo la barra, el foco va al título, el subrayado se desliza entre
+  enlaces, la sección vuelve a entrar con la raya; el cambio de periodo
+  vuelve a contar donde se ve, funde los bloques con escalonado y no mueve la
+  página; elegir una ruta abre el mapa en su sitio y lo deja bajo la barra.
+  Con movimiento reducido: salto de golpe, sin repeticiones ni animaciones
+  en marcha.
+
+### Qué no se ha comprobado
+
+- Safari y Firefox (`scrollend` existe en Firefox; en Safari se usa la
+  espera de fotogramas quietos, sin probar). Un móvil físico y el
+  desplazamiento con el dedo.
+- Un lector de pantalla real con los enlaces de sección y el grupo de radio.
+- El contraste de los colores con transparencia (barra translúcida).
+- Una cuenta real (no hay servicio desplegado).

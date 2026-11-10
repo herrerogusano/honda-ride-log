@@ -68,7 +68,9 @@ function instantOrNull(value: unknown, path: string): number | null {
 /** A finite number that is not negative; a negative one is treated as absent. */
 function nonNegativeOrNull(value: unknown, path: string): number | null {
   const number = finiteOrNull(value, path);
-  return number !== null && number >= 0 ? number : null;
+  if (number === null || number < 0) return null;
+  // JSON can carry -0, which passes `>= 0` and which Intl writes as "-0".
+  return number === 0 ? 0 : number;
 }
 
 /**

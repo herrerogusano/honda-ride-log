@@ -17,6 +17,23 @@ export const WEEKDAYS_SHORT = ["lun", "mar", "mié", "jue", "vie", "sáb", "dom"
 
 const pad = (value: number): string => String(value).padStart(2, "0");
 
+/**
+ * A no-break space. It joins a number to its unit («−236 km», «58 km/h»),
+ * so a line never breaks between them. Built from its code, so no invisible
+ * character hides in the source (docs/PLAN.md, section 8).
+ */
+export const NBSP = String.fromCharCode(0xa0);
+
+/** A formatted number and its unit, never split across lines: `6.125 km`. */
+export function withUnit(number: string, unit: string): string {
+  return `${number}${NBSP}${unit}`;
+}
+
+/** Whole kilometres, as the figures show them: `6.125 km`. */
+export function formatWholeKm(km: number): string {
+  return withUnit(formatNumber(km), "km");
+}
+
 /** `9 nov 2026`. */
 export function formatDate(ms: number): string {
   const date = new Date(ms);
@@ -62,7 +79,7 @@ export function formatEndTime(startMs: number, endMs: number | null): string {
 
 /** A speed as the service gives it, `58 km/h`; a dash when unknown. The unit is unconfirmed by the service. */
 export function formatSpeed(speed: number | null): string {
-  return speed === null ? "—" : `${formatNumber(speed)} km/h`;
+  return speed === null ? "—" : withUnit(formatNumber(speed), "km/h");
 }
 
 /**
@@ -83,9 +100,9 @@ export function formatMonth(year: number, month: number): string {
 export function formatDuration(seconds: number | null): string {
   if (seconds === null) return "—";
   const minutes = Math.round(seconds / 60);
-  if (minutes < 1) return "menos de 1 min";
-  if (minutes < 60) return `${minutes} min`;
-  return `${Math.floor(minutes / 60)} h ${pad(minutes % 60)} min`;
+  if (minutes < 1) return `menos de ${withUnit("1", "min")}`;
+  if (minutes < 60) return withUnit(String(minutes), "min");
+  return `${withUnit(String(Math.floor(minutes / 60)), "h")} ${withUnit(pad(minutes % 60), "min")}`;
 }
 
 const numberFormats = new Map<number, Intl.NumberFormat>();
@@ -112,12 +129,12 @@ export function formatNumber(value: number, decimals = 0): string {
 
 /** Kilometres of one ride: one decimal. */
 export function formatKm(km: number): string {
-  return `${formatNumber(km, 1)} km`;
+  return withUnit(formatNumber(km, 1), "km");
 }
 
 /** A share between 0 and 1 as a whole percentage: `37 %`. */
 export function formatPercent(share: number): string {
-  return `${formatNumber(share * 100)} %`;
+  return withUnit(formatNumber(share * 100), "%");
 }
 
 /** Lower case without accents, so "sabado" finds "sábado". */

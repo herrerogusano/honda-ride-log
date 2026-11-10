@@ -169,15 +169,15 @@ describe("share card", () => {
     const card = cardContent(list, 2026, false);
     expect(card.title).toBe("Tu 2026 en moto");
     expect(card.items).toEqual([
-      { label: "Kilómetros", value: "1.220 km" },
+      { label: "Kilómetros", value: "1.220\u00A0km" },
       { label: "Salidas", value: "3" },
-      { label: "Horas en marcha", value: "13 h" },
-      { label: "Ruta más larga", value: "1.070,0 km" },
-      { label: "Mes con más km", value: "julio · 1.140 km" },
+      { label: "Horas en marcha", value: "13\u00A0h" },
+      { label: "Ruta más larga", value: "1.070,0\u00A0km" },
+      { label: "Mes con más km", value: "julio · 1.140\u00A0km" },
     ]);
     expect(card.fileName).toBe("ride-log-2026.png");
     expect(cardText(card)).toBe(
-      "Tu 2026 en moto. Kilómetros: 1.220 km; Salidas: 3; Horas en marcha: 13 h; Ruta más larga: 1.070,0 km; Mes con más km: julio · 1.140 km.",
+      "Tu 2026 en moto. Kilómetros: 1.220\u00A0km; Salidas: 3; Horas en marcha: 13\u00A0h; Ruta más larga: 1.070,0\u00A0km; Mes con más km: julio · 1.140\u00A0km.",
     );
     expect(cardText(card)).not.toMatch(/\d{1,2} (abr|jul)/);
   });
@@ -185,11 +185,11 @@ describe("share card", () => {
   it("marks synthetic figures, names the year of the best month over the whole history and copes with no rides", () => {
     const demo = cardContent(list, "all", true);
     expect(demo.title).toBe("Tu historial en moto");
-    expect(demo.items[4]?.value).toBe("julio de 2026 · 1.140 km");
+    expect(demo.items[4]?.value).toBe("julio de 2026 · 1.140\u00A0km");
     expect(demo.fileName).toBe("ride-log-historial-demo.png");
     expect(cardText(demo)).toContain("(datos de ejemplo)");
     const none = cardContent([], 2026, false);
-    expect(none.items.map((item) => item.value)).toEqual(["0 km", "0", "0 h", "—", "—"]);
+    expect(none.items.map((item) => item.value)).toEqual(["0\u00A0km", "0", "0\u00A0h", "—", "—"]);
   });
 });
 

@@ -2,7 +2,7 @@
  * The card to share: figures only. No map, no coordinates, no dates of
  * single rides, no vehicle data. It is drawn on a canvas and saved as PNG.
  */
-import { formatKm, formatNumber, MONTHS_LONG } from "../domain/format";
+import { formatKm, formatNumber, formatWholeKm, MONTHS_LONG, withUnit } from "../domain/format";
 import type { Route } from "../domain/model";
 import { records, totals, type Period } from "../domain/stats";
 
@@ -20,13 +20,13 @@ export function cardContent(routes: readonly Route[], period: Period, demo: bool
   const month =
     best.bestMonth === null
       ? "—"
-      : `${MONTHS_LONG[best.bestMonth.month]}${period === "all" ? ` de ${best.bestMonth.year}` : ""} · ${formatNumber(best.bestMonth.km)} km`;
+      : `${MONTHS_LONG[best.bestMonth.month]}${period === "all" ? ` de ${best.bestMonth.year}` : ""} · ${formatWholeKm(best.bestMonth.km)}`;
   return {
     title: period === "all" ? "Tu historial en moto" : `Tu ${period} en moto`,
     items: [
-      { label: "Kilómetros", value: `${formatNumber(sum.km)} km` },
+      { label: "Kilómetros", value: formatWholeKm(sum.km) },
       { label: "Salidas", value: formatNumber(sum.rides) },
-      { label: "Horas en marcha", value: `${formatNumber(sum.hours)} h` },
+      { label: "Horas en marcha", value: withUnit(formatNumber(sum.hours), "h") },
       { label: "Ruta más larga", value: best.longestRide === null ? "—" : formatKm(best.longestRide.km) },
       { label: "Mes con más km", value: month },
     ],

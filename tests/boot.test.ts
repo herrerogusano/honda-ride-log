@@ -112,7 +112,7 @@ function button(label: string, within: ParentNode = document): HTMLButtonElement
   if (found === undefined) throw new Error(`no button ${label}`);
   return found;
 }
-const loaded = (): Promise<void> => vi.waitFor(() => expect(root.querySelector('[role="tablist"]')).not.toBeNull());
+const loaded = (): Promise<void> => vi.waitFor(() => expect(root.querySelector('nav[aria-label="Secciones"]')).not.toBeNull());
 const alert = (): Promise<HTMLElement> =>
   vi.waitFor(() => {
     const found = root.querySelector<HTMLElement>('[role="alert"]');
@@ -230,7 +230,7 @@ describe("a build with a service", () => {
     window.dispatchEvent(new HashChangeEvent("hashchange"));
     expect(location.hash).toBe("");
     expect(root.querySelector<HTMLElement>(".demo-banner")?.hidden).toBe(true);
-    expect(root.querySelector('[role="tablist"]')).not.toBeNull();
+    expect(root.querySelector('nav[aria-label="Secciones"]')).not.toBeNull();
     expect(mcpRequests()).toBe(before);
   });
 
@@ -325,7 +325,7 @@ describe("a build with a service", () => {
     // Leaving for the login clears the account first: a page restored with
     // Back shows the landing, not the old data.
     button("Volver a entrar", panel).click();
-    expect(root.querySelector('[role="tablist"]')).toBeNull();
+    expect(root.querySelector('nav[aria-label="Secciones"]')).toBeNull();
     expect(maps.destroyed).toBe(maps.created);
     await vi.waitFor(() => expect(navigations).toHaveLength(2));
   });
@@ -348,7 +348,7 @@ describe("signing out", () => {
     signOutButton().click();
     // The map view is released with the traces it kept.
     expect(maps.destroyed).toBe(1);
-    expect(root.querySelector('[role="tablist"]')).toBeNull();
+    expect(root.querySelector('nav[aria-label="Secciones"]')).toBeNull();
     expect(signOutButton().hidden).toBe(true);
     expect(buttons(root)).toContain("Entrar");
     expect(text()).not.toContain("Odómetro");
@@ -372,7 +372,7 @@ describe("signing out", () => {
     // Give the old load every chance to send its next request.
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(mcpRequests()).toBe(1);
-    expect(root.querySelector('[role="tablist"]')).toBeNull();
+    expect(root.querySelector('nav[aria-label="Secciones"]')).toBeNull();
     expect(root.querySelector('[role="alert"]')).toBeNull();
     expect(text()).not.toContain("Batería");
     expect(buttons(root)).toContain("Entrar");

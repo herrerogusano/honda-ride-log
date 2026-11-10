@@ -87,6 +87,10 @@ describe("vehicle sanitizers", () => {
       lastCommunicationMs: 0,
     });
     expect(sanitizeVehicleDetails({ mileage: 0 }).mileage).toBe(0);
+    // JSON can carry -0: it is kept as 0, never as -0 (which Intl writes "-0").
+    expect(Object.is(sanitizeVehicleStatus({ odometer: -0 }).odometer, 0)).toBe(true);
+    expect(Object.is(sanitizeVehicleDetails({ mileage: -0 }).mileage, 0)).toBe(true);
+    expect(Object.is(sanitizeVehicleStatus(JSON.parse('{"odometer": -0}')).odometer, 0)).toBe(true);
     // Tab, DEL, a bidi override and a zero-width space are not label text.
     expect(sanitizeVehicleDetails({ model: "A\tB\u007fC\u202eD\u200bE" }).model).toBe("A B C D E");
     const emoji = "\u{1F3CD}";
@@ -141,6 +145,9 @@ describe("route list sanitizer", () => {
     expect(route?.maxSpeed).toBe(sample.maximum_speed);
     expect(sanitizeRouteList(listOf([{ ...sample, maximum_speed: 0 }])).routes[0]?.maxSpeed).toBe(0);
     expect(sanitizeRouteList(listOf([{ ...sample, maximum_speed: 97.5 }])).routes[0]?.maxSpeed).toBe(97.5);
+    // A -0 from JSON becomes 0 for both speeds, so no "-0" is ever written.
+    const zero = sanitizeRouteList(JSON.parse(JSON.stringify(listOf([{ ...sample }])).replace(/"average_speed":[^,}]+/, '"average_speed":-0').replace(/"maximum_speed":[^,}]+/, '"maximum_speed":-0'))).routes[0];
+    expect([Object.is(zero?.averageSpeed, 0), Object.is(zero?.maxSpeed, 0)]).toEqual([true, true]);
     // Still dropped: the route's odometers, time zone and the service's quality texts.
     const text = JSON.stringify(
       sanitizeRouteList(listOf([{ ...sample, odometer_start: 12345, odometer_end: 12399, timezone: "Europe/Madrid" }])),
