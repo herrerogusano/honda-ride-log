@@ -76,6 +76,24 @@ describe("the Rutas table", () => {
     expect(note).toContain("no una garantía de precisión");
   });
 
+  it("marks every header as a column header and aligns each cell like its header", () => {
+    const { root } = table();
+    const headers = [...root.querySelectorAll("thead th")];
+    expect(headers.map((cell) => cell.getAttribute("scope"))).toEqual(headers.map(() => "col"));
+    const headerNum = headers.map((cell) => cell.classList.contains("num"));
+    for (const row of root.querySelectorAll("tbody tr")) {
+      // The date cell is a row header; the rest are data cells.
+      const cells = [...row.children];
+      expect(cells.map((cell) => cell.classList.contains("num"))).toEqual(headerNum);
+    }
+  });
+
+  it("never writes a minus sign for a maximum speed of negative zero", () => {
+    const [route] = rides([{ start: "2026-03-07T10:00:00-08:00", km: 5, maxSpeed: -0 }]) as [Route];
+    expect(Object.is(route.maxSpeed, 0)).toBe(true);
+    expect(routeFacts(route)).toContain("Vel. máxima: 0 km/h");
+  });
+
   it("offers the maximum speed as a sort order and applies it", () => {
     const { root } = table();
     const select = root.querySelector("select") as HTMLSelectElement;
@@ -149,6 +167,14 @@ describe("the new figures' texts", () => {
     expect(formatEndTime(start, Date.parse("2026-03-08T00:00:00-08:00"))).toBe("00:00 (+1 día)");
     // Across the start of daylight saving in Los Angeles (8 March 2026, 02:00).
     expect(formatEndTime(start, Date.parse("2026-03-09T09:00:00-07:00"))).toBe("09:00 (+2 días)");
+  });
+
+  it("counts one day across the end of daylight saving, whose day has 25 hours", () => {
+    // Los Angeles goes back to standard time on 1 November 2026 at 02:00.
+    const start = Date.parse("2026-11-01T22:00:00-08:00");
+    expect(formatEndTime(start, Date.parse("2026-11-02T00:30:00-08:00"))).toBe("00:30 (+1 día)");
+    const early = Date.parse("2026-11-01T00:30:00-07:00");
+    expect(formatEndTime(early, Date.parse("2026-11-01T23:30:00-08:00"))).toBe("23:30");
   });
 
   it("labels speeds in km/h and the inferred flag without claiming accuracy", () => {

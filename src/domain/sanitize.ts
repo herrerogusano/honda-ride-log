@@ -77,7 +77,9 @@ function nonNegativeOrNull(value: unknown, path: string): number | null {
  * a mistyped one must not cost the rider the whole route list.
  */
 function nonNegativeOrAbsent(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return null;
+  // JSON can carry -0, which passes `>= 0` and which Intl writes as "-0".
+  return value === 0 ? 0 : value;
 }
 
 const MAX_LABEL_LENGTH = 60;
