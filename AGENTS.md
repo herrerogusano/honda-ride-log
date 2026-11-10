@@ -20,8 +20,10 @@ the phase split.
   written reason in `docs/PLAN.md` and a matching change in
   `tests/csp.test.ts`.
 - No `innerHTML` or other HTML-string sinks, no inline scripts, styles or
-  handlers, no browser storage (banned everywhere until a phase opens one file for
-  it and records it in `docs/PLAN.md`)
+  handlers. No browser storage, with one exception recorded in
+  `docs/PLAN.md`: `src/storage/maintenance.ts` may use `localStorage` for the
+  two service-interval numbers the user types; a phase that needs another
+  one opens it for a single file and records it there.
   (ESLint and `scripts/check-dist.mjs` catch the common forms; they are a
   net, not a proof).
 - Route ids and untrimmed traces are sealed handles. Do not widen the
