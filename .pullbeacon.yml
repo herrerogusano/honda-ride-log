@@ -6,7 +6,7 @@ automatic_review: false
 
 model:
   provider: anthropic
-  name: anthropic/claude-sonnet-5-5
+  name: anthropic/claude-opus-5-5
   temperature: 0
   timeout_seconds: 120
 
@@ -17,7 +17,7 @@ limits:
   max_file_bytes: 200000
   max_output_tokens: 8192
   # Preventive per-run estimate, not an accounting cap; the API workspace has its own limit.
-  max_estimated_cost_usd: 1.00
+  max_estimated_cost_usd: 4.00
   max_inline_comments: 15
   max_batches: 4
 
