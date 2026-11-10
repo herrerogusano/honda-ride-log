@@ -314,6 +314,7 @@ export function startApp(options: AppOptions): App {
     dispose() {
       generation += 1;
       window.removeEventListener("hashchange", onHashChange);
+      releaseMap();
     },
   };
 }

@@ -113,7 +113,10 @@ se cuentan y cuántas se han descartado por venir sin fecha o sin km.
   un número suelto es el día o el año enteros («2» es el día 2, no el
   principio de 2025); una fecha con barras o guiones se compara como
   números («7/3», «07/03/2026», «2026-03»); lo demás es el principio del
-  día de la semana o del mes, sin acentos («sab», «mar»).
+  día de la semana o del mes, sin acentos («sab», «mar»). Las palabras de
+  relleno («de», «del», «el», «día») no cuentan, y un separador al final de
+  una palabra se ignora, para que la lista no se vacíe mientras se escribe
+  una fecha («7/»).
 - Al pulsar una ruta se abre en la pestaña Mapa.
 - Exportar CSV de lo que se ve, con esas mismas columnas. Sin identificadores
   ni coordenadas. Las celdas que empiecen por `=`, `+`, `-` o `@` se protegen
@@ -199,8 +202,11 @@ Cómo quedó el recorte (fase 2):
   habría pasado a 344 m). Lo encontró la segunda comprobación independiente.
 - Un lugar junto al borde del mapa del mundo (longitud ±180°) se esconde
   también de un tramo dibujado al otro lado de ese borde.
-- Por encima de unos 85° de latitud la proyección no existe y la regla deja
-  de ser fiable. No hay carreteras allí.
+- Por encima de unos 85° de latitud la proyección no existe: una traza o una
+  marca que llegue allí no se dibuja. No hay carreteras allí.
+- Dos puntos seguidos a menos de un milímetro en el mapa cuentan como uno
+  solo. Un tramo así no se puede medir, y la tercera comprobación
+  independiente enseñó que se dibujaba entero, con el inicio dentro.
 - Lo que no evita: quien conozca la zona puede deducir hacia dónde apunta un
   trazo que empieza a 400 m de una casa. Y el recuadro del mapa, que se pide
   a OpenStreetMap, suele contener el inicio y el final recortados.
@@ -367,6 +373,11 @@ Cómo quedó en la fase 2 (`src/service/loader.ts`):
 - Cerrar sesión o cambiar de cuenta a mitad de una carga: llamar a
   `showLanding()` o a otro `load` basta para que la carga anterior deje de
   pedir (con el `ToolCaller` antiguo) antes de su siguiente petición.
+  `App.dispose()` deja además de escuchar la barra de direcciones; hace
+  falta si alguna vez hubiera dos aplicaciones en la misma página.
+- `load(caller, { demo: true })` llamado a mano, sin pasar por `startDemo`,
+  enseñaría datos de demo sin el aviso de demo. Nadie lo hace hoy; la fase 3
+  solo debe llamar a `load` con `demo: false`.
 - El cliente de `/mcp` debe lanzar `ToolCallError` con el código del servicio
   cuando la herramienta responda con error. Para lo que solo él puede ver
   (configuración ausente, `state` que no coincide, canje del código, red o
