@@ -818,7 +818,10 @@ cliente ya ha olvidado.
    (`login/...`) y su botón «Entrar».
 5. **«Entrar»** (en la entrada y, como «Volver a entrar», en los paneles de
    error que piden sesión nueva): `startLogin`. Si no puede empezar (sin
-   `sessionStorage`), lo dice en la entrada sin salir de la página.
+   `sessionStorage`), lo dice en la entrada sin salir de la página. Si
+   todavía hay una cuenta en pantalla (su sesión ya terminó), antes se
+   vuelve a la entrada, para que el navegador no la restaure con sus datos
+   al pulsar «Atrás» (lo encontró la revisión independiente).
 6. **«Salir»** (arriba a la derecha, solo con una cuenta en pantalla, también
    con su error): primero `showLanding()`, que sube el número de carga (la
    carga anterior deja de pedir antes de su siguiente petición:
@@ -877,7 +880,12 @@ cargada y a mitad de carga, otra cuenta a mitad de carga y salir con
 `logoutUri`. Se vieron fallar con 36 roturas del implementador, una cada
 vez, sobre `app.ts`, `boot.ts`, `loader.ts`, `errors.ts`, `mapView.ts`, la
 política de seguridad y las dos excepciones de almacenamiento: las 36
-fallaron. jsdom no es un navegador: no navega de verdad (la ida al login se
+fallaron. El revisor independiente probó 40 suyas; sobrevivieron 5. Tres se
+cubrieron con tests nuevos (que «Salir» suelte el mapa, que otra carga pare
+a la primera también en la fase de rutas, y que una vuelta fallida con
+`#demo` no empiece la demo) y ahora fallan; las otras dos no cambian nada
+visible (que `load` suelte un mapa que en ese momento no existe, y poner a
+nulo la ruta abierta al soltar el mapa). jsdom no es un navegador: no navega de verdad (la ida al login se
 anota en una lista), no aplica la política de seguridad ni CORS.
 
 En un navegador de verdad (Chromium, build de producción sin servicio y

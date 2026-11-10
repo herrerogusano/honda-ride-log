@@ -120,8 +120,13 @@ export function startApp(options: AppOptions): App {
   // Focusable by script only, to move the focus to what a button just replaced.
   const content = el("div", { class: "content", attrs: { tabindex: -1 } });
 
-  /** Goes to the login page; if it cannot start, says why on the landing. */
+  /**
+   * Goes to the login page; if it cannot start, says why on the landing.
+   * An account still on screen (its session over) is cleared first, so a
+   * page the browser restores with Back shows the landing, not its data.
+   */
   const signIn = (): void => {
+    if (accountShown) showLanding();
     account?.signIn().catch((error: unknown) => {
       showLanding(signInError(error));
       content.focus();

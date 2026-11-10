@@ -36,6 +36,10 @@ let storage: MemoryStorage | null;
 let navigations: string[];
 let authCalls: number;
 let mounted: App | null = null;
+/** Map views the page created and released. */
+const maps = { created: 0, destroyed: 0 };
+/** The tool named in a recorded /mcp request. */
+const toolOf = (body: string): string => (JSON.parse(body) as { params: { name: string } }).params.name;
 
 function deps(): AuthDeps {
   authCalls += 1;
@@ -62,10 +66,15 @@ async function start(environment: ServiceEnvironment, address = "/"): Promise<Ap
     auth: deps,
     now: () => server.clock.now,
     demoDelayMs: 0,
-    createMap: (data, caller, options) => createMapView(data, caller, options, () => surface),
+    createMap: (data, caller, options) => {
+      const view = createMapView(data, caller, options, () => surface);
+      maps.created += 1;
+      return { ...view, destroy: () => ((maps.destroyed += 1), view.destroy()) };
+    },
     mcp: {
       fetch: async (input, init) => {
         const answer = await server.fetch(input, init);
+        await mcpGate?.(typeof init?.body === "string" ? toolOf(init.body) : "");
         afterMcpAnswer?.();
         return answer;
       },
@@ -77,6 +86,8 @@ async function start(environment: ServiceEnvironment, address = "/"): Promise<Ap
   return mounted;
 }
 
+/** Holds an /mcp answer, by tool name, before it reaches the client. */
+let mcpGate: ((tool: string) => Promise<void>) | null = null;
 /** Runs after each /mcp answer has reached the client. */
 let afterMcpAnswer: (() => void) | null = null;
 
@@ -116,6 +127,8 @@ beforeEach(() => {
   storage = new MemoryStorage();
   navigations = [];
   authCalls = 0;
+  maps.created = 0;
+  maps.destroyed = 0;
   const store = new Map<string, string>();
   Object.defineProperty(globalThis, "localStorage", {
     configurable: true,
@@ -131,6 +144,7 @@ afterEach(() => {
   mounted?.dispose();
   mounted = null;
   afterMcpAnswer = null;
+  mcpGate = null;
 });
 
 describe("a build without a service", () => {
@@ -308,6 +322,19 @@ describe("a build with a service", () => {
     });
     expect(panel.textContent).toContain("detail/reauth_required (unauthorized)");
     expect(buttons(panel)).toEqual(["Volver a entrar"]);
+    // Leaving for the login clears the account first: a page restored with
+    // Back shows the landing, not the old data.
+    button("Volver a entrar", panel).click();
+    expect(root.querySelector('[role="tablist"]')).toBeNull();
+    expect(maps.destroyed).toBe(maps.created);
+    await vi.waitFor(() => expect(navigations).toHaveLength(2));
+  });
+
+  it("never starts the demo on a failed return that carries #demo", async () => {
+    await start(SERVICE, "/?code=synthetic-code&state=not-the-pending-one#demo=heavy");
+    await alert();
+    expect(location.hash).toBe("");
+    expect(root.querySelector<HTMLSelectElement>(".demo-banner select")?.value).toBe("commuter");
   });
 });
 
@@ -317,7 +344,10 @@ describe("signing out", () => {
     await loaded();
     const sent = mcpRequests();
     const routeButton = root.querySelector<HTMLElement>(".row-button");
+    expect([maps.created, maps.destroyed]).toEqual([1, 0]);
     signOutButton().click();
+    // The map view is released with the traces it kept.
+    expect(maps.destroyed).toBe(1);
     expect(root.querySelector('[role="tablist"]')).toBeNull();
     expect(signOutButton().hidden).toBe(true);
     expect(buttons(root)).toContain("Entrar");
@@ -365,6 +395,29 @@ describe("signing out", () => {
     expect(mcpRequests()).toBe(1);
     expect(asked.slice(0, 2)).toEqual(["get_vehicle_status", "get_vehicle_details"]);
     expect(signOutButton().hidden).toBe(false);
+  });
+
+  it("another account loaded while the first reads its routes stops the first one there", async () => {
+    // The first list_routes answer of the first account is held.
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    let holding = true;
+    mcpGate = async (tool) => {
+      if (holding && tool === "list_routes") {
+        holding = false;
+        await held;
+      }
+    };
+    const app = await signedIn();
+    await vi.waitFor(() => expect(server.requests.some((one) => one.url === CONFIG.mcpUrl && toolOf(one.body) === "list_routes")).toBe(true));
+    const second = createFakeServer(CONFIG);
+    const switched = app.load(second.tools, { demo: false });
+    release();
+    await switched;
+    await loaded();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const firstAccount = server.requests.filter((one) => one.url === CONFIG.mcpUrl).map((one) => toolOf(one.body));
+    expect(firstAccount).toEqual(["get_vehicle_status", "get_vehicle_details", "list_routes"]);
   });
 
   it("leaves for the login's sign-out page when the build knows one", async () => {
