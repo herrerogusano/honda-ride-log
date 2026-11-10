@@ -1,5 +1,5 @@
 {
-  "$comment": "Service settings per Vite mode (docs/PLAN.md, section 10). Empty mcpUrl, loginDomain and webClientId mean demo only. Real values are not written here until the owner decides. Modes not listed (for example `test` or `demo`) are demo only.",
+  "$comment": "Service settings per Vite mode (docs/PLAN.md, section 10). Empty mcpUrl, loginDomain and webClientId mean demo only. `production` holds the public values of the production service, written here by the owner's decision of 2026-11-10 (none is a secret). `development` stays empty in the repository: local values are not committed. Modes not listed (for example `test` or `demo`) are demo only.",
   "demo": null,
   "development": {
     "mcpUrl": "",
@@ -10,11 +10,11 @@
     "sendResourceIndicator": true
   },
   "production": {
-    "mcpUrl": "",
-    "loginDomain": "",
-    "webClientId": "",
+    "mcpUrl": "https://4ko2m92uec.execute-api.eu-west-1.amazonaws.com/mcp",
+    "loginDomain": "https://honda-mapit-mcp-prod-195222.auth.eu-west-1.amazoncognito.com",
+    "webClientId": "66n3g9rk442dov7n32dekkf00i",
     "redirectUri": "https://herrerogusano.github.io/honda-ride-log/",
-    "logoutUri": "",
+    "logoutUri": "https://herrerogusano.github.io/honda-ride-log/",
     "sendResourceIndicator": true
   }
 }
