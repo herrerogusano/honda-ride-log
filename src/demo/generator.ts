@@ -177,7 +177,12 @@ function makeRoute(random: Random, startMs: number, trip: PlannedTrip): RawRoute
   };
 }
 
-function generateRoutes(random: Random, profile: Profile, nowMs: number): RawRouteSummary[] {
+/** How often a riding day ends with a short hop of 320 to 780 m (one whose trace the trim hides whole). */
+const SHORT_HOP_CHANCE = 0.02;
+
+function generateRoutes(random: Random, profile: Profile, nowMs: number, seed: number): RawRouteSummary[] {
+  // The short hops draw from their own stream, so every other route is the same as without them.
+  const hops = createRandom((seed ^ 0x5b0b) >>> 0);
   const today = Math.floor(nowMs / DAY_MS) * DAY_MS;
   const firstDay = today - profile.historyDays * DAY_MS;
   const emptyMonths = chooseEmptyMonths(random, firstDay, nowMs, profile.emptyMonths);
@@ -207,6 +212,14 @@ function generateRoutes(random: Random, profile: Profile, nowMs: number): RawRou
         }
       }
       freeFrom = endMs + 120_000;
+    }
+    if (planned.length > 0 && freeFrom > day && hops.chance(SHORT_HOP_CHANCE)) {
+      const hop = makeRoute(hops, freeFrom + hops.int(20, 90) * 60_000, {
+        startHour: 0,
+        distanceKm: hops.between(0.32, 0.78),
+        speedKmh: hops.between(10, 18),
+      });
+      if (Date.parse(hop.ended_at as string) <= nowMs) routes.push(hop);
     }
   }
   return routes;
@@ -295,7 +308,7 @@ function hexLabel(random: Random): string {
 export function generateRider(options: GenerateOptions): SyntheticRider {
   const profile = PROFILES[options.profile ?? "commuter"];
   const random = createRandom(options.seed);
-  const routes = generateRoutes(random, profile, options.nowMs);
+  const routes = generateRoutes(random, profile, options.nowMs, options.seed);
   const byId = new Map(routes.map((route) => [route.route_id, route]));
   if (byId.size !== routes.length) throw new Error("synthetic route ids collided; change the seed");
 

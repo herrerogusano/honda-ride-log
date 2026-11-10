@@ -59,7 +59,7 @@ async function start(environment: ServiceEnvironment, address = "/"): Promise<Ap
   document.body.replaceChildren();
   root = document.createElement("main");
   document.body.append(root);
-  const surface = { show: () => undefined, clear: () => undefined, resize: () => undefined, destroy: () => undefined };
+  const surface = { show: () => undefined, clear: () => undefined, frame: (_lines: unknown, _fly: unknown, settled: () => void) => settled(), paint: () => undefined, resize: () => undefined, destroy: () => undefined };
   mounted = await boot({
     root,
     environment,

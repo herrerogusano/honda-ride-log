@@ -888,6 +888,19 @@ select:focus-visible {
   color: var(--fg-3);
 }
 
+/* «01 Resumen»: the period line belongs to the figures, close under the title and above the strip. */
+.page-sec.sec-resumen {
+  row-gap: var(--s4);
+}
+
+.page-sec.sec-resumen > .sec-head {
+  margin-bottom: 0;
+}
+
+.page-sec.sec-resumen > .sec-top {
+  padding-bottom: var(--s2);
+}
+
 /* ---------- sections of the rider's page ---------- */
 .page-sec {
   display: grid;
@@ -924,15 +937,85 @@ select:focus-visible {
   display: none;
 }
 
-.archive {
+/*
+ * «04 Rutas»: map and list together (docs/PLAN.md, section 13). Narrow
+ * screens: the map is pinned under the bar and the list runs beneath it in
+ * the page. From 1024 px: side by side, both as tall as the screen under
+ * the bar, the list scrolling in its own box. `--bar-h` is the bar's height,
+ * written by src/ui/app.ts; the fallbacks are the bar's two heights.
+ */
+.archive-wrap {
   display: grid;
-  gap: var(--s7);
+  gap: var(--s6);
+  min-width: 0;
+}
+
+.archive {
+  position: relative;
   min-width: 0;
 }
 
 .archive-map,
 .archive-list {
   min-width: 0;
+}
+
+.archive-map {
+  position: sticky;
+  top: var(--bar-h, 101px);
+  z-index: 20;
+  padding-block: var(--s3);
+  background: var(--bg);
+  box-shadow: 0 1px 0 var(--line-soft);
+}
+
+.archive-list {
+  padding-top: var(--s4);
+}
+
+.archive-notes {
+  display: grid;
+  gap: var(--s4);
+  padding-top: var(--s5);
+  border-top: 1px solid var(--line-soft);
+}
+
+@media (min-width: 1024px) {
+  .archive {
+    display: grid;
+    grid-template-columns: minmax(0, 1.45fr) minmax(400px, 1fr);
+    gap: var(--s6);
+    /* As tall as the screen under the bar, within sane limits. */
+    height: clamp(560px, calc(100svh - var(--bar-h, 65px) - var(--s6)), 980px);
+  }
+
+  .archive-map {
+    position: static;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    padding-block: 0;
+    box-shadow: none;
+  }
+
+  .archive-list {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    padding-top: 0;
+  }
+
+  .archive-map .map-stage {
+    height: auto;
+  }
+
+  /* The list scrolls in its own box; at either end the wheel carries on with the page. */
+  .archive-list .routes-scroll {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--line) transparent;
+  }
 }
 
 /* ---------- readout strip (section 01) ---------- */
@@ -1849,35 +1932,185 @@ h4 {
   text-align: right;
 }
 
-.routes-table {
+/*
+ * The route list: a real table (with explicit roles, since its rows are laid
+ * out as cards) whose header is read out but not drawn. Each row: the date
+ * and the start → arrival times, then duration, km, both speeds and the
+ * inferred label, each with its small label (`data-label`) and unit
+ * (`data-unit`), generated text that screen readers skip (`/ ""`).
+ */
+.route-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  min-height: 0;
+  height: 100%;
+}
+
+.list-tools {
+  flex: none;
+}
+
+.list-tools select {
+  max-width: 100%;
+}
+
+.count {
+  flex: none;
+}
+
+.routes-scroll {
+  min-height: 0;
   border-top: 1px solid var(--line);
 }
 
-.routes-table tbody th {
-  padding: 0 12px 0 0;
+.routes-scroll:focus-visible {
+  outline-offset: -2px;
 }
 
-.routes-table td.num {
-  font: 600 18px/1 var(--display);
+.routes-scroll > .button {
+  margin: var(--s4) 0;
+}
+
+.routes-table,
+.routes-table tbody {
+  display: block;
+  width: 100%;
+}
+
+.routes-table thead {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.routes-table tbody tr {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--s4);
+  row-gap: var(--s1);
+  padding: var(--s2) var(--s4) var(--s3) var(--s4);
+  border-bottom: 1px solid var(--line-soft);
+  transition: background-color var(--dur-ui) var(--ease-out);
+}
+
+/* Breaks the row after the date and the times. */
+.routes-table tbody tr::after {
+  content: "";
+  order: 1;
+  flex-basis: 100%;
+  height: 0;
+}
+
+/* The red rule of the chosen route: it grows from the middle. */
+.routes-table tbody tr::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--red);
+  transform: scaleY(0);
+  transition: transform var(--dur-ui) var(--ease-out);
+}
+
+.routes-table tbody tr.is-chosen {
+  background: var(--surface-2);
+}
+
+.routes-table tbody tr.is-chosen::before {
+  transform: none;
+}
+
+.routes-table tbody th,
+.routes-table tbody td {
+  padding: 0;
+  border: 0;
+  white-space: nowrap;
+}
+
+.routes-table tbody th {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.routes-table .c-start,
+.routes-table .c-end {
+  font: 600 17px/1 var(--display);
+  letter-spacing: 0.03em;
+  color: var(--fg-2);
+}
+
+.routes-table .c-start::after {
+  content: "→" / "";
+  margin-left: var(--s2);
+  color: var(--fg-3);
+}
+
+.routes-table .c-dur,
+.routes-table .c-km,
+.routes-table .c-avg,
+.routes-table .c-max,
+.routes-table .c-inf {
+  order: 2;
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 2px 3px;
+  min-width: max-content;
+  font: 600 18px/1.05 var(--display);
   letter-spacing: 0.02em;
+  text-align: left;
+}
+
+.routes-table td[data-label]::before {
+  content: attr(data-label) / "";
+  grid-column: 1 / -1;
+  font: 700 10px/1.2 var(--text);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fg-3);
+}
+
+.routes-table .c-start::before,
+.routes-table .c-end::before {
+  display: none;
+}
+
+.routes-table td[data-unit]::after {
+  content: attr(data-unit) / "";
+  font: 700 11px/1 var(--text);
+  letter-spacing: 0.04em;
+  color: var(--red-hi);
+}
+
+.routes-table .c-inf.on {
+  color: var(--amber);
 }
 
 .row-button {
-  width: 100%;
-  min-height: 48px;
-  padding: 0 12px 0 0;
+  min-height: 44px;
+  padding: 0;
   background: none;
   border: 0;
-  font-weight: 700;
+  font: 700 15px/1.2 var(--text);
   text-align: left;
-  text-decoration: underline;
-  text-decoration-color: var(--red-dim);
-  text-decoration-thickness: 1px;
-  text-underline-offset: 4px;
+  text-transform: capitalize;
   cursor: pointer;
   transition:
     color var(--dur-ui) var(--ease-out),
     transform var(--dur-press) var(--ease-out);
+}
+
+.row-button[aria-current="true"] {
+  color: var(--red-hi);
 }
 
 .row-button:active {
@@ -1898,18 +2131,267 @@ h4 {
 
 /* ---------- map ---------- */
 .map-view {
-  gap: var(--s5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  min-height: 0;
+  height: 100%;
+}
+
+.map-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  min-width: 0;
+}
+
+.map-head-text {
+  min-width: 0;
+}
+
+.map-head .lead {
+  font-size: 14px;
+}
+
+/* «Anterior / siguiente» sit on the map, top right, above Leaflet's panes and controls. */
+.map-step {
+  position: absolute;
+  z-index: 1001;
+  top: var(--s3);
+  right: var(--s3);
+  display: flex;
+  gap: var(--s2);
+}
+
+.map-step .button {
+  background: oklch(17% 0.008 25 / 0.92);
+}
+
+.map-step .button:disabled {
+  opacity: 1;
+  color: var(--fg-3);
+  border-color: var(--line);
+}
+
+.map-title {
+  font: 700 clamp(20px, 2.6vw, 34px) / 1.05 var(--display);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+/* The stage: the map, its designed empty state, the scan line of a loading trace and the messages. */
+.map-stage {
+  position: relative;
+  flex: 1 1 auto;
+  height: clamp(190px, 38svh, 440px);
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  /* Leaflet stacks its panes up to z-index 1000: keep them inside this box. */
+  isolation: isolate;
+}
+
+.map-stage .map-canvas {
+  position: absolute;
+  inset: 0;
+  width: auto;
+  height: auto;
+  min-height: 0;
+  border: 0;
+}
+
+/* Nothing on the map: a quiet grid with a slow drift, like a chart without its trace. */
+.map-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(ellipse at 50% 55%, transparent 0 35%, var(--bg) 100%),
+    repeating-linear-gradient(0deg, var(--line-soft) 0 1px, transparent 1px 48px),
+    repeating-linear-gradient(90deg, var(--line-soft) 0 1px, transparent 1px 48px),
+    var(--surface);
+}
+
+.map-canvas:not([hidden]) ~ .map-empty {
+  display: none;
+}
+
+.map-empty-text {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  font: var(--w-title) clamp(26px, 3.4vw, 44px) / 1 var(--display);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--fg-3);
+  animation: fade-up var(--dur-reveal) var(--ease-out) both;
+}
+
+.map-empty-mark {
+  width: 14px;
+  height: 18px;
+  background: var(--red);
+  clip-path: polygon(35% 0, 100% 0, 65% 100%, 0 100%);
+}
+
+.map-stage:not([data-state="idle"]) .map-empty-text {
+  display: none;
+}
+
+/* Loading: a red scan line sweeps the stage. */
+.map-scan {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: none;
+  overflow: hidden;
+  pointer-events: none;
+  background: oklch(13% 0.006 25 / 0.45);
+}
+
+.map-stage[data-state="loading"] .map-scan {
+  display: block;
+}
+
+.scan-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 34%;
+  background: linear-gradient(90deg, transparent, oklch(56% 0.235 27 / 0.22) 70%, var(--red-hi) 70% calc(70% + 2px), transparent calc(70% + 2px));
+  transform: translateX(-100%);
+  animation: scan calc(var(--dur-hero) * 2) var(--ease-in-out) infinite;
+}
+
+@keyframes scan {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
+    transform: translateX(300%);
+  }
+}
+
+.map-status {
+  position: absolute;
+  z-index: 3;
+  top: var(--s3);
+  left: var(--s3);
+  max-width: calc(100% - 2 * var(--s3));
 }
 
 .map-status:empty {
   display: none;
 }
 
-.map-title {
-  margin-bottom: var(--s2);
-  font: 700 clamp(28px, 4vw, 44px) / 1 var(--display);
+.map-status .notice {
+  background: oklch(13% 0.006 25 / 0.9);
+  border-left-color: var(--red);
+  animation: fade-up var(--dur-ui) var(--ease-out) both;
+}
+
+/* Nothing to draw, or a failure: the message sits in the middle of the stage. */
+.map-stage[data-state="empty"] .map-status,
+.map-stage[data-state="error"] .map-status {
+  inset: 0;
+  display: grid;
+  place-items: center;
+  max-width: none;
+  padding: var(--s4);
+  overflow: auto;
+}
+
+.map-note {
+  display: grid;
+  gap: var(--s2);
+  max-width: 44ch;
+  padding: var(--s4) var(--s5);
+}
+
+.map-note-title {
+  font: var(--w-title) clamp(22px, 2.4vw, 30px) / 1 var(--display);
   letter-spacing: 0.02em;
   text-transform: uppercase;
+  color: var(--fg);
+}
+
+.map-status .map-note-hidden {
+  border-left-color: var(--amber);
+}
+
+.map-status .error {
+  max-width: 52ch;
+}
+
+/* The chosen route in large figures, under the map. */
+.route-strip {
+  flex: none;
+  display: grid;
+  gap: var(--s2);
+}
+
+.rs-span {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s4);
+  align-items: baseline;
+  font: 700 var(--fs-eyebrow) / 1.4 var(--text);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fg-3);
+}
+
+/* The title above says the date; on phones, where the title is hidden, the strip says it. */
+.rs-date {
+  display: none;
+}
+
+.rs-times {
+  color: var(--fg);
+}
+
+.rs-inferred.on {
+  color: var(--amber);
+}
+
+.rs-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  column-gap: var(--s4);
+}
+
+.rs-cell {
+  min-width: 0;
+  padding-top: var(--s2);
+  border-top: 1px solid var(--line);
+}
+
+.rs-cell dt {
+  font: 700 10px/1.3 var(--text);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fg-3);
+}
+
+.rs-cell dd {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  white-space: nowrap;
+  font: var(--w-figure) clamp(24px, 2.6vw, 40px) / 1 var(--display);
+}
+
+.rs-unit {
+  font: 700 clamp(12px, 1vw, 15px) / 1 var(--display);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--red-hi);
 }
 
 .map-title:focus {
@@ -1963,6 +2445,15 @@ h4 {
 .map-canvas .trace-inferred {
   stroke: var(--amber);
   stroke-dasharray: 2 10;
+}
+
+/* The bright head that leads the stroke while a trace draws itself; it goes at the end. */
+.map-canvas .trace-head {
+  fill: var(--fg);
+  fill-opacity: 1;
+  stroke: var(--red-hi);
+  stroke-width: 4;
+  stroke-opacity: 0.55;
 }
 
 .map-legend {
@@ -2306,6 +2797,145 @@ h4 {
   .readout .m + .m {
     margin-top: var(--s4);
     border-top: 1px solid var(--line-soft);
+  }
+}
+
+/* ---------- «04 Rutas» on narrow screens (after the base rules it overrides) ---------- */
+/* Narrow screens: the pinned part (title, map, figures) stays short. */
+@media (max-width: 1023px) {
+  /* The stage says «Elige una ruta» to the eye; the sentence stays for screen readers. */
+  .map-head .lead:not(.sr-only) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .rs-grid {
+    grid-template-columns: repeat(4, max-content);
+    justify-content: space-between;
+    column-gap: var(--s3);
+  }
+
+  .rs-cell dd {
+    font-size: clamp(19px, 5.4vw, 30px);
+  }
+}
+
+@media (max-width: 639px) {
+  /* The arrows alone; their names are still read out. */
+  .map-step .step-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .map-step .button {
+    min-width: 44px;
+    padding: 0 12px;
+  }
+
+  /* The pinned part stays short: the title is read out, the strip shows the date. */
+  .map-head {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .map-view {
+    gap: var(--s2);
+  }
+
+  .map-stage {
+    height: clamp(170px, 31svh, 380px);
+  }
+
+  .rs-span .rs-date {
+    display: inline;
+    flex-basis: 100%;
+    color: var(--fg-2);
+  }
+
+  .rs-span {
+    row-gap: 0;
+  }
+
+  .route-strip {
+    gap: var(--s1);
+  }
+
+  .rs-cell {
+    padding-top: var(--s1);
+  }
+
+  .rs-cell dt {
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    white-space: nowrap;
+  }
+
+  .rs-cell dd {
+    font-size: clamp(18px, 5.4vw, 24px);
+  }
+
+  /* The list's tools on two short rows: search; order and export. The labels are still read out. */
+  .list-tools .field label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .list-tools .field.grow {
+    flex-basis: 100%;
+  }
+
+  .list-tools .field:not(.grow) {
+    flex: 1 1 0;
+  }
+
+  .list-tools .field:not(.grow) select {
+    width: 100%;
+  }
+}
+
+@media (max-width: 419px) {
+  /* The order select needs the whole row to show its choice. */
+  .list-tools .field:not(.grow) {
+    flex-basis: 100%;
+  }
+
+  /* Five small figures on one line where they fit. */
+  .routes-table tbody tr {
+    column-gap: var(--s3);
+    padding-inline: var(--s3);
+  }
+
+  .routes-table .c-dur,
+  .routes-table .c-km,
+  .routes-table .c-avg,
+  .routes-table .c-max,
+  .routes-table .c-inf {
+    font-size: 16px;
+  }
+
+  .routes-table td[data-label]::before {
+    font-size: 9px;
+    letter-spacing: 0.08em;
+  }
+
+  .routes-table td[data-unit]::after {
+    font-size: 10px;
   }
 }
 

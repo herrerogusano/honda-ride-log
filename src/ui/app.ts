@@ -15,9 +15,8 @@ import { buildRiderData, type RiderData } from "./data";
 import { clear, el, uniqueId } from "./dom";
 import { errorText } from "./errors";
 import { createMapView, type MapFactory, type MapView } from "./mapView";
-import { scrollBehavior } from "./motion";
 import { sectionNav } from "./nav";
-import { renderRoutes } from "./routesView";
+import { createRouteList } from "./routesView";
 import { heroTitle, PROMISES, renderRiderPage } from "./summary";
 
 /**
@@ -64,8 +63,6 @@ function setHash(hash: string): void {
   history.replaceState(null, "", hash === "" ? location.pathname + location.search : hash);
 }
 
-/** Room left between the sticky bar and what a button brings into view. */
-const VIEW_GAP = 16;
 
 export function startApp(options: AppOptions): App {
   const { root, account } = options;
@@ -358,37 +355,48 @@ export function startApp(options: AppOptions): App {
     return { element, copy };
   }
 
-  /** Scrolls so that `target` starts just below the bar, unless it is already in view. */
-  function bringIntoView(target: HTMLElement): void {
-    const box = target.getBoundingClientRect();
-    const top = barHeight();
-    if (box.top >= top && box.top < window.innerHeight * 0.5) return;
-    window.scrollTo({ top: Math.max(0, box.top + window.scrollY - top - VIEW_GAP), behavior: scrollBehavior() });
-  }
 
   function showLoaded(data: RiderData, caller: ToolCaller, warnings: readonly string[]): void {
     const scope: StorageScope = data.demo ? "demo" : "account";
     const motion = new AbortController();
     // A failed trace that needs a new sign-in offers it, never a retry.
-    const map = mapFactory(data, caller, { signIn: account === undefined || data.demo ? null : signIn });
+    const mapBox = el("div", { class: "archive-map" });
+    // On phones the map is pinned under the bar: a row brought into view must clear both.
+    const visibleTop = (): number => Math.max(barHeight(), mapBox.getBoundingClientRect().bottom);
+    /** Set when the list itself opened the route: its row is already where the user is looking. */
+    let fromList = false;
+    const list = createRouteList(
+      data,
+      (route) => {
+        // The route opens in place, next to the list or above it: the page does not move.
+        fromList = true;
+        map.open(route);
+        fromList = false;
+      },
+      { visibleTop },
+    );
+    const map = mapFactory(data, caller, {
+      signIn: account === undefined || data.demo ? null : signIn,
+      // The map's own «anterior / siguiente» keep the list's chosen row in view.
+      onOpen: (route) => list.mark(route, !fromList),
+    });
+    mapBox.append(map.element);
     activeMap = map;
     viewMotion = motion;
-    // Map first, list after; a later phase puts them side by side.
+    // Map and list together (side by side on wide screens, the map pinned above the list on narrow ones).
     const archive = el(
       "div",
-      { class: "archive" },
-      el("div", { class: "archive-map" }, map.element),
-      el(
-        "div",
-        { class: "archive-list" },
-        renderRoutes(data, (route) => {
-          // The route opens in place: the map is in the same section, above the list.
-          map.open(route);
-          map.element.querySelector<HTMLElement>(".map-title")?.focus({ preventScroll: true });
-          bringIntoView(map.element);
-        }),
-      ),
+      { class: "archive-wrap" },
+      el("div", { class: "archive" }, mapBox, el("div", { class: "archive-list" }, list.element)),
+      el("div", { class: "archive-notes" }, map.legend, list.note),
     );
+    // The bar's height, for what sticks under it (the map); it changes when the bar wraps.
+    const publishBar = (): void => document.documentElement.style.setProperty("--bar-h", `${Math.round(barHeight())}px`);
+    if (typeof ResizeObserver === "function") {
+      const watcher = new ResizeObserver(publishBar);
+      watcher.observe(topbar);
+      motion.signal.addEventListener("abort", () => watcher.disconnect(), { once: true });
+    }
     const page = renderRiderPage(data, scope, { signal: motion.signal, archive });
     const nav = sectionNav(page.sections, { signal: motion.signal, offset: barHeight });
     navSlot.append(nav.element);
@@ -402,6 +410,7 @@ export function startApp(options: AppOptions): App {
       ...page.sections.map((section) => section.element),
       page.footer,
     );
+    publishBar();
   }
 
   async function load(caller: ToolCaller, loadOptions: { readonly demo: boolean }): Promise<void> {

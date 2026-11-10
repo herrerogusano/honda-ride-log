@@ -9,16 +9,24 @@
  */
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import type { TraceLine } from "../domain/model";
+import type { LatLng, TraceLine } from "../domain/model";
 import { el } from "./dom";
 
 export const TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 
-/** What the Mapa tab needs from a map; tests replace it with a recorder. */
+/** What the map of «Rutas» needs from a map; tests replace it with a recorder. */
 export interface MapSurface {
-  /** Draws these lines, replacing the previous ones, and frames them. */
+  /** Draws these lines, replacing the previous ones, and frames them at once. */
   show(lines: readonly TraceLine[]): void;
-  /** Removes every line. */
+  /**
+   * Frames these lines without drawing them: a flight of `flyMs` when asked
+   * and the map already has a view, a jump otherwise. `settled` runs once
+   * the view is in place (at once for a jump), unless `clear` comes first.
+   */
+  frame(lines: readonly TraceLine[], flyMs: number | null, settled: () => void): void;
+  /** Replaces the drawn lines by these, without moving the map, with a small head dot where the stroke is (none if null). */
+  paint(lines: readonly TraceLine[], head: LatLng | null): void;
+  /** Removes every line and the head, and stops a flight. */
   clear(): void;
   /** Call when the container changed size or became visible: lines that arrived while it was hidden are framed now. */
   resize(): void;
@@ -91,48 +99,121 @@ const Attribution = L.Control.extend({
 });
 
 export const createLeafletSurface: SurfaceFactory = (container) => {
+  // Zoom buttons at the bottom left: the top of the map stays clear.
   const map = L.map(container, { zoomControl: false, attributionControl: false });
-  L.control.zoom({ zoomInTitle: "Acercar", zoomOutTitle: "Alejar" }).addTo(map);
+  L.control.zoom({ position: "bottomleft", zoomInTitle: "Acercar", zoomOutTitle: "Alejar" }).addTo(map);
   new Attribution({ position: "bottomright" }).addTo(map);
   new PolicyFriendlyTiles(TILE_URL, { maxZoom: 19 }).addTo(map);
   // No view is set until there is a route to frame: no tile is asked for before that.
   const drawn = L.layerGroup().addTo(map);
-  /** Bounds still to be framed: set when lines arrive while the map has no size (its tab is hidden). */
+  /** One casing and one stroke per line, reused from frame to frame while a trace draws itself. */
+  const casings: L.Polyline[] = [];
+  const strokes: L.Polyline[] = [];
+  let head: L.CircleMarker | null = null;
+  /** Bounds still to be framed: set when lines arrive while the map has no size (it is off the page). */
   let toFrame: L.LatLngBounds | null = null;
+  let hasView = false;
+  /** The end of the flight under way, if any. */
+  let flight: (() => void) | null = null;
 
-  function frame(): void {
-    // A map without size (its tab is hidden) cannot be framed: it waits for
-    // `resize`. The size is read from the element: Leaflet would remember a
-    // size of zero until its first view is set.
+  const boundsOf = (lines: readonly TraceLine[]): L.LatLngBounds => {
+    const bounds = L.latLngBounds([]);
+    for (const line of lines) for (const [latitude, longitude] of line.points) bounds.extend([latitude, longitude]);
+    return bounds;
+  };
+
+  function jump(): void {
+    // A map without size cannot be framed: it waits for `resize`. The size
+    // is read from the element: Leaflet would remember a size of zero until
+    // its first view is set.
     if (container.clientWidth === 0 || container.clientHeight === 0) return;
     map.invalidateSize();
     if (toFrame === null) return;
-    map.fitBounds(toFrame, { padding: [24, 24], maxZoom: 16, animate: false });
+    map.fitBounds(toFrame, { padding: [32, 32], maxZoom: 16, animate: false });
+    hasView = true;
+    toFrame = null;
+  }
+
+  function stopFlight(): void {
+    if (flight === null) return;
+    map.off("moveend", flight);
+    flight = null;
+    map.stop();
+  }
+
+  function paint(lines: readonly TraceLine[], at: LatLng | null): void {
+    for (const [index, line] of lines.entries()) {
+      const points = line.points.map(([latitude, longitude]) => L.latLng(latitude, longitude));
+      const className = line.inferred === true ? "trace trace-inferred" : "trace";
+      const casing = casings[index];
+      const stroke = strokes[index];
+      if (casing !== undefined && stroke !== undefined && stroke.options.className === className) {
+        casing.setLatLngs(points);
+        stroke.setLatLngs(points);
+        continue;
+      }
+      // A new line, or one of the other kind: drop this index and the ones after it.
+      for (const extra of [...casings.splice(index), ...strokes.splice(index)]) extra.remove();
+      // A dark casing under the line keeps it readable over any tile.
+      casings.push(L.polyline(points, { className: "trace-casing", interactive: false }).addTo(drawn));
+      strokes.push(L.polyline(points, { className, interactive: false }).addTo(drawn));
+    }
+    for (const extra of [...casings.splice(lines.length), ...strokes.splice(lines.length)]) extra.remove();
+    if (at === null) {
+      head?.remove();
+      head = null;
+    } else if (head === null) {
+      head = L.circleMarker([at[0], at[1]], { className: "trace-head", radius: 5, interactive: false }).addTo(drawn);
+    } else {
+      head.setLatLng([at[0], at[1]]).bringToFront();
+    }
+  }
+
+  function clear(): void {
+    stopFlight();
+    drawn.clearLayers();
+    casings.length = 0;
+    strokes.length = 0;
+    head = null;
     toFrame = null;
   }
 
   return {
     show(lines) {
-      drawn.clearLayers();
-      const bounds = L.latLngBounds([]);
-      for (const line of lines) {
-        const points = line.points.map(([latitude, longitude]) => L.latLng(latitude, longitude));
-        for (const point of points) bounds.extend(point);
-        // A white casing under the line keeps it readable over any tile.
-        L.polyline(points, { className: "trace-casing", interactive: false }).addTo(drawn);
-        L.polyline(points, { className: line.inferred === true ? "trace trace-inferred" : "trace", interactive: false }).addTo(drawn);
-      }
+      clear();
+      paint(lines, null);
+      const bounds = boundsOf(lines);
       toFrame = bounds.isValid() ? bounds : null;
-      frame();
+      jump();
     },
-    clear() {
-      drawn.clearLayers();
-      toFrame = null;
+    frame(lines, flyMs, settled) {
+      stopFlight();
+      const bounds = boundsOf(lines);
+      const sized = container.clientWidth > 0 && container.clientHeight > 0;
+      if (!bounds.isValid() || flyMs === null || !hasView || !sized) {
+        toFrame = bounds.isValid() ? bounds : null;
+        jump();
+        settled();
+        return;
+      }
+      map.invalidateSize();
+      const end = (): void => {
+        if (flight !== end) return;
+        map.off("moveend", end);
+        flight = null;
+        settled();
+      };
+      flight = end;
+      map.on("moveend", end);
+      map.flyToBounds(bounds, { padding: [32, 32], maxZoom: 16, duration: flyMs / 1000 });
     },
+    paint,
+    clear,
     resize() {
-      frame();
+      jump();
     },
     destroy() {
+      stopFlight();
       map.remove();
     },
   };

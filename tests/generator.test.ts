@@ -114,6 +114,11 @@ describe("synthetic rider", () => {
     expect(routes.some((r) => r.has_inferred_segments === false)).toBe(true);
     expect(routes.some((r) => r.timezone === null)).toBe(true);
     expect(routes.some((r) => (r.distance_km as number) > 100)).toBe(true);
+    // Short hops of 300 to 800 m: listed (not hidden as too short), but their whole trace falls inside the trim.
+    for (const profile of [commuter, generateRider({ seed: 2026, nowMs: NOW, profile: "heavy" })]) {
+      const hops = profile.routes.filter((r) => (r.distance_km as number) >= 0.3 && (r.distance_km as number) <= 0.8);
+      expect(hops.length).toBeGreaterThan(0);
+    }
     for (const route of routes) {
       expect(route.inference_quality_status).toBe(
         route.has_inferred_segments ? "inferred_present" : "none_marked_inferred",

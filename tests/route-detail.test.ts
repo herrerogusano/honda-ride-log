@@ -116,10 +116,12 @@ describe("the Mapa description of the open route", () => {
     const view = createMapView(riderData(list), never, { signIn: null }, () => ({
       show: () => undefined,
       clear: () => undefined,
+      frame: (_lines: unknown, _fly: unknown, settled: () => void) => settled(),
+      paint: () => undefined,
       resize: () => undefined,
       destroy: () => undefined,
     }));
-    document.body.replaceChildren(view.element);
+    document.body.replaceChildren(view.element, view.legend);
     view.open(route);
     return document.querySelector(".map-view .lead")?.textContent ?? "";
   }

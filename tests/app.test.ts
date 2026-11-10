@@ -34,7 +34,7 @@ function mount(hash = ""): App {
   root = document.createElement("main");
   document.body.append(root);
   // jsdom cannot lay out a real map: the Mapa tab gets a surface that draws nothing.
-  const surface = { show: () => undefined, clear: () => undefined, resize: () => undefined, destroy: () => undefined };
+  const surface = { show: () => undefined, clear: () => undefined, frame: (_lines: unknown, _fly: unknown, settled: () => void) => settled(), paint: () => undefined, resize: () => undefined, destroy: () => undefined };
   return startApp({ root, now: () => NOW, demoDelayMs: 0, createMap: (data, caller, options) => createMapView(data, caller, options, () => surface) });
 }
 
@@ -536,27 +536,31 @@ describe("Rutas", () => {
     }
   });
 
-  it("opens the route in the map of the same section when its date is pressed, and brings the map into view", async () => {
+  it("opens the route in the map next to the list when its date is pressed, marks its row and never moves the page", async () => {
     await open();
-    const scrolled: ScrollToOptions[] = [];
-    vi.stubGlobal("scrollTo", (options: ScrollToOptions) => void scrolled.push(options));
+    const scrolled: unknown[] = [];
+    vi.stubGlobal("scrollTo", (options: unknown) => void scrolled.push(options));
     const hashBefore = location.hash;
     const map = panelOf("Mapa");
-    // The map is out of view (below the screen here): it is brought up below the bar.
-    vi.spyOn(map.firstElementChild as HTMLElement, "getBoundingClientRect").mockReturnValue({ top: 1500, bottom: 2300 } as DOMRect);
-    vi.spyOn(root.querySelector("header.topbar") as HTMLElement, "getBoundingClientRect").mockReturnValue({ height: 64 } as DOMRect);
+    // Even a map far from the screen is not scrolled to: on every width it is pinned beside or above the list.
+    vi.spyOn(map, "getBoundingClientRect").mockReturnValue({ top: 1500, bottom: 2300 } as DOMRect);
     try {
-      rows()[0]?.querySelector("button")?.click();
-      expect(map.hidden).toBe(false);
+      const first = rows()[0]?.querySelector("button") as HTMLButtonElement;
+      first.focus();
+      first.click();
       expect(map.textContent).toContain(formatDateLong(newestStart));
-      expect(document.activeElement).toBe(map.querySelector("h3"));
-      expect(scrolled).toEqual([{ top: 1500 - 64 - 16, behavior: "smooth" }]);
-      // Still the same page: no section link changed, no address changed.
-      expect(location.hash).toBe(hashBefore);
-      // A map already in view is not scrolled to.
-      vi.spyOn(map.firstElementChild as HTMLElement, "getBoundingClientRect").mockReturnValue({ top: 120, bottom: 700 } as DOMRect);
+      // The keyboard stays on the list, where the user is choosing.
+      expect(document.activeElement).toBe(first);
+      expect(first.getAttribute("aria-current")).toBe("true");
+      expect(rows()[0]?.classList.contains("is-chosen")).toBe(true);
       rows()[1]?.querySelector("button")?.click();
-      expect(scrolled).toHaveLength(1);
+      expect(first.hasAttribute("aria-current")).toBe(false);
+      expect(rows()[0]?.classList.contains("is-chosen")).toBe(false);
+      expect(rows()[1]?.querySelector("button")?.getAttribute("aria-current")).toBe("true");
+      expect(root.querySelectorAll('.row-button[aria-current="true"]')).toHaveLength(1);
+      expect(scrolled).toEqual([]);
+      // Still the same page: no address changed.
+      expect(location.hash).toBe(hashBefore);
     } finally {
       vi.unstubAllGlobals();
     }
