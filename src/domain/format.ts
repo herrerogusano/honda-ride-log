@@ -85,39 +85,48 @@ export function fold(text: string): string {
   return text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
 }
 
-/**
- * Words a route can be searched by: its date written in the ways a person
- * would type it (weekday, day, month by name and by number, year, and the
- * whole date with slashes or dashes, with and without leading zeros).
- */
-export function searchWords(route: Route): string[] {
-  const date = new Date(route.startMs);
-  const day = date.getDate();
-  const month = date.getMonth() + 1;
-  const year = date.getFullYear();
-  const text = [
-    formatDateLong(route.startMs),
-    MONTHS_SHORT[date.getMonth()],
-    pad(day) + "/" + pad(month) + "/" + year,
-    day + "/" + month + "/" + year,
-    formatIsoDate(route.startMs),
-  ].join(" ");
-  return words(text);
-}
-
 /** Folded words of a text, split at spaces and commas. */
 function words(text: string): string[] {
   return fold(text).split(/[\s,]+/).filter((word) => word !== "");
 }
 
+/** Two-digit years are read as 20xx: `25` is 2025. */
+const fullYear = (text: string): number => (text.length <= 2 ? 2000 + Number(text) : Number(text));
+
 /**
- * True when every word of the query is the beginning of one of the route's
- * date words: "sab" finds Saturdays and "5 mayo" finds 5 May, but not the 5
- * inside 2025.
+ * Does one word of a query describe the date of the route?
+ *
+ * - A date with slashes or dashes, the day first, with or without the year
+ *   and with or without leading zeros: `7/3`, `07/03/2026`, `7-3-26`.
+ * - A date the other way round, the year first: `2026-03-07`, `2026-03`.
+ * - A number alone: the day of the month or the year, the whole number. A
+ *   `2` is the 2nd, never the beginning of 2025 or of the 20th.
+ * - Anything else: the beginning of the weekday or of the month, without
+ *   accents: `sab` finds Saturdays and `mar` finds March and Tuesdays.
  */
+function wordMatches(route: Route, word: string): boolean {
+  const date = new Date(route.startMs);
+  const day = date.getDate();
+  const month = date.getMonth() + 1;
+  const year = date.getFullYear();
+
+  const dayFirst = /^(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2}|\d{4}))?$/.exec(word);
+  if (dayFirst !== null) {
+    const [, d, m, y] = dayFirst;
+    return Number(d) === day && Number(m) === month && (y === undefined || fullYear(y) === year);
+  }
+  const yearFirst = /^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?$/.exec(word);
+  if (yearFirst !== null) {
+    const [, y, m, d] = yearFirst;
+    return Number(y) === year && Number(m) === month && (d === undefined || Number(d) === day);
+  }
+  if (/^\d+$/.test(word)) return word.length <= 2 ? Number(word) === day : Number(word) === year;
+
+  const names = [WEEKDAYS_LONG[(date.getDay() + 6) % 7] as string, MONTHS_LONG[date.getMonth()] as string, "de"];
+  return names.some((name) => fold(name).startsWith(word));
+}
+
+/** True when every word of the query describes the date of the route. An empty query matches everything. */
 export function matchesSearch(route: Route, query: string): boolean {
-  const wanted = words(query);
-  if (wanted.length === 0) return true;
-  const known = searchWords(route);
-  return wanted.every((want) => known.some((word) => word.startsWith(want)));
+  return words(query).every((word) => wordMatches(route, word));
 }
