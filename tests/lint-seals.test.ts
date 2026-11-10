@@ -33,3 +33,20 @@ describe("privacy seals", () => {
     expect(await importErrors(use("serviceRouteId", "./domain/sanitize"), "src/main.ts")).toBe(1);
   }, 30_000);
 });
+
+describe("ways around the seals", () => {
+  async function syntaxErrors(code: string, filePath: string): Promise<number> {
+    const [result] = await eslint.lintText(code, { filePath });
+    return (result?.messages ?? []).filter((message) => message.ruleId === "no-restricted-syntax").length;
+  }
+
+  it("are closed: no dynamic import and no glob import anywhere in the web", async () => {
+    for (const file of ["src/ui/mapView.ts", "src/main.ts", "src/domain/trim.ts", "src/service/loader.ts"]) {
+      expect(await syntaxErrors('export const load = () => import("../domain/sanitize");\n', file)).toBe(1);
+      expect(await syntaxErrors('export const all = import.meta.glob("../domain/sanit*.ts", { eager: true });\n', file)).toBe(1);
+      expect(await syntaxErrors('export const all = import.meta.globEager("../domain/*.ts");\n', file)).toBe(1);
+    }
+    // Reading the address of the module itself is not a way around anything.
+    expect(await syntaxErrors("export const here = import.meta.url;\n", "src/main.ts")).toBe(0);
+  }, 30_000);
+});

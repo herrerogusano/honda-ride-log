@@ -105,6 +105,12 @@ describe("loader boundaries", () => {
     const error = await failure(loadAllRoutes(counting, Number.NaN));
     expect([error.step, error.kind, error.detail]).toEqual(["routes", "unknown", "InvalidClock"]);
     expect(calls).toBe(0);
+    // A number no calendar can hold is no clock either.
+    for (const clock of [9e15, -9e15, Number.POSITIVE_INFINITY]) {
+      const outOfRange = await failure(loadAllRoutes(counting, clock));
+      expect([outOfRange.step, outOfRange.kind, outOfRange.detail], String(clock)).toEqual(["routes", "unknown", "InvalidClock"]);
+    }
+    expect(calls).toBe(0);
   });
 });
 

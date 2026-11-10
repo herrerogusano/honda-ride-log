@@ -49,7 +49,8 @@ const northings = (line: TraceLine | undefined): number[] => (line?.points ?? []
 
 function expectMetres(actual: number[], expected: number[]): void {
   expect(actual.length).toBe(expected.length);
-  actual.forEach((value, index) => expect(Math.abs(value - (expected[index] as number))).toBeLessThan(0.01));
+  // Within 5 cm: the cut is computed on the map projection, with the scale of the hidden place.
+  actual.forEach((value, index) => expect(Math.abs(value - (expected[index] as number))).toBeLessThan(0.05));
 }
 
 function pathLength(lines: readonly TraceLine[]): number {
