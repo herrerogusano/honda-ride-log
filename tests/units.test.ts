@@ -143,13 +143,14 @@ describe("error text", () => {
       title: "No se han podido cargar las rutas.",
       explanation: "El servicio ha respondido con un error.",
       code: "routes/tool_error (period_too_large)",
+      action: "retry",
     });
     expect(errorText(new LoadError("status", "unexpected_shape", "get_vehicle_status.battery")).code).toBe(
       "status/unexpected_shape (get_vehicle_status.battery)",
     );
     expect(errorText(new LoadError("detail", "unknown", null)).code).toBe("detail/unknown");
-    const titles = (["status", "details", "routes", "detail"] as const).map((step) => errorText(new LoadError(step, "unknown", null)).title);
-    expect(new Set(titles).size).toBe(4);
+    const titles = (["login", "status", "details", "routes", "detail"] as const).map((step) => errorText(new LoadError(step, "unknown", null)).title);
+    expect(new Set(titles).size).toBe(5);
     const kinds = (["tool_error", "unexpected_shape", "too_many_routes", "unknown"] as const).map(
       (kind) => errorText(new LoadError("routes", kind, null)).explanation,
     );

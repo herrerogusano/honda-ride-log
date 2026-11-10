@@ -24,9 +24,19 @@ export interface MapView {
   destroy(): void;
 }
 
-export type MapFactory = (data: RiderData, caller: ToolCaller) => MapView;
+export interface MapViewOptions {
+  /** Offered when a trace fails because the session is over; null in the demo or without a service. */
+  readonly signIn: (() => void) | null;
+}
 
-export function createMapView(data: RiderData, caller: ToolCaller, createSurface: SurfaceFactory = createLeafletSurface): MapView {
+export type MapFactory = (data: RiderData, caller: ToolCaller, options: MapViewOptions) => MapView;
+
+export function createMapView(
+  data: RiderData,
+  caller: ToolCaller,
+  options: MapViewOptions = { signIn: null },
+  createSurface: SurfaceFactory = createLeafletSurface,
+): MapView {
   /** Trimmed traces already known, and the requests still on their way. */
   const traces = new Map<RouteRef, TrimmedTrace>();
   const pending = new Map<RouteRef, Promise<TrimmedTrace>>();
@@ -34,6 +44,7 @@ export function createMapView(data: RiderData, caller: ToolCaller, createSurface
   let current: Route | null = null;
   /** Each opening gets a number; an answer that is no longer the latest is not drawn. */
   let opening = 0;
+  let destroyed = false;
 
   const heading = el("h2", {}, "Mapa");
   const facts = el("p", { class: "lead" }, "Elige una ruta en la pestaña Rutas para verla aquí.");
@@ -56,13 +67,21 @@ export function createMapView(data: RiderData, caller: ToolCaller, createSurface
     surface?.clear();
     canvas.hidden = true;
     clear(status);
+    // Retrying with a token the client has already forgotten would fail the same way.
+    let action: HTMLElement | null = null;
+    if (text.action === "retry") {
+      action = el("button", { class: "button", attrs: { type: "button" }, on: { click: () => open(route) } }, "Reintentar");
+    } else if (text.action === "sign_in" && options.signIn !== null) {
+      const signIn = options.signIn;
+      action = el("button", { class: "button button-primary", attrs: { type: "button" }, on: { click: () => signIn() } }, "Volver a entrar");
+    }
     status.append(
       el(
         "div",
         { class: "error", attrs: { role: "alert" } },
         el("p", {}, el("strong", {}, text.title), ` ${text.explanation}`),
         el("p", {}, "Código: ", el("code", {}, text.code)),
-        el("button", { class: "button", attrs: { type: "button" }, on: { click: () => open(route) } }, "Reintentar"),
+        action,
       ),
     );
   }
@@ -103,7 +122,8 @@ export function createMapView(data: RiderData, caller: ToolCaller, createSurface
         .then((untrimmed) => {
           // Only the trimmed lines are kept; the untrimmed trace is dropped here.
           const trimmed = trimTrace(untrimmed);
-          traces.set(route.ref, trimmed);
+          // An answer that arrives after the view is gone is not kept.
+          if (!destroyed) traces.set(route.ref, trimmed);
           return trimmed;
         })
         .finally(() => pending.delete(route.ref));
@@ -173,8 +193,12 @@ export function createMapView(data: RiderData, caller: ToolCaller, createSurface
     destroy() {
       // Answers still on their way must not draw on a map that is gone.
       opening += 1;
+      destroyed = true;
       surface?.destroy();
       surface = null;
+      // The trimmed traces leave memory with the view (sign-out, another load).
+      traces.clear();
+      current = null;
     },
   };
 }

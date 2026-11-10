@@ -7,6 +7,7 @@ import type { LatLng, TraceLine } from "../src/domain/model";
 import { distanceMeters } from "../src/domain/trim";
 import { ToolCallError, type RawRouteDetail, type ToolCaller, type ToolName } from "../src/service/contract";
 import { loadAllRoutes, loadVehicleState } from "../src/service/loader";
+import { ServiceError } from "../src/service/mcpClient";
 import { buildRiderData, type RiderData } from "../src/ui/data";
 import { createLeafletSurface, PolicyFriendlyTiles, TILE_URL, type MapSurface } from "../src/ui/leafletSurface";
 import { createMapView, type MapView } from "../src/ui/mapView";
@@ -49,7 +50,7 @@ async function harness(change?: (name: ToolName, args: unknown, answer: () => Pr
     resize: () => void (resized += 1),
     destroy: () => void (destroyed += 1),
   };
-  const view = createMapView(data, caller, () => {
+  const view = createMapView(data, caller, { signIn: null }, () => {
     surfaces += 1;
     return surface;
   });
@@ -269,7 +270,7 @@ describe("Mapa tab", () => {
     const data = buildRiderData(await loadVehicleState(service), null, await loadAllRoutes(service, NOW), true, NOW);
     let broken = true;
     const shown: unknown[] = [];
-    const view = createMapView(data, service, () => {
+    const view = createMapView(data, service, { signIn: null }, () => {
       if (broken) throw new Error("map library failed");
       return { show: (lines) => void shown.push(lines), clear: () => undefined, resize: () => undefined, destroy: () => undefined };
     });
@@ -371,6 +372,51 @@ describe("Mapa tab", () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(h.shown.length).toBe(1);
     expect(h.surfaces()).toBe(1);
+  });
+
+  it("forgets every trace it kept once released, the late ones too", async () => {
+    let release: () => void = () => undefined;
+    let hold = false;
+    const h = await harness(async (name, _args, answer) => {
+      if (name === "get_route_detail" && hold) await new Promise<void>((resolve) => (release = resolve));
+      return answer();
+    });
+    const [first, second] = h.data.routes as RiderData["routes"];
+    h.view.open(first as RiderData["routes"][number]);
+    await vi.waitFor(() => expect(h.shown.length).toBe(1));
+    hold = true;
+    h.view.open(second as RiderData["routes"][number]);
+    h.view.destroy();
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    hold = false;
+    // Opened again (only a test does this), both are asked for again: nothing was kept.
+    h.view.open(first as RiderData["routes"][number]);
+    h.view.open(second as RiderData["routes"][number]);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(h.calls.filter((name) => name === "get_route_detail")).toHaveLength(4);
+  });
+
+  it("offers a new sign-in instead of a retry when the session is over", async () => {
+    const service = createDemoService(rider);
+    const data = buildRiderData(await loadVehicleState(service), null, await loadAllRoutes(service, NOW), false, NOW);
+    const ended: ToolCaller = { callTool: async () => Promise.reject(new ServiceError("reauth_required", "expired")) };
+    const surface: MapSurface = { show: () => undefined, clear: () => undefined, resize: () => undefined, destroy: () => undefined };
+    let signIns = 0;
+    const view = createMapView(data, ended, { signIn: () => void (signIns += 1) }, () => surface);
+    document.body.replaceChildren(view.element);
+    view.open(data.routes[0] as RiderData["routes"][number]);
+    await vi.waitFor(() => expect(text()).toContain("detail/reauth_required (expired)"));
+    expect(button("Reintentar")).toBeUndefined();
+    button("Volver a entrar").click();
+    expect(signIns).toBe(1);
+
+    // Without a way to sign in (the demo), no button at all.
+    const bare = createMapView(data, ended, { signIn: null }, () => surface);
+    document.body.replaceChildren(bare.element);
+    bare.open(data.routes[0] as RiderData["routes"][number]);
+    await vi.waitFor(() => expect(text()).toContain("detail/reauth_required (expired)"));
+    expect(document.querySelectorAll(".map-status button")).toHaveLength(0);
   });
 
   it("explains the dotted line and the hidden surroundings in a legend", async () => {

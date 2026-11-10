@@ -1,15 +1,17 @@
 import js from "@eslint/js";
 import tseslint from "typescript-eslint";
 
-const STORAGE = "Browser storage is banned: only src/storage/maintenance.ts may use localStorage, for the two service-interval numbers (docs/PLAN.md, privacy). Never the access token.";
+const STORAGE =
+  "Browser storage is banned (docs/PLAN.md, privacy). Two one-file exceptions: src/storage/maintenance.ts may use localStorage for the two service-interval numbers, and src/auth/pendingLogin.ts may use sessionStorage for the PKCE verifier and the state. Never the access token.";
 const HTML = "Build DOM nodes instead: data must never be parsed as HTML and the CSP forbids inline code.";
+const PENDING_LOGIN_STORAGE = "Only the sign-in flow (src/auth/login.ts) may reach sessionStorage through src/auth/pendingLogin.ts (docs/PLAN.md, section 10).";
 
 const LOCAL_STORAGE_GLOBAL = { name: "localStorage", message: STORAGE };
 const LOCAL_STORAGE_PROPERTY = { property: "localStorage", message: STORAGE };
-/** Banned in every file, the storage file included. */
-const OTHER_GLOBALS = [{ name: "sessionStorage", message: STORAGE }];
-const OTHER_PROPERTIES = [
-  { property: "sessionStorage", message: STORAGE },
+const SESSION_STORAGE_GLOBAL = { name: "sessionStorage", message: STORAGE };
+const SESSION_STORAGE_PROPERTY = { property: "sessionStorage", message: STORAGE };
+/** Banned in every file, both storage exceptions included. */
+const HTML_PROPERTIES = [
   { property: "innerHTML", message: HTML },
   { property: "outerHTML", message: HTML },
   { property: "insertAdjacentHTML", message: HTML },
@@ -37,8 +39,8 @@ export default tseslint.config(
     rules: {
       eqeqeq: ["error", "always"],
       "no-console": "error",
-      "no-restricted-globals": ["error", LOCAL_STORAGE_GLOBAL, ...OTHER_GLOBALS],
-      "no-restricted-properties": ["error", LOCAL_STORAGE_PROPERTY, ...OTHER_PROPERTIES],
+      "no-restricted-globals": ["error", LOCAL_STORAGE_GLOBAL, SESSION_STORAGE_GLOBAL],
+      "no-restricted-properties": ["error", LOCAL_STORAGE_PROPERTY, SESSION_STORAGE_PROPERTY, ...HTML_PROPERTIES],
       "no-restricted-syntax": [
         "error",
         {
@@ -70,12 +72,13 @@ export default tseslint.config(
     rules: { "no-restricted-imports": ["error", { patterns: [ROUTE_ID_SEAL] }] },
   },
   {
-    // The one storage exception (docs/PLAN.md, "Privacidad"): this file may
-    // use localStorage, and only localStorage. Everything else stays banned.
+    // Storage exception 1 (docs/PLAN.md, "Privacidad"): this file may use
+    // localStorage, and only localStorage. sessionStorage and the HTML sinks
+    // stay banned (tests/lint-storage.test.ts).
     files: ["src/storage/maintenance.ts"],
     rules: {
-      "no-restricted-globals": ["error", ...OTHER_GLOBALS],
-      "no-restricted-properties": ["error", ...OTHER_PROPERTIES],
+      "no-restricted-globals": ["error", SESSION_STORAGE_GLOBAL],
+      "no-restricted-properties": ["error", SESSION_STORAGE_PROPERTY, ...HTML_PROPERTIES],
     },
   },
   {
@@ -86,5 +89,29 @@ export default tseslint.config(
     files: ["scripts/**"],
     languageOptions: { globals: { process: "readonly", console: "readonly", URL: "readonly" } },
     rules: { "no-console": "off" },
+  },
+  {
+    // Storage exception 2 (docs/PLAN.md, section 10): this file may use
+    // sessionStorage, for the PKCE verifier and the state during the round
+    // trip to the login, and only sessionStorage. localStorage and the HTML
+    // sinks stay banned (tests/lint-storage.test.ts).
+    files: ["src/auth/pendingLogin.ts"],
+    rules: {
+      "no-restricted-globals": ["error", LOCAL_STORAGE_GLOBAL],
+      "no-restricted-properties": ["error", LOCAL_STORAGE_PROPERTY, ...HTML_PROPERTIES],
+    },
+  },
+  {
+    // ...and only the sign-in flow may import that file, so no other module
+    // can reach sessionStorage through its helpers. A separate rule id, so the
+    // seal rules above stay untouched.
+    files: ["**/*.{js,mjs,cjs,ts,mts,cts}"],
+    ignores: ["src/auth/login.ts", "src/auth/pendingLogin.ts", "tests/**"],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        { patterns: [{ regex: "(^|/)pendingLogin(\\.[cm]?[jt]s)?(\\?.*)?$", message: PENDING_LOGIN_STORAGE }] },
+      ],
+    },
   },
 );

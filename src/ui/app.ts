@@ -7,7 +7,7 @@ import { createDemoCaller, DEMO_SCENARIOS, isDemoScenario, scenarioFromHash, typ
 import { formatNumber } from "../domain/format";
 import type { VehicleState } from "../domain/model";
 import type { ToolCaller } from "../service/contract";
-import { loadAllRoutes, loadVehicleInfo, loadVehicleState, LoadError } from "../service/loader";
+import { loadAllRoutes, loadVehicleInfo, loadVehicleState, LoadError, signInError } from "../service/loader";
 import type { StorageScope } from "../storage/maintenance";
 import { buildRiderData, type RiderData } from "./data";
 import { clear, el, uniqueId } from "./dom";
@@ -17,6 +17,18 @@ import { renderRoutes } from "./routesView";
 import { renderSummary } from "./summary";
 import { createTabs } from "./tabs";
 
+/**
+ * The way in and out of a real account, given only when the build has a
+ * service configured (`src/boot.ts`). Without it the page offers the demo
+ * alone and shows no sign-in button.
+ */
+export interface AccountActions {
+  /** Leaves for the login page. Rejects without leaving if it cannot start (for example, no sessionStorage). */
+  signIn(): Promise<void>;
+  /** Forgets the token and any half-done login; may leave for the login's sign-out page. */
+  signOut(): void;
+}
+
 export interface AppOptions {
   readonly root: HTMLElement;
   /** The clock; tests pin it. */
@@ -24,13 +36,22 @@ export interface AppOptions {
   /** Artificial wait of each demo answer, so loading states can be seen. */
   readonly demoDelayMs?: number;
   readonly createMap?: MapFactory;
+  readonly account?: AccountActions;
+  /**
+   * What to show first: the landing or the demo, as the address says
+   * (`"address"`, the default), or nothing (`"none"`) because the caller is
+   * about to show an account or a sign-in error and the address must not
+   * start the demo.
+   */
+  readonly initialView?: "address" | "none";
 }
 
 export interface App {
   startDemo(scenario: DemoScenario): Promise<void>;
-  /** Loads a rider through any caller. Phase 3 calls this after the login. */
+  /** Loads a rider through any caller. `src/boot.ts` calls it with `demo: false` after the login. */
   load(caller: ToolCaller, options: { readonly demo: boolean }): Promise<void>;
-  showLanding(): void;
+  /** The landing, with a failed sign-in above it if one is given. Abandons any load and drops its data. */
+  showLanding(problem?: LoadError): void;
   /** Stops listening to the address and abandons any load in progress. The page keeps what it shows. */
   dispose(): void;
 }
@@ -41,7 +62,7 @@ function setHash(hash: string): void {
 }
 
 export function startApp(options: AppOptions): App {
-  const { root } = options;
+  const { root, account } = options;
   const now = options.now ?? Date.now;
   const mapFactory = options.createMap ?? createMapView;
   /** Each load gets a number; a load that is no longer the latest stops drawing. */
@@ -98,21 +119,64 @@ export function startApp(options: AppOptions): App {
   banner.hidden = true;
   // Focusable by script only, to move the focus to what a button just replaced.
   const content = el("div", { class: "content", attrs: { tabindex: -1 } });
+
+  /**
+   * Goes to the login page; if it cannot start, says why on the landing.
+   * An account still on screen (its session over) is cleared first, so a
+   * page the browser restores with Back shows the landing, not its data.
+   */
+  const signIn = (): void => {
+    if (accountShown) showLanding();
+    account?.signIn().catch((error: unknown) => {
+      showLanding(signInError(error));
+      content.focus();
+    });
+  };
+  const signInButton = (label: string, primary: boolean): HTMLElement =>
+    el("button", { class: primary ? "button button-primary" : "button", attrs: { type: "button" }, on: { click: signIn } }, label);
+
+  // Shown only while a real account is on screen (its data, its load or its error).
+  const signOutButton = el(
+    "button",
+    {
+      class: "button button-quiet sign-out",
+      attrs: { type: "button" },
+      on: {
+        click: () => {
+          // The landing first: the load stops asking and its data leaves the
+          // page. Then the token is forgotten, so a request still waiting in
+          // the client's queue never goes out.
+          showLanding();
+          account?.signOut();
+          content.querySelector("button")?.focus();
+        },
+      },
+    },
+    "Salir",
+  );
+  signOutButton.hidden = true;
   clear(root);
   root.append(
-    el("header", { class: "topbar" }, el("h1", { class: "brand" }, el("span", { class: "brand-mark", attrs: { "aria-hidden": "true" } }), "Ride Log")),
+    el(
+      "header",
+      { class: "topbar" },
+      el("h1", { class: "brand" }, el("span", { class: "brand-mark", attrs: { "aria-hidden": "true" } }), "Ride Log"),
+      signOutButton,
+    ),
     banner,
     content,
   );
 
-  function showLanding(): void {
+  function showLanding(problem?: LoadError): void {
     generation += 1;
     releaseMap();
     scenarioShown = null;
     accountShown = false;
     banner.hidden = true;
+    signOutButton.hidden = true;
     setHash("");
     clear(content);
+    if (problem !== undefined) content.append(errorPanel(problem, null));
     content.append(
       el(
         "section",
@@ -130,34 +194,46 @@ export function startApp(options: AppOptions): App {
           el("li", {}, "Nunca se muestran la matrícula, el bastidor, el concesionario ni la posición actual de la moto."),
           el("li", {}, "Los mapas ocultan los primeros y los últimos 400 m de cada ruta."),
         ),
-        el("p", {}, "El acceso con tu cuenta todavía no está disponible. Mientras tanto puedes ver cómo funciona con datos de ejemplo."),
+        account === undefined
+          ? el("p", {}, "El acceso con tu cuenta todavía no está disponible. Mientras tanto puedes ver cómo funciona con datos de ejemplo.")
+          : el(
+              "p",
+              {},
+              "Entra con tu cuenta de MAPIT: el login es la página del servicio, no esta web, y esta web no ve tu contraseña. También puedes ver cómo funciona con datos de ejemplo.",
+            ),
         el(
-          "button",
-          {
-            class: "button button-primary",
-            attrs: { type: "button" },
-            on: {
-              click: () => {
-                void startDemo("commuter");
-                content.focus();
+          "div",
+          { class: "landing-actions" },
+          account === undefined ? null : signInButton("Entrar", true),
+          el(
+            "button",
+            {
+              class: account === undefined ? "button button-primary" : "button",
+              attrs: { type: "button" },
+              on: {
+                click: () => {
+                  void startDemo("commuter");
+                  content.focus();
+                },
               },
             },
-          },
-          "Ver la demo",
+            "Ver la demo",
+          ),
         ),
       ),
     );
   }
 
-  function errorPanel(error: LoadError, retry: () => void): HTMLElement {
+  /**
+   * A failure, with what can be done about it. `retry` is null on the
+   * landing, which has its own buttons. A failure that needs a new sign-in
+   * never offers to retry: the client has already forgotten the token.
+   */
+  function errorPanel(error: LoadError, retry: (() => void) | null): HTMLElement {
     const text = errorText(error);
-    return el(
-      "div",
-      { class: "error", attrs: { role: "alert" } },
-      el("h2", {}, text.title),
-      el("p", {}, text.explanation),
-      el("p", {}, "Código: ", el("code", {}, text.code)),
-      el(
+    let action: HTMLElement | null = null;
+    if (retry !== null && text.action === "retry") {
+      action = el(
         "button",
         {
           class: "button",
@@ -170,7 +246,17 @@ export function startApp(options: AppOptions): App {
           },
         },
         "Reintentar",
-      ),
+      );
+    } else if (retry !== null && text.action === "sign_in" && account !== undefined) {
+      action = signInButton("Volver a entrar", true);
+    }
+    return el(
+      "div",
+      { class: "error", attrs: { role: "alert" } },
+      el("h2", {}, text.title),
+      el("p", {}, text.explanation),
+      el("p", {}, "Código: ", el("code", {}, text.code)),
+      action,
     );
   }
 
@@ -184,7 +270,8 @@ export function startApp(options: AppOptions): App {
 
   function showLoaded(data: RiderData, caller: ToolCaller, warnings: readonly string[]): void {
     const scope: StorageScope = data.demo ? "demo" : "account";
-    const map = mapFactory(data, caller);
+    // A failed trace that needs a new sign-in offers it, never a retry.
+    const map = mapFactory(data, caller, { signIn: account === undefined || data.demo ? null : signIn });
     activeMap = map;
     const summaryPanel = el("div", {}, renderSummary(data, scope));
     const mapPanel = el("div", {}, map.element);
@@ -221,6 +308,7 @@ export function startApp(options: AppOptions): App {
       scenarioShown = null;
       accountShown = true;
       banner.hidden = true;
+      signOutButton.hidden = account === undefined;
       if (scenarioFromHash(location.hash) !== null) setHash("");
     }
     const progress = el("p", { class: "loading", attrs: { role: "status" } }, "Leyendo el estado de la moto…");
@@ -282,6 +370,7 @@ export function startApp(options: AppOptions): App {
     accountShown = false;
     scenarioSelect.value = scenario;
     banner.hidden = false;
+    signOutButton.hidden = true;
     await load(createDemoCaller(scenario, now(), options.demoDelayMs ?? 120), { demo: true });
   }
 
@@ -303,9 +392,11 @@ export function startApp(options: AppOptions): App {
   };
   window.addEventListener("hashchange", onHashChange);
 
-  const fromHash = scenarioFromHash(location.hash);
-  if (fromHash === null) showLanding();
-  else void startDemo(fromHash);
+  if ((options.initialView ?? "address") === "address") {
+    const fromHash = scenarioFromHash(location.hash);
+    if (fromHash === null) showLanding();
+    else void startDemo(fromHash);
+  }
 
   return {
     startDemo,

@@ -1,0 +1,20 @@
+{
+  "$comment": "Service settings per Vite mode (docs/PLAN.md, section 10). Empty mcpUrl, loginDomain and webClientId mean demo only. Real values are not written here until the owner decides. Modes not listed (for example `test` or `demo`) are demo only.",
+  "demo": null,
+  "development": {
+    "mcpUrl": "",
+    "loginDomain": "",
+    "webClientId": "",
+    "redirectUri": "http://localhost:5173/",
+    "logoutUri": "",
+    "sendResourceIndicator": true
+  },
+  "production": {
+    "mcpUrl": "",
+    "loginDomain": "",
+    "webClientId": "",
+    "redirectUri": "https://herrerogusano.github.io/honda-ride-log/",
+    "logoutUri": "",
+    "sendResourceIndicator": true
+  }
+}
