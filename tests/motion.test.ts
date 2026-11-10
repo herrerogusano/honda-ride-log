@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { formatNumber } from "../src/domain/format";
 import { barChart } from "../src/ui/charts";
-import { countUp, MAX_STAGGER, prefersReducedMotion, reveal } from "../src/ui/motion";
+import { countUp, durationToken, MAX_STAGGER, prefersReducedMotion, reveal } from "../src/ui/motion";
 import { sectionHeader } from "../src/ui/sectionHeader";
 import { createTabs } from "../src/ui/tabs";
 
@@ -209,6 +209,15 @@ describe("countUp", () => {
     expect([third.element.textContent, frames.size]).toEqual(["900 km", 0]);
   });
 
+  it("does not start while the observer reports the figure off screen", () => {
+    const { element, observer } = mounted(250);
+    const away = [{ target: element, isIntersecting: false }] as unknown as IntersectionObserverEntry[];
+    observer.callback(away, observer as unknown as IntersectionObserver);
+    expect([observer.disconnected, element.querySelector(".cu-anim"), frames.size]).toEqual([false, null, 0]);
+    observer.show(element);
+    expect(element.querySelector(".cu-anim")).not.toBeNull();
+  });
+
   it("does not start in a hidden tab, and does not count zero", () => {
     setHidden(true);
     const hidden = mounted(300);
@@ -221,6 +230,23 @@ describe("countUp", () => {
     const before = FakeObserver.all.length;
     countUp(zero, 0, format);
     expect([zero.textContent, FakeObserver.all.length]).toEqual(["0 km", before]);
+  });
+});
+
+describe("durationToken", () => {
+  afterEach(() => {
+    document.documentElement.removeAttribute("style");
+  });
+
+  it("reads milliseconds and seconds from the stylesheet token, and falls back on anything else", () => {
+    const root = document.documentElement.style;
+    root.setProperty("--dur-test", "520ms");
+    expect(durationToken("--dur-test", 1)).toBe(520);
+    root.setProperty("--dur-test", ".8s");
+    expect(durationToken("--dur-test", 1)).toBe(800);
+    root.setProperty("--dur-test", "fast");
+    expect(durationToken("--dur-test", 7)).toBe(7);
+    expect(durationToken("--dur-missing", 9)).toBe(9);
   });
 });
 
