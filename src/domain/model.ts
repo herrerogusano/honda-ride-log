@@ -22,7 +22,13 @@ export interface Route {
   readonly durationS: number | null;
   /** The service's `distance_km` (conversion unconfirmed by the service). */
   readonly distanceKm: number;
+  /** The service's `average_speed`, shown as km/h (unit unconfirmed by the service). */
   readonly averageSpeed: number | null;
+  /**
+   * The service's `maximum_speed`, shown as km/h (unit unconfirmed by the
+   * service). Shown since the owner's decision of 2026-11-10; never on the share card.
+   */
+  readonly maxSpeed: number | null;
   /** Descriptive flag from the service; not a GPS accuracy statement. */
   readonly hasInferredSegments: boolean | null;
 }

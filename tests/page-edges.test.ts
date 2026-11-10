@@ -371,12 +371,12 @@ describe("Rutas, cell by cell", () => {
     select.dispatchEvent(new Event("change", { bubbles: true }));
   };
 
-  it("writes date, start, duration, km and speed of each route, newest first", () => {
+  it("writes date, start, end, duration, km, both speeds and the inferred label of each route, newest first", () => {
     show(list);
     expect(rows()).toEqual([
-      ["mar 10 mar 2026", "10:00", "—", "3,0", "12"],
-      ["lun 9 mar 2026", "07:05", "1 h 35 min", "120,0", "—"],
-      ["sáb 7 mar 2026", "23:30", "25 min", "8,3", "31"],
+      ["mar 10 mar 2026", "10:00", "—", "—", "3,0", "12", "60", "No"],
+      ["lun 9 mar 2026", "07:05", "08:40", "1 h 35 min", "120,0", "—", "60", "No"],
+      ["sáb 7 mar 2026", "23:30", "23:55", "25 min", "8,3", "31", "60", "No"],
     ]);
     expect(count()).toBe("3 rutas.");
     expect(more().hidden).toBe(true);

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDemoService } from "../src/demo/fakeService";
-import { FORBIDDEN_MARK, generateRider } from "../src/demo/generator";
+import { DEMO_TOP_SPEED, FORBIDDEN_MARK, generateRider } from "../src/demo/generator";
 import { createDemoCaller, DEMO_SEED } from "../src/demo/scenarios";
 import { formatDate, formatDateLong, formatNumber } from "../src/domain/format";
 import { ToolCallError, type ToolCaller, type ToolName } from "../src/service/contract";
@@ -473,7 +473,16 @@ describe("Rutas", () => {
     button("Mostrar más rutas").click();
     expect(rows().length).toBe(2 * PAGE_SIZE);
     const columns = [...panelOf("Rutas").querySelectorAll("thead th")].map((cell) => cell.textContent);
-    expect(columns).toEqual(["Fecha", "Salida", "Duración", "Km", "Vel. media (km/h)"]);
+    expect(columns).toEqual([
+      "Fecha",
+      "Salida",
+      "Llegada",
+      "Duración",
+      "Km",
+      "Vel. media (km/h)",
+      "Vel. máx. (km/h)",
+      "Tramos inferidos",
+    ]);
   });
 
   it("searches by date text and sorts by distance", async () => {
@@ -489,7 +498,18 @@ describe("Rutas", () => {
     type(search, "");
     choose(panelOf("Rutas").querySelector("select") as HTMLSelectElement, "km_desc");
     const longest = Math.max(...visible.map((route) => route.distance_km ?? 0));
-    expect(rows()[0]?.querySelectorAll("td")[2]?.textContent).toBe(formatNumber(longest, 1));
+    expect(rows()[0]?.querySelectorAll("td")[3]?.textContent).toBe(formatNumber(longest, 1));
+    choose(panelOf("Rutas").querySelector("select") as HTMLSelectElement, "max_speed_desc");
+    const fastest = Math.max(...visible.map((route) => route.maximum_speed ?? 0));
+    expect(rows()[0]?.querySelectorAll("td")[5]?.textContent).toBe(formatNumber(fastest));
+  });
+
+  it("shows plausible maximum speeds in the demo: above the average and within a 125 cc", () => {
+    for (const route of visible) {
+      expect(route.maximum_speed).not.toBeNull();
+      expect(route.maximum_speed as number).toBeGreaterThan(route.average_speed as number);
+      expect(route.maximum_speed as number).toBeLessThanOrEqual(DEMO_TOP_SPEED);
+    }
   });
 
   it("opens the route in the Mapa tab when its date is pressed", async () => {

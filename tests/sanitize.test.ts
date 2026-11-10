@@ -113,6 +113,8 @@ describe("route list sanitizer", () => {
         "durationS",
         "endMs",
         "hasInferredSegments",
+        // Added deliberately by the owner's decision of 2026-11-10; nothing else joins it.
+        "maxSpeed",
         "ref",
         "startMs",
       ]);
@@ -130,6 +132,34 @@ describe("route list sanitizer", () => {
     expect(route?.distanceKm).toBe(sample.distance_km);
     expect(route?.averageSpeed).toBe(sample.average_speed);
     expect(route?.hasInferredSegments).toBe(sample.has_inferred_segments);
+  });
+
+  it("copies the maximum speed, and nothing else the list sends about it", () => {
+    expect(typeof sample.maximum_speed).toBe("number");
+    expect(sample.maximum_speed).not.toBe(sample.average_speed);
+    const route = sanitizeRouteList(listOf([sample])).routes[0];
+    expect(route?.maxSpeed).toBe(sample.maximum_speed);
+    expect(sanitizeRouteList(listOf([{ ...sample, maximum_speed: 0 }])).routes[0]?.maxSpeed).toBe(0);
+    expect(sanitizeRouteList(listOf([{ ...sample, maximum_speed: 97.5 }])).routes[0]?.maxSpeed).toBe(97.5);
+    // Still dropped: the route's odometers, time zone and the service's quality texts.
+    const text = JSON.stringify(
+      sanitizeRouteList(listOf([{ ...sample, odometer_start: 12345, odometer_end: 12399, timezone: "Europe/Madrid" }])),
+    );
+    expect(text).not.toContain("12345");
+    expect(text).not.toContain("Europe/");
+    expect(text).not.toContain("inferred_present");
+    expect(text).not.toContain("none_marked_inferred");
+  });
+
+  it("turns a maximum speed that cannot be true into an absent one, without losing the route", () => {
+    for (const bad of [-1, -0.5, Number.NaN, Number.POSITIVE_INFINITY, "88", "", true, {}, [90], null, undefined]) {
+      const page = sanitizeRouteList(listOf([{ ...sample, maximum_speed: bad }]));
+      expect(page.skipped, String(bad)).toBe(0);
+      expect(page.routes[0]?.maxSpeed, String(bad)).toBeNull();
+    }
+    const withoutMax: Record<string, unknown> = { ...sample };
+    delete withoutMax["maximum_speed"];
+    expect(sanitizeRouteList(listOf([withoutMax])).routes[0]?.maxSpeed).toBeNull();
   });
 
   it("lets only the detail request recover the service id", () => {
