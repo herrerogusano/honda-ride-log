@@ -197,6 +197,11 @@ export function createMapView(
       target.clear();
       target.frame(lines, fly ? hero : null, () => {
         if (mine !== opening) return;
+        // The map left the screen (or the tab was hidden) during the flight: nothing draws unseen.
+        if (!onScreen || document.hidden) {
+          target.show(lines);
+          return;
+        }
         drawing = drawTrace(plan, {
           durationMs: drawDuration(plan, hero),
           paint: (partial) => target.paint(partial.lines, partial.head),

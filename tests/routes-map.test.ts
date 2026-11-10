@@ -348,6 +348,19 @@ describe("the trace draws itself on the map", () => {
     expect(h.rec.paints[h.rec.paints.length - 1]).toEqual({ lines: await h.trimmed(route), head: null });
   });
 
+  it("shows the complete trace, without drawing it, when the map left the screen during the flight", async () => {
+    const h = await harness();
+    screen(true);
+    const route = longest(h.data.routes);
+    h.view.open(route);
+    await vi.waitFor(() => expect(h.rec.flights).toHaveLength(1));
+    screen(false);
+    h.rec.land();
+    expect(frames.size).toBe(0);
+    expect(h.rec.paints).toEqual([]);
+    expect(h.rec.shows).toEqual([await h.trimmed(route)]);
+  });
+
   it("completes the trace at once when the map leaves the screen mid-draw", async () => {
     const h = await harness();
     screen(true);
