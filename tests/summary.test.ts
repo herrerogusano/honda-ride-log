@@ -172,8 +172,20 @@ describe("Resumen, block by block", () => {
       ["noviembre", "30 km", "10 km"],
       ["diciembre", "12 km", "0 km"],
     ]);
+    // This year in red, last year in light grey (the legend keeps the names, so colour is not the only cue).
+    expect([...figure.querySelectorAll(".chart-legend li")].map((item) => [item.textContent, item.querySelector(".chart-key")?.classList.contains("tone-now")])).toEqual([
+      ["2025", false],
+      ["2026", true],
+    ]);
+    expect(figure.querySelector(".chart-key.tone-prev")?.parentElement?.textContent).toBe("2025");
     choose("2025");
     expect(chartRows(block("Km por mes").querySelector("figure") as HTMLElement).length).toBe(3);
+  });
+
+  it("gives older years the dark grey", () => {
+    show({ nowMs: Date.parse("2027-06-01T12:00:00-07:00") });
+    const keys = [...block("Km por mes").querySelectorAll(".chart-legend .chart-key")].map((key) => [...key.classList].find((name) => name.startsWith("tone-")));
+    expect(keys).toEqual(["tone-old", "tone-prev"]);
   });
 
   it("counts rides per weekday and per hour of the chosen period", () => {
