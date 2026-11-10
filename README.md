@@ -46,9 +46,8 @@ Una sola página, oscura, con seis secciones:
 
 ## Estado
 
-- La web está completa y publicada. La versión publicada ofrece hoy **solo
-  la demo**: el acceso con cuenta se activará cuando el servicio de
-  producción admita esta web.
+- La web está completa y publicada, con el acceso con cuenta activado para
+  las personas invitadas. Sin invitación solo se puede ver la demo.
 - El acceso con cuenta se ha probado de verdad contra el entorno de pruebas
   del servicio, desde un ordenador. El resto de comprobaciones son tests
   automáticos contra datos de ejemplo y un servidor falso, y un navegador

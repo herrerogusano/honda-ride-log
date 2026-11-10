@@ -19,12 +19,26 @@ function rejects(entry: unknown, field: RegExp) {
 }
 
 describe("environment file", () => {
-  it("holds no real deployment yet: every mode is demo only", () => {
-    // When the owner fills a real entry, this test changes on purpose.
-    for (const mode of ["demo", "development", "production", "test"]) {
+  it("offers the account only in production; every other mode is demo only", () => {
+    // Changed on purpose on 2026-11-10: the owner had the production service's public values written here.
+    for (const mode of ["demo", "development", "test"]) {
       expect(environmentFor(mode).environment).toEqual({ kind: "demo" });
     }
     expect(currentEnvironment()).toEqual({ kind: "demo" });
+    const production = environmentFor("production").environment;
+    if (production.kind !== "service") throw new Error("production has no service");
+    // The page is served over https from the address the login returns to, and signs out to that same address.
+    expect(production.config.redirectUri).toBe("https://herrerogusano.github.io/honda-ride-log/");
+    expect(production.config.logoutUri).toBe(production.config.redirectUri);
+    expect(new URL(production.config.mcpUrl).protocol).toBe("https:");
+    expect(new URL(production.config.mcpUrl).pathname).toBe("/mcp");
+    expect(new URL(production.config.loginOrigin).protocol).toBe("https:");
+    // No development address ever rides along with the production service.
+    expect(JSON.stringify(production.config)).not.toContain("localhost");
+  });
+
+  it("keeps the development entry empty in the repository: local values are never committed", () => {
+    expect([environments.development.mcpUrl, environments.development.loginDomain, environments.development.webClientId]).toEqual(["", "", ""]);
   });
 
   it("keeps the two return addresses the login will expect", () => {
