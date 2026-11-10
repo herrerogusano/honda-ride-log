@@ -187,15 +187,19 @@ function sanitizePosition(raw: unknown, path: string): LatLng {
 }
 
 const traceLines = new WeakMap<UntrimmedTrace, readonly TraceLine[]>();
+const tracePlaces = new WeakMap<UntrimmedTrace, readonly LatLng[]>();
 
 /**
  * Lines of one route detail. The standalone start and end `Point` features
- * are discarded: they mark the exact places the trim exists to hide. A
- * detail without geometry yields no lines.
+ * mark the exact places the trim exists to hide: they are never part of the
+ * lines. They are kept, sealed, for one purpose only: so that the trim can
+ * also hide whatever passes near them (see `sensitivePlaces`). A detail
+ * without geometry yields no lines.
  */
 export function sanitizeRouteTrace(raw: unknown): UntrimmedTrace {
   const detail = asObject(raw, "get_route_detail");
   const lines: TraceLine[] = [];
+  const places: LatLng[] = [];
   const geojson = detail["geojson"];
   if (geojson !== null && geojson !== undefined) {
     const collection = asObject(geojson, "get_route_detail.geojson");
@@ -206,8 +210,18 @@ export function sanitizeRouteTrace(raw: unknown): UntrimmedTrace {
       // GeoJSON allows a feature without geometry: nothing to draw.
       if (feature["geometry"] === null || feature["geometry"] === undefined) return;
       const geometry = asObject(feature["geometry"], `${path}.geometry`);
-      // Only LineString has been seen. Points are dropped on purpose; any
-      // other geometry type is ignored rather than guessed at.
+      if (geometry["type"] === "Point") {
+        // A malformed point is skipped, not fatal: the ends of the lines still
+        // tell the trim what to hide.
+        try {
+          places.push(sanitizePosition(geometry["coordinates"], `${path}.geometry.coordinates`));
+        } catch (error) {
+          if (!(error instanceof ShapeError)) throw error;
+        }
+        return;
+      }
+      // Only LineString has been seen; any other geometry type is ignored
+      // rather than guessed at.
       if (geometry["type"] !== "LineString") return;
       const coordinates = asArray(geometry["coordinates"], `${path}.geometry.coordinates`);
       const points = coordinates.map((position, i) => sanitizePosition(position, `${path}.geometry.coordinates[${i}]`));
@@ -222,6 +236,7 @@ export function sanitizeRouteTrace(raw: unknown): UntrimmedTrace {
   }
   const trace = Object.freeze({}) as UntrimmedTrace;
   traceLines.set(trace, lines);
+  tracePlaces.set(trace, places);
   return trace;
 }
 
@@ -233,4 +248,16 @@ export function untrimmedLines(trace: UntrimmedTrace): readonly TraceLine[] {
   const lines = traceLines.get(trace);
   if (lines === undefined) throw new ShapeError("untrimmedTrace", "a trace created by sanitizeRouteTrace");
   return lines;
+}
+
+/**
+ * The exact start and end places the service marked in a route detail. They
+ * exist to be hidden: only the trim function may call this (ESLint enforces
+ * the import), and it uses them as centres of the areas it leaves undrawn.
+ * Never draw, export, log or store them.
+ */
+export function sensitivePlaces(trace: UntrimmedTrace): readonly LatLng[] {
+  const places = tracePlaces.get(trace);
+  if (places === undefined) throw new ShapeError("untrimmedTrace", "a trace created by sanitizeRouteTrace");
+  return places;
 }

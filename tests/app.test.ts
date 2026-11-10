@@ -328,6 +328,17 @@ describe("Resumen", () => {
     expect(notes).toContain("sin confirmar");
     expect(notes).toContain("Ninguna ruta se ha descartado");
     expect(notes).toContain("zona horaria de este navegador");
+    expect(notes).toContain("se deja de buscar al encontrar un año natural entero sin rutas");
+  });
+
+  it("shows the four streak figures and says what the parked one measures", async () => {
+    mount("#demo");
+    await loaded();
+    const labels = [...root.querySelectorAll("dt")].map((term) => term.textContent);
+    for (const label of ["Más días seguidos saliendo", "Más días seguidos parada, entre dos salidas", "Racha en curso saliendo", "Días parada ahora"]) {
+      expect(labels).toContain(label);
+    }
+    expect(tileValue("Más días seguidos saliendo")).toMatch(/^\d+ días?$/);
   });
 
   it("gives every chart a title and a table with the same figures", async () => {

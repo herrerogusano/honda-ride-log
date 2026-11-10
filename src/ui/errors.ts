@@ -12,6 +12,7 @@ const KIND_TEXT: Readonly<Record<FailureKind, string>> = {
   tool_error: "El servicio ha respondido con un error.",
   unexpected_shape: "El servicio ha respondido con un formato que esta web no espera.",
   too_many_routes: "Hay más rutas en un mismo instante de las que el servicio entrega de una vez.",
+  cancelled: "La carga se ha interrumpido antes de terminar.",
   unknown: "Ha fallado algo inesperado.",
 };
 

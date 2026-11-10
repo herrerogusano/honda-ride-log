@@ -250,8 +250,39 @@ describe("streaks", () => {
       currentRiding: 0,
       currentParked: 0,
     });
+    // A ride dated after "today" is not part of the runs in progress.
     const early = streaks(one, at("2026-05-01T09:00:00-07:00"));
-    expect([early.currentRiding, early.currentParked]).toEqual([1, 0]);
+    expect([early.currentRiding, early.currentParked]).toEqual([0, 0]);
+    expect(early.longestRiding?.days).toBe(1);
+  });
+
+  it("leaves rides dated in the future out of the runs in progress", () => {
+    const list = rides([
+      { start: "2026-05-03T08:00:00-07:00", km: 5 },
+      { start: "2026-05-04T08:00:00-07:00", km: 5 },
+      { start: "2026-05-05T08:00:00-07:00", km: 5 },
+      { start: "2026-05-06T08:00:00-07:00", km: 5 },
+      { start: "2026-05-07T08:00:00-07:00", km: 5 },
+    ]);
+    const result = streaks(list, at("2026-05-05T12:00:00-07:00"));
+    expect([result.currentRiding, result.currentParked]).toEqual([3, 0]);
+    expect(result.longestRiding?.days).toBe(5);
+    // Three days after the last ride, all of them are in the past.
+    const later = streaks(list, at("2026-05-10T12:00:00-07:00"));
+    expect([later.currentRiding, later.currentParked]).toEqual([0, 2]);
+  });
+
+  it("does not need the rides in order", () => {
+    const list = rides([
+      { start: "2026-03-08T12:00:00-07:00", km: 5 },
+      { start: "2026-03-06T08:00:00-08:00", km: 5 },
+      { start: "2026-03-20T08:00:00-07:00", km: 5 },
+      { start: "2026-03-07T23:50:00-08:00", km: 5 },
+    ]).reverse();
+    const result = streaks(list, at("2026-03-21T12:00:00-07:00"));
+    expect(result.longestRiding?.days).toBe(3);
+    expect(result.longestParked?.days).toBe(11);
+    expect([result.currentRiding, result.currentParked]).toEqual([1, 0]);
   });
 
   it("keeps the earliest of two equal runs", () => {

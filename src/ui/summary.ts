@@ -44,7 +44,7 @@ function section(title: string, scope: string | null, ...children: (Node | null)
   return el(
     "section",
     { class: "block", attrs: { "aria-labelledby": id } },
-    el("div", { class: "block-head" }, el("h3", { id }, title), scope === null ? null : el("span", { class: "scope" }, scope)),
+    el("div", { class: "block-head" }, el("h2", { id }, title), scope === null ? null : el("span", { class: "scope" }, scope)),
     ...children,
   );
 }
@@ -140,7 +140,7 @@ function habitsSection(data: RiderData, period: Period, periodLabel: string): HT
       el(
         "div",
         {},
-        el("h4", {}, "Salidas por día de la semana"),
+        el("h3", {}, "Salidas por día de la semana"),
         barChart({
           title: "Salidas por día de la semana",
           categories: WEEKDAYS_SHORT,
@@ -154,7 +154,7 @@ function habitsSection(data: RiderData, period: Period, periodLabel: string): HT
       el(
         "div",
         {},
-        el("h4", {}, "Salidas por hora de salida"),
+        el("h3", {}, "Salidas por hora de salida"),
         barChart({
           title: "Salidas por hora de salida",
           categories: Array.from({ length: 24 }, (_, hour) => String(hour)),
@@ -213,7 +213,11 @@ function streaksSection(data: RiderData): HTMLElement {
       "dl",
       { class: "tiles tiles-4" },
       tile("Más días seguidos saliendo", result.longestRiding === null ? "—" : days(result.longestRiding.days), streakRange(result.longestRiding)),
-      tile("Más días seguidos parada", result.longestParked === null ? "—" : days(result.longestParked.days), streakRange(result.longestParked)),
+      tile(
+        "Más días seguidos parada, entre dos salidas",
+        result.longestParked === null ? "—" : days(result.longestParked.days),
+        streakRange(result.longestParked),
+      ),
       tile("Racha en curso saliendo", days(result.currentRiding), "Sigue viva si saliste ayer: hoy aún no ha acabado"),
       tile("Días parada ahora", days(result.currentParked), "Días completos sin salir; hoy no cuenta"),
     ),
@@ -252,11 +256,11 @@ function maintenanceSection(data: RiderData, scope: StorageScope): HTMLElement {
   const stored = readMaintenance(scope);
   const interval = el("input", {
     id: intervalId,
-    attrs: { type: "number", inputmode: "numeric", min: 1, max: 100000, step: 1, required: true, value: stored?.intervalKm ?? null },
+    attrs: { type: "number", inputmode: "decimal", min: 1, max: 100000, step: "any", required: true, value: stored?.intervalKm ?? null },
   });
   const last = el("input", {
     id: lastId,
-    attrs: { type: "number", inputmode: "numeric", min: 0, max: 10000000, step: 1, required: true, value: stored?.lastServiceKm ?? null },
+    attrs: { type: "number", inputmode: "decimal", min: 0, max: 10000000, step: "any", required: true, value: stored?.lastServiceKm ?? null },
   });
   const result = el("p", { class: "maintenance-result", attrs: { role: "status" } });
 
@@ -307,7 +311,7 @@ function maintenanceSection(data: RiderData, scope: StorageScope): HTMLElement {
     const plan =
       interval.value.trim() === "" || last.value.trim() === "" ? null : validPlan(Number(interval.value), Number(last.value));
     if (plan === null) {
-      show(null, "Revisa los números: el intervalo debe ser mayor que 0 y el odómetro no puede ser negativo.");
+      show(null, "Revisa los números: el intervalo debe estar entre 1 y 100.000 km, y el odómetro entre 0 y 10.000.000 km.");
       return;
     }
     const saved = writeMaintenance(scope, plan);
@@ -372,7 +376,7 @@ function notes(data: RiderData): HTMLElement {
   return el(
     "footer",
     { class: "notes" },
-    el("h3", { class: "sr-only" }, "Notas"),
+    el("h2", { class: "sr-only" }, "Notas"),
     el(
       "ul",
       {},
@@ -380,6 +384,11 @@ function notes(data: RiderData): HTMLElement {
       el("li", {}, shortNote),
       el("li", {}, skipped),
       el("li", {}, "Fechas y horas en la zona horaria de este navegador."),
+      el(
+        "li",
+        {},
+        "El historial se lee hacia atrás, año a año, y se deja de buscar al encontrar un año natural entero sin rutas: lo anterior a ese año no aparece.",
+      ),
     ),
   );
 }

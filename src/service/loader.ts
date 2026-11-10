@@ -25,7 +25,7 @@ export type LoadStep = "status" | "details" | "routes" | "detail";
  * What went wrong, in closed terms. Phase 3 adds the kinds only a real
  * client can produce (missing configuration, login, network, 401, 403).
  */
-export type FailureKind = "tool_error" | "unexpected_shape" | "too_many_routes" | "unknown";
+export type FailureKind = "tool_error" | "unexpected_shape" | "too_many_routes" | "cancelled" | "unknown";
 
 /**
  * A failed load step. `detail` is safe to show: the service's error code, the
@@ -101,19 +101,27 @@ export const MAX_HISTORY_YEARS = 30;
  * limit is split in half and read again. Stops at the first whole past
  * calendar year without a single route; the current year does not count for
  * that, because it may simply not have a ride yet.
+ *
+ * `stillWanted` is asked before every request: when it answers false (the
+ * user left, or another load replaced this one) nothing more is requested
+ * and the load ends with a `cancelled` error.
  */
 export function loadAllRoutes(
   caller: ToolCaller,
   nowMs: number,
   onProgress?: (progress: RoutesProgress) => void,
+  stillWanted: () => boolean = () => true,
 ): Promise<RoutesLoad> {
   return step("routes", async () => {
+    // Without a usable clock there is no "current semester" to start from.
+    if (!Number.isFinite(nowMs)) throw new LoadError("routes", "unknown", "InvalidClock");
     const routes: Route[] = [];
     const seen = new Set<string>();
     let skipped = 0;
     let requests = 0;
 
     async function readPeriod(fromMs: number, toMs: number): Promise<number> {
+      if (!stillWanted()) throw new LoadError("routes", "cancelled", null);
       requests += 1;
       const page = sanitizeRouteList(
         await caller.callTool("list_routes", {
