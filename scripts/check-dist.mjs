@@ -11,6 +11,19 @@ import { readFileSync } from "node:fs";
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const expected = JSON.parse(read("../csp.config.json"));
 const problems = [];
+
+// A build whose mode has a service configured in environments.config.json
+// also connects to the origins of /mcp and of the login, and nothing else
+// (docs/PLAN.md, section 10). Usage: node scripts/check-dist.mjs [mode].
+const mode = process.argv[2] ?? "production";
+const environments = JSON.parse(read("../environments.config.json"));
+const entry = Object.hasOwn(environments, mode) ? environments[mode] : null;
+// Trimmed like src/service/environment.ts, which already validated the entry during the build.
+const value = (field) => (typeof entry?.[field] === "string" ? entry[field].trim() : "");
+if (value("mcpUrl") || value("loginDomain") || value("webClientId")) {
+  const origins = [new URL(value("mcpUrl")).origin, new URL(value("loginDomain")).origin];
+  expected.directives["connect-src"] = [...expected.directives["connect-src"], ...new Set(origins)];
+}
 const html = read("../dist/index.html").replace(/<!--[\s\S]*?-->/g, "");
 if (html.includes("<!--")) problems.push("unterminated or nested HTML comment");
 if (!/<html[^>]*>\s*<head[^>]*>/i.test(html)) problems.push("something sits between <html> and <head>");

@@ -4,7 +4,8 @@ Este documento es el punto de partida de cualquier hilo que trabaje en el
 repo. Dice qué se construye, qué está decidido, qué se ha comprobado y qué no,
 y cómo se reparte el trabajo. Actualízalo al cerrar cada fase.
 
-Última actualización: 2026-11-09, cierre de la fase 1.
+Última actualización: 2026-11-09, cierre de la fase 1; 2026-11-10, módulos
+de la fase 3 (apartado 10).
 
 ## 1. Qué es
 
@@ -123,7 +124,7 @@ alternativo con las mismas cifras, nada que dependa solo del color.
 | Nunca identificadores de ruta en pantalla ni en exportaciones | El identificador vive detrás de un `RouteRef` opaco y sin campos; solo `serviceRouteId` lo recupera, y ESLint solo deja importar esa función desde `src/service/` (donde irá la petición de detalle). Serializar una ruta no lo incluye. |
 | Recortar 400 m al inicio y al final de cada traza antes de dibujarla | `TRIM_METERS` en `src/domain/privacy.ts`. **La función de recorte es trabajo de la fase 2 y va en `src/domain/trim.ts`.** El saneador devuelve un `UntrimmedTrace` sellado, sin campos legibles; sus líneas solo salen con `untrimmedLines`, que ESLint solo deja importar desde ese archivo. |
 | Ocultar rutas de menos de 300 m | `hideShortRoutes` en `src/domain/privacy.ts`. |
-| Token solo en memoria | Ver «Almacenamiento» en el apartado 2. ESLint prohíbe hoy `localStorage` y `sessionStorage` en todo el código; la fase que los necesite abre una excepción para un único archivo y lo anota aquí. |
+| Token solo en memoria | Ver «Almacenamiento» en el apartado 2. ESLint prohíbe `localStorage` y `sessionStorage` en todo el código salvo excepciones de un único archivo anotadas aquí. Fase 3: `src/auth/pendingLogin.ts` puede usar `sessionStorage` y solo lo importa `src/auth/login.ts` (apartado 10). |
 | Sin analítica ni terceros, salvo las teselas de OpenStreetMap | Política de seguridad de contenido en `csp.config.json`. `scripts/check-dist.mjs` rompe el build si la página que genera Vite no lleva exactamente esa política, o si detecta código en línea o recursos de otro origen; `tests/csp.test.ts` fija su texto. Es una red contra errores propios hecha con expresiones regulares, no un analizador de HTML: no protege contra quien edite `dist/` a mano, y no tiene tests propios. |
 | Los datos viven solo en el navegador y solo durante la sesión | Nada se guarda salvo los dos números de mantenimiento. |
 
@@ -286,6 +287,7 @@ que se cuele en hora local dé un resultado distinto del esperado.
 | `src/demo/` | Generador de datos sintéticos con semilla y servicio de demo en memoria. |
 | `tests/` | Tests. |
 | `csp.config.json` | La política de seguridad de contenido y la de referencia. |
+| `environments.config.json`, `src/auth/`, `src/service/environment.ts`, `src/service/mcpClient.ts` | Fase 3: entornos, login y cliente de `/mcp` (apartado 10). |
 | `vite.config.ts` | Build, ruta base de Pages e inyección de la política. |
 | `scripts/check-dist.mjs` | Comprobaciones de publicación sobre `dist/index.html`. |
 | `.github/workflows/` | `ci.yml` y `pages.yml` (no hace nada mientras el repo sea privado). |
@@ -322,7 +324,7 @@ Reglas:
 |---|---|---|
 | 1 | Repo, CI, workflow de Pages, esquema de datos, saneadores, generador de datos sintéticos, este documento | Hecha (2026-11-09) |
 | 2 | La web: tres pestañas, tarjeta, modo demo; función de recorte de trazas; cálculo de estadísticas | Pendiente |
-| 3 | Login con PKCE y cliente de `/mcp` (implementa `ToolCaller`), configuración por entorno, pruebas contra un servidor falso; añadir los orígenes del servicio y del login a `connect-src` | Pendiente |
+| 3 | Login con PKCE y cliente de `/mcp` (implementa `ToolCaller`), configuración por entorno, pruebas contra un servidor falso; añadir los orígenes del servicio y del login a `connect-src` | Módulos hechos y probados contra un servidor falso (2026-11-10, apartado 10); falta conectarlos con la interfaz |
 | 4 | PR en el repo del servicio (apartado 7), sin fusionar | En otro hilo |
 | 5 | Revisión independiente final y resumen para el propietario | Pendiente |
 
@@ -351,6 +353,9 @@ está instalado todavía.
    Pages, que fallará hasta que se active Pages con origen «GitHub
    Actions». Conviene activar las dos cosas seguidas, y la protección de
    `main` en ese momento.
+8. Todas las webs de Pages de la cuenta comparten el origen
+   `herrerogusano.github.io`, y con él el acceso al token y al login a medio
+   hacer (apartado 10). ¿Se acepta, o se publica con un dominio propio?
 
 ### Aceptación real (no la sustituye ningún test)
 
@@ -359,3 +364,208 @@ app de MAPIT: km del mes, salidas del mes, odómetro, batería y la ruta más
 larga del año. Antes de eso, la primera prueba real es un solo login y un
 solo `get_vehicle_status` desde el navegador contra el entorno de pruebas del
 servicio, usando la dirección de retorno de `localhost`.
+
+## 10. Fase 3: login y cliente de `/mcp`
+
+Escrito el 2026-11-10. Los módulos están hechos y probados contra un
+servidor falso; **todavía no están conectados con la interfaz** (eso es de
+una fase posterior) y nada se ha probado contra el servicio real.
+
+| Ruta | Qué hay |
+|---|---|
+| `environments.config.json` | Ajustes por modo de Vite: `development` (`npm run dev`), `production` (`npm run build`) y `demo` (sin servicio). |
+| `src/service/environment.ts` | Valida una entrada de ese archivo; da «solo demo» o la configuración del servicio. |
+| `src/auth/pkce.ts` | Verificador, reto S256 y `state`. |
+| `src/auth/pendingLogin.ts` | El único archivo con `sessionStorage`. |
+| `src/auth/session.ts` | El token de acceso, en una variable cerrada. |
+| `src/auth/login.ts` | Ida al login, vuelta, canje del código y cierre de sesión. |
+| `src/service/mcpClient.ts` | El `ToolCaller` real. |
+| `tests/fakeServer.ts` | Login y `/mcp` falsos detrás de una función `fetch`. |
+
+### Configuración por entorno
+
+- Cada entrada tiene `mcpUrl`, `loginDomain`, `webClientId`, `redirectUri`,
+  `logoutUri` y `sendResourceIndicator`. Hoy las tres primeras están vacías
+  en todos los modos: la web solo ofrece la demo. Un modo que no aparece en
+  el archivo (por ejemplo `test`) también es solo demo.
+- `vite.config.ts` valida la entrada del modo que construye. Si está a
+  medias o mal escrita (http fuera de `localhost`, `127.0.0.1`, cadena de
+  consulta, barra final en `mcpUrl`, un `*` en el dominio, un campo
+  desconocido), el build falla con el nombre del campo y sin su valor.
+- Direcciones de retorno: `http://localhost:5173/` en `development` y
+  `https://herrerogusano.github.io/honda-ride-log/` en `production`. Deben
+  coincidir carácter a carácter con las del cliente del login.
+- El servidor de desarrollo sirve ahora en la raíz (`/`), en
+  `localhost:5173` con el puerto fijo; el build y `npm run preview` siguen en
+  `/honda-ride-log/`. Motivo: el login devuelve al navegador a
+  `http://localhost:5173/` exactamente.
+- `sendResourceIndicator` añade `resource=<mcpUrl>` a la petición de
+  autorización. **Sin verificar** que haga falta para que el token salga con
+  el público (`aud`) correcto, ni que Cognito lo acepte junto con los
+  alcances. Los tokens de acceso de Cognito normalmente no llevan `aud`, y el
+  servicio lo exige (apartado 5). Por eso es un ajuste y no una constante.
+- `logoutUri` vacío: cerrar sesión solo olvida el token en la web, y el
+  login de Cognito sigue abierto, así que el siguiente «Entrar» puede no
+  pedir contraseña. Con valor, además se manda al navegador a `/logout` del
+  login; esa dirección tiene que estar registrada en el cliente.
+
+### Política de seguridad de contenido
+
+Motivo del cambio: el navegador necesita conectar con `/mcp` y con el punto
+de canje del login (`/oauth2/token`). `csp.config.json` no cambia. Si el modo
+que se construye tiene servicio configurado, `vite.config.ts` añade a
+`connect-src` exactamente el origen de `mcpUrl` y el de `loginDomain`, y nada
+más; sin servicio, la política es la de siempre. `scripts/check-dist.mjs
+[modo]` hace la misma cuenta y compara (por defecto, `production`).
+`tests/csp.test.ts` fija las dos formas. La ida al login es una navegación,
+no una conexión: no la gobierna `connect-src`, y `form-action` sigue en
+`'none'` porque no se usa ningún formulario.
+
+### Almacenamiento: la excepción de ESLint
+
+`src/auth/pendingLogin.ts` es el único archivo que puede usar
+`sessionStorage`, y solo `src/auth/login.ts` puede importarlo (dos reglas en
+`eslint.config.js`, comprobadas en `tests/lint-storage.test.ts`; la segunda
+evita que otro módulo llegue a `sessionStorage` a través de sus funciones).
+Guarda solo el verificador, el `state` y la hora, bajo una única clave. Se
+borra al leerlo, salga bien o mal la vuelta, y no vale pasados 10 minutos.
+`localStorage` y el HTML siguen prohibidos en ese archivo; un test compara
+esa lista con la del resto del código para que no se separen.
+
+Cuando se fusione la excepción de `localStorage` de la fase 2
+(`src/storage/maintenance.ts`), quien fusione en segundo lugar debe
+comprobar que cada archivo sigue teniendo prohibido el almacenamiento del
+otro, y puede sustituir las listas repetidas por las constantes compartidas
+que introduce esa PR.
+
+Dos pestañas que entren a la vez se pisan el login pendiente (una sola
+clave): la primera en volver recibe `state_mismatch` y tiene que entrar otra
+vez.
+
+### El token
+
+- Vive en una variable cerrada de `createSession`; no es una propiedad, así
+  que registrar o serializar la sesión no lo muestra. No se guarda en ningún
+  sitio.
+- Se deja de usar 60 segundos antes de caducar y nunca se le da más de un
+  día de vida aunque el login diga otra cosa.
+- Sin renovación. Cognito devuelve también un token de renovación y uno de
+  identidad en este flujo; no se puede evitar que lleguen, pero no se copian
+  a ninguna parte. El de renovación no se revoca: sigue valiendo en Cognito
+  lo que diga el cliente (30 días por defecto). Revocarlo con
+  `/oauth2/revoke` invalidaría también el token de acceso. Conviene que el
+  cliente nuevo (fase 4) tenga la validez de renovación más corta posible.
+- Un 401, un 403 o un fallo de red tras entrar terminan la sesión: ese token
+  no se vuelve a enviar y las peticiones que esperaban en cola no salen.
+  Motivo del fallo de red: si el autorizador responde 401 sin cabeceras CORS
+  (**sin verificar**), el navegador lo ve como error de red.
+
+### Las peticiones a `/mcp`
+
+- Un `POST` por herramienta con un mensaje JSON-RPC `tools/call`, sin
+  `initialize` ni sesión. Cabeceras: `Authorization`, `Content-Type:
+  application/json` y `Accept: application/json, text/event-stream`. No se
+  envía `MCP-Protocol-Version` (es opcional y un valor que el servicio no
+  conozca se rechazaría). `credentials: "omit"`, sin cadena de consulta,
+  `redirect: "error"` (no se sigue ninguna redirección), `cache: "no-store"`.
+- Solo `get_vehicle_status`, `get_vehicle_details`, `list_routes` y
+  `get_route_detail` (`ALLOWED_TOOLS`), comprobado también en ejecución. Los
+  argumentos se copian campo a campo; uno de más o de otro tipo se rechaza
+  antes de enviar.
+- Como mucho 2 peticiones en vuelo y 250 ms entre el inicio de una y la
+  siguiente (4 por segundo como mucho). Sin reintentos automáticos.
+- La respuesta tiene que ser `application/json` (un flujo de eventos se
+  rechaza), con `jsonrpc: "2.0"` y el mismo `id`. El objeto de la
+  herramienta se toma de `result.structuredContent` (**sin verificar** en
+  real); un `result.isError` se convierte en `ToolCallError` con el código
+  del principio del texto si tiene forma de código (de dos a seis palabras en
+  minúsculas unidas por `_`, sin cifras, para no tomar un identificador por
+  un código), y sin el mensaje. Cualquier otro texto da `tool_error`.
+- Plazo de 20 segundos por petición (el servicio tiene 14 por dentro).
+
+### Errores
+
+Ningún mensaje lleva el token, el código de autorización, una dirección,
+un cuerpo de respuesta ni un mensaje del servicio. `detail` es nulo o un
+código corto.
+
+| Clase y `kind` | Cuándo | Qué debería decir la interfaz |
+|---|---|---|
+| `AuthError` `config_missing` | Build sin servicio | Solo demo |
+| `AuthError` `storage_unavailable` | `sessionStorage` bloqueado | El navegador no permite entrar (modo privado estricto) |
+| `AuthError` `state_mismatch` | Vuelta sin login pendiente, caducado o con otro `state` | Vuelve a entrar |
+| `AuthError` `login_failed` | El login devolvió `error=` (por ejemplo `access_denied`) | No se ha podido entrar |
+| `AuthError` `token_exchange` | El canje respondió con error (`invalid_grant`, `http_502`...) | No se ha podido entrar |
+| `AuthError` `token_network` | El canje no llegó (red o CORS) | No se ha podido conectar con el login |
+| `ServiceError` `reauth_required` | Token caducado, 401 o red tras entrar, o cualquier llamada después de que la sesión terminara (`detail`: `expired`, `unauthorized`, `network`, `forbidden` o `signed_out`) | Vuelve a entrar, sin botón de reintentar |
+| `ServiceError` `forbidden` | 403 | Tu cuenta no tiene acceso |
+| `ServiceError` `rate_limited` | 429 | Espera un momento |
+| `ServiceError` `http_status` | Otro estado HTTP (`detail`: el número) | Error del servicio |
+| `ServiceError` `timeout` | Sin respuesta en 20 s | El servicio tarda demasiado |
+| `ServiceError` `bad_response` | No es JSON, no es JSON-RPC, otro `id`, sin `structuredContent` | Respuesta inesperada |
+| `ServiceError` `rpc_error` | Error JSON-RPC (`detail`: su código numérico) | Error del servicio |
+| `ServiceError` `not_allowed` | Herramienta fuera de la lista o argumentos raros | Fallo de la web (no debería verse) |
+| `ToolCallError` | La herramienta respondió con error | Como en la demo |
+
+El cargador de la fase 2 (`src/service/loader.ts`) todavía no conoce
+`AuthError` ni `ServiceError`: hoy los mostraría como `unknown` con el nombre
+de la clase. Hay que ampliar su `FailureKind` y los textos de
+`src/ui/errors.ts` al conectar.
+
+### Cómo se conecta con la interfaz
+
+```ts
+import { browserDeps, completeLogin, logout, startLogin } from "./auth/login";
+import { currentEnvironment } from "./service/environment";
+import { createMcpClient } from "./service/mcpClient";
+
+const environment = currentEnvironment();
+if (environment.kind === "service") {
+  const deps = browserDeps();
+  // Al cargar la página, antes de pintar nada: quita ?code y ?state.
+  const back = await completeLogin(environment.config, deps);
+  if (back.status === "signed_in") {
+    const caller = createMcpClient(environment.config.mcpUrl, back.session);
+    // app.load(caller, { demo: false });
+  }
+  // Botón «Entrar»: startLogin(environment.config, deps)
+  // Botón «Salir»: logout(environment.config, session, deps)
+}
+```
+
+### Riesgo de origen compartido en GitHub Pages (decisión del propietario)
+
+Todas las webs de Pages de la cuenta comparten el origen
+`https://herrerogusano.github.io`. Cualquier otra web de Pages del
+propietario, o una dependencia comprometida en ella, corre con el mismo
+origen. Podría abrir `/honda-ride-log/` en una ventana o un marco, leer el
+`?code=` y el verificador de `sessionStorage` antes del canje, o envolver
+`fetch` en esa ventana y capturar el token. La política de seguridad no lo
+impide: no gobierna el acceso entre ventanas del mismo origen, y
+`frame-ancestors` no funciona en una etiqueta `<meta>`. Opciones: aceptar que
+las demás webs de Pages de la cuenta quedan dentro de la confianza (hoy no
+se sabe si hay alguna), o publicar con un dominio propio para tener un
+origen aparte. Pendiente del propietario (pregunta 8 del apartado 9).
+
+### Qué demuestran los tests y qué no
+
+Corren en Node con `tests/fakeServer.ts`: un login y un `/mcp` falsos que
+exigen el contrato tal como lo leímos (PKCE S256 con el vector del RFC 7636,
+códigos de un solo uso, `redirect_uri` exacta, solo las tres cabeceras, sin
+cookies, sin cadena de consulta, JSON-RPC con el servicio de demo detrás).
+Los tests se vieron fallar rompiendo el código a propósito, una rotura cada
+vez: 66 del implementador y 7 más sobre los arreglos de la revisión, y 44 del
+revisor independiente. Al principio sobrevivieron 2 de las primeras y 21 de
+las del revisor (por ejemplo, aceptar `http:` en el dominio del login o
+quitar el plazo del canje); se cubrieron con tests nuevos y ahora fallan
+todas. Es una muestra de roturas pensadas por dos agentes, no una prueba de
+que no quede ninguna.
+
+No demuestran: que Cognito acepte este cliente, el parámetro `resource` o la
+dirección de retorno; que `/oauth2/token` y `/mcp` respondan con CORS a un
+navegador; qué ve el navegador ante un 401 o un 403 del autorizador; que
+`/mcp` acepte esta petición sin `initialize` y devuelva `structuredContent`;
+que `credentials`, `redirect` y la política de seguridad se comporten así en
+un navegador (Node no aplica CORS ni CSP). La primera prueba real sigue
+siendo la del apartado 9: un login y un `get_vehicle_status` desde
+`localhost` contra el entorno de pruebas.
