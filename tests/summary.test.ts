@@ -384,5 +384,12 @@ describe("Resumen, maintenance", () => {
     const labels = [...form().querySelectorAll("label")];
     expect(labels.map((label) => label.textContent)).toEqual(["Revisión cada (km)", "Odómetro en la última revisión (km)"]);
     labels.forEach((label, index) => expect(label.getAttribute("for")).toBe(inputs()[index]?.id));
+    // An odometer has decimals: the fields accept them.
+    expect(inputs().map((input) => [input.type, input.getAttribute("step"), input.getAttribute("min")])).toEqual([
+      ["number", "any", "1"],
+      ["number", "any", "0"],
+    ]);
+    submit("6000", "10000.5");
+    expect(result()).toContain("Guardado en este navegador.");
   });
 });

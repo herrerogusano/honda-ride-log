@@ -47,6 +47,8 @@ export function startApp(options: AppOptions): App {
 
   /** The demo scenario on screen, or null outside the demo. */
   let scenarioShown: DemoScenario | null = null;
+  /** True while the view on screen belongs to a real account. */
+  let accountShown = false;
 
   // The banner and its selector are built once and kept: rebuilding them on
   // every change would throw the keyboard focus away.
@@ -98,6 +100,7 @@ export function startApp(options: AppOptions): App {
   function showLanding(): void {
     generation += 1;
     scenarioShown = null;
+    accountShown = false;
     banner.hidden = true;
     setHash("");
     clear(content);
@@ -205,6 +208,7 @@ export function startApp(options: AppOptions): App {
     if (!loadOptions.demo) {
       // A real account: nothing of the demo may stay on screen or in the address.
       scenarioShown = null;
+      accountShown = true;
       banner.hidden = true;
       if (scenarioFromHash(location.hash) !== null) setHash("");
     }
@@ -264,6 +268,7 @@ export function startApp(options: AppOptions): App {
   async function startDemo(scenario: DemoScenario): Promise<void> {
     setHash(scenario === "commuter" ? "#demo" : `#demo=${scenario}`);
     scenarioShown = scenario;
+    accountShown = false;
     scenarioSelect.value = scenario;
     banner.hidden = false;
     await load(createDemoCaller(scenario, now(), options.demoDelayMs ?? 120), { demo: true });
@@ -272,7 +277,14 @@ export function startApp(options: AppOptions): App {
   // Typing or following `#demo=...` on an open page changes the scenario too.
   window.addEventListener("hashchange", () => {
     const wanted = scenarioFromHash(location.hash);
-    if (wanted !== null && wanted !== scenarioShown) void startDemo(wanted);
+    // A real account on screen is never replaced by the demo from the address bar.
+    if (accountShown) return;
+    if (wanted === null) {
+      // The fragment was removed while the demo was on screen: leave the demo.
+      if (scenarioShown !== null) showLanding();
+      return;
+    }
+    if (wanted !== scenarioShown) void startDemo(wanted);
   });
 
   const fromHash = scenarioFromHash(location.hash);
