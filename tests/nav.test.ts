@@ -174,6 +174,18 @@ describe("section links", () => {
     expect(header.classList.contains("replay")).toBe(false);
   });
 
+  it("keeps at most one wait for the end of a scroll, however many links are pressed", () => {
+    const { links } = build();
+    const add = vi.spyOn(window, "addEventListener");
+    const remove = vi.spyOn(window, "removeEventListener");
+    const waits = (spy: { mock: { calls: unknown[][] } }): number => spy.mock.calls.filter((call) => call[0] === "scrollend").length;
+    for (let press = 0; press < 5; press += 1) links[press % 3]?.click();
+    // Each new press drops the wait of the one before it.
+    expect([waits(add), waits(remove)]).toEqual([5, 4]);
+    add.mockRestore();
+    remove.mockRestore();
+  });
+
   it("does not replay a section that the scroll left off screen (the user scrolled away)", () => {
     const { sections, links } = build();
     links[2]?.click();

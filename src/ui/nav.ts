@@ -154,12 +154,21 @@ export function sectionNav(sections: readonly NavSection[], options: NavOptions)
     if (section !== undefined && onScreen(section.header.element)) section.header.replay({ sweep: true });
   }
 
+  /** Stops the one wait for the end of a scroll that may be pending; a new press replaces it. */
+  let stopWaiting: (() => void) | null = null;
+  cleanups.push(() => stopWaiting?.());
+
   /** Calls `done` once the page stops scrolling: `scrollend` where it exists, else a few still frames. */
   function whenScrollEnds(done: () => void): void {
+    stopWaiting?.();
+    stopWaiting = null;
     if (Reflect.has(window, "onscrollend")) {
-      const listener = (): void => done();
+      const listener = (): void => {
+        stopWaiting = null;
+        done();
+      };
       window.addEventListener("scrollend", listener, { once: true });
-      cleanups.push(() => window.removeEventListener("scrollend", listener));
+      stopWaiting = () => window.removeEventListener("scrollend", listener);
       return;
     }
     if (typeof requestAnimationFrame !== "function") {
@@ -173,11 +182,13 @@ export function sectionNav(sections: readonly NavSection[], options: NavOptions)
       if (disposed) return;
       still = window.scrollY === last ? still + 1 : 0;
       last = window.scrollY;
-      if (still >= STILL_FRAMES) done();
-      else frame = requestAnimationFrame(watch);
+      if (still >= STILL_FRAMES) {
+        stopWaiting = null;
+        done();
+      } else frame = requestAnimationFrame(watch);
     };
     frame = requestAnimationFrame(watch);
-    cleanups.push(() => cancelAnimationFrame(frame));
+    stopWaiting = () => cancelAnimationFrame(frame);
   }
 
   function go(index: number): void {
