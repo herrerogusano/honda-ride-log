@@ -67,6 +67,13 @@
   --red-press: oklch(61% 0.235 27);
   --red-hi: oklch(68% 0.21 27);
   --red-dim: oklch(42% 0.12 27);
+  /* Bars that are not the peak: still 3:1 against the page (tests/contrast.test.ts). */
+  --red-mid: oklch(50% 0.16 27);
+  /* Activity calendar: five levels, none to most km (level 0 is --surface-2). */
+  --heat-1: oklch(31% 0.08 27);
+  --heat-2: oklch(41% 0.13 27);
+  --heat-3: oklch(53% 0.2 27);
+  --heat-4: oklch(70% 0.2 27);
   --on-red: oklch(100% 0 0);
   --amber: oklch(78% 0.13 75);
   --amber-bg: oklch(24% 0.04 75);
@@ -756,7 +763,7 @@ select:focus-visible {
 
 .sec-head .sec-tag {
   opacity: 0;
-  transform: translateX(-24px);
+  transform: translateX(-12px);
   transition:
     opacity var(--dur-reveal) var(--ease-out),
     transform var(--dur-reveal) var(--ease-out);
@@ -810,7 +817,7 @@ select:focus-visible {
 @keyframes tag-in {
   from {
     opacity: 0;
-    transform: translateX(-24px);
+    transform: translateX(-12px);
   }
 
   to {
@@ -1722,13 +1729,6 @@ h4 {
   font-weight: 700;
 }
 
-.card-canvas {
-  display: block;
-  width: min(100%, 360px);
-  height: auto;
-  margin: var(--s4) 0;
-  box-shadow: 0 0 0 1px var(--line);
-}
 
 .fine-print {
   max-width: 80ch;
@@ -1791,7 +1791,7 @@ h4 {
   height: auto;
 }
 
-.chart-narrow {
+.frame-narrow {
   display: none;
 }
 
@@ -1811,7 +1811,7 @@ h4 {
 }
 
 .chart-bar {
-  fill: var(--red-dim);
+  fill: var(--red-mid);
   rx: 0;
   transition: opacity var(--dur-ui) var(--ease-out);
 }
@@ -1856,12 +1856,6 @@ h4 {
   }
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .chart-bar:hover {
-    opacity: 0.75;
-  }
-}
-
 .chart-legend {
   display: flex;
   flex-wrap: wrap;
@@ -1880,7 +1874,7 @@ h4 {
 .chart-key {
   width: 10px;
   height: 10px;
-  background: var(--red-dim);
+  background: var(--red-mid);
 }
 
 .chart-data {
@@ -2243,14 +2237,19 @@ h4 {
 }
 
 /* Loading: a red scan line sweeps the stage. */
-.map-scan {
+/* The house loading signature (src/ui/motion.ts, `scanLine`): the map, the share card, the loading stage. */
+.map-scan,
+.scan-box {
   position: absolute;
   inset: 0;
   z-index: 2;
-  display: none;
+
   overflow: hidden;
   pointer-events: none;
   background: oklch(13% 0.006 25 / 0.45);
+}
+.map-scan {
+  display: none;
 }
 
 .map-stage[data-state="loading"] .map-scan {
@@ -2532,6 +2531,943 @@ h4 {
   color: var(--red-hi);
 }
 
+/* ---------- stage 2, phase 4: the sections at the level of 01 and 04 ---------- */
+
+/* Units small and red after a big figure (records, «En números», the month delta, maintenance, empty state). */
+.record strong .unit,
+.num-fig .unit,
+.delta-figure .unit,
+.maint-value .unit,
+.empty-figure .unit {
+  font: 700 0.42em/1 var(--display);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--red-hi);
+}
+
+/* Records answer the pointer: the row lights, its number steps right. */
+.record {
+  transition: background-color var(--dur-ui) var(--ease-out);
+}
+
+.record::before,
+.record strong {
+  transition: transform var(--dur-ui) var(--ease-out);
+}
+
+/* Columns over each chart (src/ui/charts.ts): the active one lights, the others step back. */
+.chart-frame {
+  position: relative;
+}
+
+.chart-cols {
+  position: absolute;
+  inset: 0;
+}
+
+.chart-col {
+  position: absolute;
+  top: calc(var(--top) * 100%);
+  left: calc(var(--x) * 100%);
+  width: calc(var(--wd) * 100%);
+  height: calc(var(--ht) * 100%);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.chart-col::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--fg);
+  opacity: 0;
+  transition: opacity var(--dur-ui) var(--ease-out);
+}
+
+.chart-col.on::before {
+  opacity: 0.06;
+}
+
+.chart-col:active::before {
+  opacity: 0.12;
+}
+
+.chart-col:focus-visible {
+  outline-offset: -2px;
+}
+
+.chart-svg.hot .chart-bar:not(.on) {
+  opacity: 0.4;
+}
+
+/* Years outside the chosen period stay drawn, quieter. */
+.chart-bar.dim,
+.chart-legend li.dim {
+  opacity: 0.32;
+}
+
+.chart-legend li {
+  transition: opacity var(--dur-ui) var(--ease-out);
+}
+
+.chart-readout {
+  min-height: 1.7em;
+  margin-top: var(--s2);
+  font-size: 13px;
+  color: var(--fg-3);
+}
+
+.chart-readout b {
+  font-weight: 700;
+  color: var(--fg);
+}
+
+.insight {
+  margin-top: var(--s3);
+  font-size: 14px;
+  color: var(--fg-2);
+}
+
+.insight b {
+  color: var(--fg);
+}
+
+/* «Ver los datos en tabla»: a + that turns into ×, and the table slides open. */
+.chart-data summary {
+  gap: var(--s2);
+  list-style: none;
+  transition: color var(--dur-ui) var(--ease-out);
+}
+
+.chart-data summary::-webkit-details-marker {
+  display: none;
+}
+
+.chart-data summary::before {
+  content: "+";
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--control-line);
+  font: 700 15px/1 var(--text);
+  color: var(--red-hi);
+  transition: transform var(--dur-ui) var(--ease-out);
+}
+
+.chart-data[open] summary::before {
+  transform: rotate(45deg);
+}
+
+.chart-data summary:active::before {
+  transform: scale(0.88);
+}
+
+.chart-data[open] summary:active::before {
+  transform: rotate(45deg) scale(0.88);
+}
+
+.chart-data {
+  interpolate-size: allow-keywords;
+}
+
+.chart-data::details-content {
+  block-size: 0;
+  overflow: clip;
+  transition:
+    block-size var(--dur-reveal) var(--ease-out),
+    content-visibility var(--dur-reveal) allow-discrete;
+}
+
+.chart-data[open]::details-content {
+  block-size: auto;
+}
+
+.chart-data[open] .table-scroll {
+  animation: swap-in var(--dur-reveal) var(--ease-out) both;
+}
+
+/* «Mes frente a mes»: the signed difference, huge, then the two bars. */
+.delta-wrap {
+  display: grid;
+  gap: var(--s5);
+}
+
+.delta {
+  display: grid;
+  gap: var(--s2);
+}
+
+.delta-figure {
+  font: var(--w-figure) clamp(64px, 8.4vw, 124px) / 0.86 var(--display);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.delta-figure .unit {
+  font-size: 0.3em;
+}
+
+.rv.in .delta-figure {
+  animation: fade-up var(--dur-reveal) var(--ease-out) both;
+  animation-delay: calc(var(--stagger) * 2);
+}
+
+.delta .mbar-diff {
+  margin-top: 0;
+  max-width: 52ch;
+}
+
+/* «En números»: three big figures side by side where they fit. */
+.numbers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  column-gap: var(--gut);
+  border-top: 1px solid var(--line);
+}
+
+.num-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--s2) var(--s4);
+  padding: var(--s4) 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.num-fig {
+  font: var(--w-figure) clamp(44px, 4.6vw, 64px) / 1 var(--display);
+  white-space: nowrap;
+}
+
+.num-text {
+  display: grid;
+  gap: 2px;
+}
+
+.num-label {
+  font-weight: 700;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.num-detail {
+  font-size: 12.5px;
+  color: var(--fg-3);
+}
+
+.num-bar {
+  grid-column: 1 / -1;
+  height: 4px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.num-fill {
+  display: block;
+  height: 100%;
+  background: var(--red-hi);
+  transform-origin: left center;
+  transform: scaleX(var(--v, 0));
+}
+
+.rv .num-fill {
+  transform: scaleX(0);
+  transition: transform var(--dur-hero) var(--ease-out);
+  transition-delay: calc(var(--stagger) * 3);
+}
+
+.rv.in .num-fill {
+  transform: scaleX(var(--v, 0));
+}
+
+/* ---------- activity calendar (src/ui/calendar.ts) ---------- */
+.cal-caption {
+  margin-top: calc(var(--s3) * -1);
+  margin-bottom: var(--s4);
+  font-size: 14px;
+  color: var(--fg-2);
+}
+
+.cal-caption b {
+  margin-right: 0.12em;
+  font: var(--w-figure) clamp(40px, 4.4vw, 60px) / 1 var(--display);
+  color: var(--fg);
+}
+
+.cal {
+  --cell: 13px;
+  --gap: 3px;
+  display: grid;
+  gap: var(--s3);
+  min-width: 0;
+}
+
+.cal-scroll {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  padding-bottom: var(--s2);
+}
+
+.cal-years {
+  display: grid;
+  gap: var(--s5);
+  width: max-content;
+}
+
+.cal-year-title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s3);
+  margin-bottom: var(--s2);
+  font: 700 22px/1 var(--display);
+  letter-spacing: 0.04em;
+}
+
+.cal-year-title small {
+  font: 600 12px/1 var(--text);
+  letter-spacing: 0;
+  color: var(--fg-3);
+}
+
+.cal-body {
+  display: grid;
+  grid-template-columns: repeat(var(--weeks), var(--cell));
+  column-gap: var(--gap);
+  row-gap: 6px;
+}
+
+.cal-months,
+.cal-grid {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+}
+
+.cal-grid {
+  grid-template-rows: repeat(7, var(--cell));
+  row-gap: var(--gap);
+}
+
+.cal-month {
+  grid-row: 1;
+  grid-column: calc(var(--w) + 1) / span 3;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--fg-3);
+  white-space: nowrap;
+}
+
+.cal-cell {
+  grid-column: calc(var(--w, 0) + 1);
+  grid-row: calc(var(--r, 0) + 1);
+  width: var(--cell);
+  height: var(--cell);
+  border-radius: 2px;
+  background: var(--surface-2);
+  transition: transform var(--dur-press) var(--ease-out);
+}
+
+.cal-cell.l1 {
+  background: var(--heat-1);
+}
+
+.cal-cell.l2 {
+  background: var(--heat-2);
+}
+
+.cal-cell.l3 {
+  background: var(--heat-3);
+}
+
+.cal-cell.l4 {
+  background: var(--heat-4);
+}
+
+.cal-grid .cal-cell {
+  cursor: pointer;
+}
+
+.cal-grid .cal-cell.on {
+  transform: scale(1.35);
+  box-shadow: 0 0 0 1px var(--fg);
+}
+
+.cal-grid .cal-cell:focus-visible {
+  outline-offset: 1px;
+}
+
+/* Cells come in column by column; a whole year never takes longer than --dur-hero. */
+.cal-year.in .cal-grid .cal-cell {
+  animation: cell-in var(--dur-ui) var(--ease-out) backwards;
+  animation-delay: calc(var(--w, 0) * (var(--dur-hero) - var(--dur-ui)) / 53);
+}
+
+@keyframes cell-in {
+  from {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.cal-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2) var(--s3);
+  font-size: 12px;
+  color: var(--fg-3);
+}
+
+.cal-keys {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.cal-keys .cal-cell {
+  display: block;
+}
+
+.cal-swipe {
+  display: none;
+  font-size: 12px;
+  color: var(--fg-3);
+}
+
+.cal-table + .cal-table {
+  margin-top: var(--s5);
+}
+
+.cal-table caption {
+  padding: var(--s2) 12px;
+  text-align: left;
+  font: 700 16px/1.2 var(--display);
+  letter-spacing: 0.04em;
+}
+
+@media (min-width: 1200px) {
+  .cal {
+    --cell: 15px;
+    --gap: 4px;
+  }
+}
+
+/* Phones and tablets: the calendar scrolls inside its own box, under a fade that says there is more. */
+@media (max-width: 1023px) {
+  .cal-swipe {
+    display: block;
+  }
+
+  .cal-swipe::after {
+    content: " →";
+    color: var(--red-hi);
+  }
+
+  .cal-scroll {
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 48px), transparent);
+    mask-image: linear-gradient(90deg, #000 calc(100% - 48px), transparent);
+  }
+
+  .cal-years {
+    padding-right: 48px;
+  }
+}
+
+/* ---------- maintenance: the answer as a big figure and a bar ---------- */
+.maint-figure {
+  display: grid;
+  gap: var(--s2);
+  margin-top: var(--s4);
+}
+
+.maint-kicker {
+  font: 700 var(--fs-eyebrow) / 1.2 var(--text);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--fg-3);
+}
+
+.maint-value {
+  font: var(--w-figure) clamp(56px, 7vw, 100px) / 0.9 var(--display);
+  white-space: nowrap;
+}
+
+.maint-figure.over .maint-value {
+  color: var(--red-hi);
+}
+
+.maint-bar {
+  display: block;
+  max-width: 560px;
+  height: 8px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.maint-fill {
+  display: block;
+  height: 100%;
+  background: var(--red-mid);
+  transform-origin: left center;
+  transform: scaleX(0);
+  transition: transform var(--dur-hero) var(--ease-out);
+}
+
+.maint-figure.over .maint-fill {
+  background: var(--red-hi);
+}
+
+.rv.in .maint-figure.fill .maint-fill {
+  transform: scaleX(var(--v, 0));
+}
+
+.maint-due {
+  font-size: 12.5px;
+  color: var(--fg-3);
+}
+
+.maintenance .field {
+  flex: 1 1 200px;
+}
+
+.maintenance-result {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--fg-2);
+}
+
+input[type="number"],
+input[type="search"],
+select {
+  transition:
+    border-color var(--dur-ui) var(--ease-out),
+    background-color var(--dur-ui) var(--ease-out);
+}
+
+input:focus-visible,
+select:focus-visible {
+  border-color: var(--red-hi);
+  background-color: var(--surface);
+}
+
+/* ---------- the share card ---------- */
+.card-frame {
+  position: relative;
+  width: min(100%, 440px);
+  aspect-ratio: 1;
+  margin: var(--s4) 0;
+  background: var(--bg);
+  box-shadow: 0 0 0 1px var(--line);
+  overflow: hidden;
+  transition: transform var(--dur-ui) var(--ease-out);
+}
+
+.card-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  transition: opacity var(--dur-reveal) var(--ease-out);
+}
+
+.card-canvas.drawn {
+  opacity: 1;
+}
+
+/* ---------- empty account ---------- */
+.empty-state {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: end;
+  gap: var(--s5) var(--s7);
+  padding-top: var(--s6);
+  border-top: 1px solid var(--line);
+}
+
+.empty-figure {
+  font: var(--w-title) clamp(120px, 20vw, 280px) / 0.78 var(--display);
+  white-space: nowrap;
+}
+
+.empty-figure .unit {
+  margin-left: 0.08em;
+  font-size: 0.16em;
+}
+
+.empty-copy {
+  display: grid;
+  gap: var(--s2);
+  max-width: 52ch;
+  color: var(--fg-2);
+}
+
+.empty-title {
+  margin-bottom: var(--s2);
+  font: 700 clamp(22px, 2.6vw, 32px) / 1.1 var(--display);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--fg);
+}
+
+/* ---------- errors and notices: the final treatment ---------- */
+.error::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  background: var(--red);
+  clip-path: polygon(0 24px, 100% 16px, 100% 100%, 0 100%);
+}
+
+.error-code code {
+  display: inline-block;
+  padding: 2px 8px;
+  background: var(--bg);
+  box-shadow: inset 0 0 0 1px var(--line);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.notice {
+  position: relative;
+  padding-left: var(--s5);
+  border-left: 0;
+}
+
+.notice::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--red);
+  transform: skewX(-10deg);
+}
+
+/* ---------- footer ---------- */
+.site-foot .foot-title {
+  font: 700 18px/1 var(--display);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg);
+}
+
+.site-foot li {
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+
+
+/* ---------- loading: the instrument cluster boots (src/ui/loadingStage.ts) ---------- */
+.boot {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  align-content: end;
+  min-height: max(440px, calc(100svh - var(--bar-h, 64px)));
+  padding: clamp(32px, 6vw, 88px) var(--gutter) clamp(64px, 8vw, 112px);
+  overflow: clip;
+}
+
+.demo-banner:not([hidden]) + .content .boot {
+  min-height: max(440px, calc(100svh - var(--bar-h, 64px) - 44px));
+}
+
+.boot-scan {
+  z-index: 1;
+  background: none;
+}
+
+.boot.paused .scan-line {
+  animation-play-state: paused;
+}
+
+.boot-in {
+  position: relative;
+  z-index: 3;
+  display: grid;
+  gap: var(--s4);
+  justify-items: start;
+  min-width: 0;
+}
+
+.boot-year {
+  display: inline-grid;
+  overflow: hidden;
+}
+
+.boot-year-in {
+  grid-area: 1 / 1;
+  display: block;
+}
+
+.boot-year-in.enter {
+  animation: rise var(--dur-ui) var(--ease-out) both;
+}
+
+.boot-year-in.leave {
+  animation: flip-out var(--dur-ui) var(--ease-out) both;
+}
+
+@keyframes flip-out {
+  from {
+    transform: none;
+  }
+
+  to {
+    transform: translateY(-105%);
+  }
+}
+
+.boot-count {
+  display: flex;
+  align-items: baseline;
+  gap: 0.1em;
+  max-width: 100%;
+  font: var(--w-figure) clamp(76px, 18vw, 260px) / 0.84 var(--display);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  opacity: 0.32;
+  transition: opacity var(--dur-reveal) var(--ease-out);
+}
+
+.boot.reading .boot-count {
+  opacity: 1;
+}
+
+.boot-count .unit {
+  font: 700 0.2em/1 var(--display);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--red-hi);
+}
+
+.boot .boot-status,
+.boot .vehicle-line {
+  max-width: none;
+  padding: 0;
+  background: none;
+  border: 0;
+  font: 700 12px/1.5 var(--text);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--fg-2);
+}
+
+.boot .vehicle-line {
+  color: var(--fg-3);
+}
+
+/* The tick ruler of the readout, as an instrument: a red run steps along it per completed request. */
+.boot-ruler {
+  position: absolute;
+  z-index: 3;
+  left: var(--gutter);
+  right: var(--gutter);
+  bottom: clamp(24px, 3vw, 40px);
+  height: 14px;
+  overflow: hidden;
+  background: repeating-linear-gradient(90deg, var(--line) 0 1px, transparent 1px 12px) 0 0 / 100% 7px no-repeat;
+}
+
+.boot-trail {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  transform: translateX(calc((var(--trail, 0) - 1) * 100%));
+  transition: transform var(--dur-ui) var(--ease-out);
+}
+
+.boot-trail-ticks {
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(90deg, var(--fg-3) 0 1px, transparent 1px 12px) 0 0 / 100% 7px no-repeat;
+  transform: translateX(calc((1 - var(--trail, 0)) * 100%));
+  transition: transform var(--dur-ui) var(--ease-out);
+}
+
+.boot-run {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: calc(100% / 16);
+  height: 14px;
+  background: repeating-linear-gradient(90deg, var(--red-hi) 0 2px, transparent 2px 12px);
+  opacity: 0;
+  transform: translateX(calc(var(--step, 0) * 100%));
+  transition:
+    transform var(--dur-ui) var(--ease-out),
+    opacity var(--dur-ui) var(--ease-out);
+}
+
+.boot.reading .boot-run {
+  opacity: 1;
+}
+
+/* The hand-off: the stage lies over the new hero and its wedge wipes in to settle on the hero's own. */
+.boot-wedge {
+  position: absolute;
+  z-index: 0;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: max(40%, calc((100% - var(--max-w)) / 2 + var(--max-w) * 0.36));
+  background: var(--red);
+  clip-path: polygon(22% 0, 100% 0, 100% 100%, 0 100%);
+  transform: translateX(-260%);
+}
+
+.boot.handoff {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  min-height: 0;
+  padding: 0;
+  pointer-events: none;
+}
+
+.boot.handoff .boot-wedge {
+  animation: wipe var(--dur-hero) var(--ease-in-out) both;
+}
+
+.boot.handoff .boot-in,
+.boot.handoff .boot-ruler,
+.boot.handoff .boot-scan {
+  animation: fade-out var(--dur-ui) var(--ease-out) both;
+}
+
+.hero.handed::before {
+  opacity: 0;
+}
+
+.hero.handed .hero-grid {
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes wipe {
+  from {
+    transform: translateX(-260%);
+  }
+
+  to {
+    transform: none;
+  }
+}
+
+@keyframes fade-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@media (max-width: 960px) {
+  .boot-wedge {
+    top: auto;
+    height: 46%;
+    width: 78%;
+    clip-path: polygon(0 100%, 100% 0, 100% 100%);
+  }
+}
+
+/* ---------- hover answers, only where a pointer can hover ---------- */
+@media (hover: hover) and (pointer: fine) {
+  .record:hover {
+    background: var(--surface);
+  }
+
+  .record:hover::before {
+    transform: translateX(4px);
+  }
+
+  .record:hover strong {
+    transform: translateX(-4px);
+  }
+
+  .chart-data summary:hover {
+    color: var(--fg);
+  }
+
+  .cal-grid .cal-cell:hover {
+    transform: scale(1.35);
+  }
+
+  .card-frame:hover {
+    transform: translateY(-4px);
+  }
+
+  .num-row:hover .num-fig,
+  .tiles .tile:hover .tile-value {
+    transform: translateX(4px);
+  }
+}
+
+.num-fig,
+.tiles .tile-value {
+  transition: transform var(--dur-ui) var(--ease-out);
+}
+
+/* Pressed: everything that can be pressed answers. */
+.period-opt:active span,
+.row-button:active,
+.cal-grid .cal-cell:active {
+  transform: scale(0.94);
+}
+
+.period-opt span,
+.row-button {
+  transition: transform var(--dur-press) var(--ease-out);
+}
+
+@media (max-width: 640px) {
+  .empty-state {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .num-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ---------- safety nets: nothing hidden by the reveal stays hidden ---------- */
+@media (scripting: none) {
+  .rv {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media print {
+  .rv,
+  .sec-head .sec-tag,
+  .sec-head .ln-in,
+  .cal-cell,
+  .card-canvas {
+    opacity: 1 !important;
+    transform: none !important;
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .topbar,
+  .demo-banner,
+  .scan-box,
+  .chart-cols {
+    display: none !important;
+  }
+}
+
 /* ---------- very wide screens: a wider column ---------- */
 @media (min-width: 1800px) {
   :root {
@@ -2644,15 +3580,15 @@ h4 {
 
 @media (max-width: 640px) {
   /* The 12-month chart has a drawing for phones; another wide chart keeps a readable size and scrolls in its box. */
-  .chart-dual .chart-wide {
+  .chart-dual .frame-wide {
     display: none;
   }
 
-  .chart-dual .chart-narrow {
+  .chart-dual .frame-narrow {
     display: block;
   }
 
-  .chart:not(.chart-compact, .chart-dual) .chart-svg {
+  .chart:not(.chart-compact, .chart-dual) .chart-frame {
     min-width: 600px;
   }
 
@@ -2955,7 +3891,12 @@ h4 {
     transform: none;
   }
 
-  .rv .mbar-fill {
+  .rv .mbar-fill,
+  .rv .num-fill {
+    transform: scaleX(var(--v, 0));
+  }
+
+  .rv.in .maint-figure.fill .maint-fill {
     transform: scaleX(var(--v, 0));
   }
 

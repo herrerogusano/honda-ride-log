@@ -14,6 +14,7 @@ import type { StorageScope } from "../storage/maintenance";
 import { buildRiderData, type RiderData } from "./data";
 import { clear, el, uniqueId } from "./dom";
 import { errorText } from "./errors";
+import { loadingStage, type LoadingStage } from "./loadingStage";
 import { createMapView, type MapFactory, type MapView } from "./mapView";
 import { sectionNav } from "./nav";
 import { createRouteList } from "./routesView";
@@ -325,38 +326,8 @@ export function startApp(options: AppOptions): App {
     return el("p", { class: "vehicle-line" }, parts.length > 0 ? parts.join(" · ") : "Estado de la moto recibido.");
   }
 
-  /**
-   * The shape of the rider's page while it loads: the hero and the readout
-   * as grey blocks, with the progress in a status line, so the page does not
-   * jump when the data arrives. Only `copy` and `progress` carry text.
-   */
-  function skeleton(progress: HTMLElement): { element: HTMLElement; copy: HTMLElement } {
-    const bone = (kind: string): HTMLElement => el("span", { class: `bone ${kind}` });
-    const copy = el(
-      "div",
-      { class: "hero-copy" },
-      el("div", { class: "bones", attrs: { "aria-hidden": "true" } }, bone("bone-eyebrow"), bone("bone-title"), bone("bone-title"), bone("bone-title short")),
-      progress,
-    );
-    const element = el(
-      "div",
-      { class: "skeleton" },
-      el(
-        "div",
-        { class: "hero hero-skeleton" },
-        el("div", { class: "hero-grid" }, copy, el("div", { class: "plate bone bone-plate", attrs: { "aria-hidden": "true" } })),
-      ),
-      el(
-        "div",
-        { class: "bone-readout", attrs: { "aria-hidden": "true" } },
-        ...Array.from({ length: 4 }, () => el("span", { class: "bone-cell" }, bone("bone-label"), bone("bone-figure"))),
-      ),
-    );
-    return { element, copy };
-  }
 
-
-  function showLoaded(data: RiderData, caller: ToolCaller, warnings: readonly string[]): void {
+  function showLoaded(data: RiderData, caller: ToolCaller, warnings: readonly string[], stage: LoadingStage): void {
     const scope: StorageScope = data.demo ? "demo" : "account";
     const motion = new AbortController();
     // A failed trace that needs a new sign-in offers it, never a retry.
@@ -410,6 +381,8 @@ export function startApp(options: AppOptions): App {
       ...page.sections.map((section) => section.element),
       page.footer,
     );
+    // The loading stage becomes the page: its wedge wipes over the hero and settles on the hero's wedge.
+    stage.handOff(page.hero, motion.signal);
     publishBar();
   }
 
@@ -427,10 +400,18 @@ export function startApp(options: AppOptions): App {
       signOutButton.hidden = account === undefined;
       if (scenarioFromHash(location.hash) !== null) setHash("");
     }
-    const progress = el("p", { class: "loading", attrs: { role: "status" } }, "Leyendo el estado de la moto…");
-    const shape = skeleton(progress);
+    // The instrument-cluster boot: its loops stop when this load is replaced, abandoned or done.
+    const loading = new AbortController();
+    viewMotion = loading;
+    const stage = loadingStage({ signal: loading.signal });
     clear(content);
-    content.append(shape.element);
+    content.append(stage.element);
+    /** The stage resolves into an error panel: no wipe. */
+    const fail = (...parts: HTMLElement[]): void => {
+      loading.abort();
+      clear(content);
+      content.append(...parts);
+    };
 
     let vehicle: VehicleState;
     try {
@@ -438,8 +419,7 @@ export function startApp(options: AppOptions): App {
     } catch (error) {
       // The first call is the end-to-end check: if it fails, nothing else is asked.
       if (current() && error instanceof LoadError) {
-        clear(content);
-        content.append(errorPanel(error, retry));
+        fail(errorPanel(error, retry));
         return;
       }
       if (current()) throw error;
@@ -447,8 +427,8 @@ export function startApp(options: AppOptions): App {
     }
     if (!current()) return;
     const line = vehicleLine(vehicle);
-    shape.copy.prepend(line);
-    progress.textContent = "Leyendo los datos del vehículo…";
+    stage.showVehicle(line);
+    stage.step("Vehículo", "Leyendo los datos del vehículo…");
 
     const warnings: string[] = [];
     let info = null;
@@ -466,19 +446,20 @@ export function startApp(options: AppOptions): App {
       const routes = await loadAllRoutes(
         caller,
         now(),
-        (step) => {
-          progress.textContent = `Cargando rutas de ${step.year}… ${formatNumber(step.loaded)} hasta ahora.`;
-        },
+        (step) => stage.progress(step.year, step.loaded),
         current,
       );
       if (!current()) return;
-      showLoaded(buildRiderData(vehicle, info, routes, loadOptions.demo, now()), caller, warnings);
+      // A fast load still reads as a boot: at most a short hold, never more than MAX_HOLD_MS.
+      await stage.settle();
+      if (!current()) return;
+      loading.abort();
+      showLoaded(buildRiderData(vehicle, info, routes, loadOptions.demo, now()), caller, warnings, stage);
     } catch (error) {
       if (!current()) return;
       if (!(error instanceof LoadError)) throw error;
-      // The shapes go; what is known of the vehicle stays above the error.
-      clear(content);
-      content.append(line, errorPanel(error, retry));
+      // The stage goes; what is known of the vehicle stays above the error.
+      fail(line, errorPanel(error, retry));
     }
   }
 

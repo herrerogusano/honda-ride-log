@@ -267,6 +267,140 @@ export function shortTrips(routes: readonly Route[]): ShortTrips {
   };
 }
 
+/** Monday-first weekday (0 Monday … 6 Sunday) of a local day number from `localDay`. */
+export function weekdayOfDay(day: number): number {
+  // Day 0 is Thursday 1 January 1970.
+  return (((day + 3) % 7) + 7) % 7;
+}
+
+/** Intensity of a calendar day: 0 without km, 1 to 4 by quartile of the days with km. */
+export type HeatLevel = 0 | 1 | 2 | 3 | 4;
+
+export interface CalendarDay {
+  /** Local day number (`localDay`). */
+  readonly day: number;
+  /** Local midnight of the day. */
+  readonly dayMs: number;
+  readonly km: number;
+  readonly rides: number;
+  readonly level: HeatLevel;
+}
+
+export interface CalendarMonth {
+  /** 0 (January) to 11. */
+  readonly month: number;
+  readonly activeDays: number;
+  readonly km: number;
+}
+
+export interface CalendarYear {
+  readonly year: number;
+  /** Every day from 1 January to 31 December, or to today in the current year; oldest first. */
+  readonly days: readonly CalendarDay[];
+  /** Twelve months (or up to the current one), with the same days and km as `days`. */
+  readonly months: readonly CalendarMonth[];
+  readonly activeDays: number;
+  readonly km: number;
+}
+
+export interface ActivityCalendar {
+  /** One grid per year of the period, oldest first. */
+  readonly years: readonly CalendarYear[];
+  /** Days with at least one ride in the whole period. */
+  readonly activeDays: number;
+  /**
+   * Upper bounds (inclusive) of levels 1, 2 and 3: the quartiles of the km of
+   * the days with km in the whole period. A day above the third is level 4.
+   */
+  readonly thresholds: readonly [number, number, number];
+}
+
+/**
+ * Km per local day for the activity calendar (docs/PLAN.md, section 3): a
+ * view of the same rides as the figures, the day being the local day of the
+ * start. The years are those of the period: the chosen one, or for "all"
+ * every year from the first ride to the current year. Days after today are
+ * left out of the current year.
+ */
+export function activityCalendar(routes: readonly Route[], period: Period, nowMs: number): ActivityCalendar {
+  const chosen = inPeriod(routes, period);
+  const byDay = new Map<number, { km: number; rides: number }>();
+  for (const route of chosen) {
+    const day = localDay(route.startMs);
+    const sum = byDay.get(day) ?? { km: 0, rides: 0 };
+    sum.km += route.distanceKm;
+    sum.rides += 1;
+    byDay.set(day, sum);
+  }
+  const currentYear = new Date(nowMs).getFullYear();
+  let years: number[];
+  if (period !== "all") years = [period];
+  else {
+    const withRides = yearsWithRoutes(chosen);
+    const first = withRides.length === 0 ? currentYear : Math.min(...withRides);
+    const last = Math.max(currentYear, ...withRides);
+    years = Array.from({ length: last - first + 1 }, (_, index) => first + index);
+  }
+
+  // Quartiles of the days that have km (nearest rank), so each level holds about a quarter of them.
+  const active = [...byDay.values()].map((sum) => sum.km).filter((km) => km > 0).sort((a, b) => a - b);
+  const rank = (share: number): number => active[Math.max(0, Math.ceil(share * active.length) - 1)] ?? 0;
+  const thresholds: [number, number, number] = [rank(0.25), rank(0.5), rank(0.75)];
+  const level = (km: number): HeatLevel => {
+    if (!(km > 0)) return 0;
+    if (km <= thresholds[0]) return 1;
+    if (km <= thresholds[1]) return 2;
+    return km <= thresholds[2] ? 3 : 4;
+  };
+
+  const today = localDay(nowMs);
+  const calendarYears = years.map((year): CalendarYear => {
+    const first = localDay(new Date(year, 0, 1, 12).getTime());
+    const last = Math.min(localDay(new Date(year, 11, 31, 12).getTime()), year === currentYear ? today : Infinity);
+    const days: CalendarDay[] = [];
+    const months = new Map<number, { activeDays: number; km: number }>();
+    for (let day = first; day <= last; day += 1) {
+      const sum = byDay.get(day);
+      const km = sum?.km ?? 0;
+      const dayMs = dayStartMs(day);
+      // A day with a ride of 0 km still has a ride: the lowest level, never "no ride".
+      days.push({ day, dayMs, km, rides: sum?.rides ?? 0, level: sum === undefined ? 0 : (Math.max(1, level(km)) as HeatLevel) });
+      const month = new Date(dayMs).getMonth();
+      const total = months.get(month) ?? { activeDays: 0, km: 0 };
+      if (sum !== undefined) {
+        total.activeDays += 1;
+        total.km += km;
+      }
+      months.set(month, total);
+    }
+    const monthList = [...months].map(([month, total]) => ({ month, ...total }));
+    return {
+      year,
+      days,
+      months: monthList,
+      activeDays: monthList.reduce((sum, one) => sum + one.activeDays, 0),
+      km: monthList.reduce((sum, one) => sum + one.km, 0),
+    };
+  });
+  return { years: calendarYears, activeDays: calendarYears.reduce((sum, one) => sum + one.activeDays, 0), thresholds };
+}
+
+/**
+ * Indexes of the largest count (several on a tie), or none when every count
+ * is 0. Used for the sentence under the weekday and hour charts.
+ */
+export function peaks(counts: readonly number[]): number[] {
+  const top = Math.max(0, ...counts);
+  if (top === 0) return [];
+  return counts.flatMap((count, index) => (count === top ? [index] : []));
+}
+
+/** Average km per ride of a set of rides: total km over rides; 0 without rides. */
+export function averageRideKm(routes: readonly Route[]): number {
+  const sum = totals(routes);
+  return sum.rides === 0 ? 0 : sum.km / sum.rides;
+}
+
 /**
  * Last use of the bike: the end of the last ride (its start if the end is
  * unknown); without rides, the vehicle's last communication.

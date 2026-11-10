@@ -256,27 +256,26 @@ describe("Resumen, block by block", () => {
     ]);
   });
 
-  it("measures the short trips of the chosen period", () => {
+  it("gives «En números» of the chosen period: the average ride and the short-trip shares, units in red", () => {
     show();
-    const meters = (): string[][] =>
-      [...block("Trayectos cortos").querySelectorAll(".meter")].map((meter) => [
-        meter.querySelector("label")?.textContent ?? "",
-        meter.querySelector("progress")?.getAttribute("value") ?? "",
-        meter.querySelector(".meter-value")?.textContent ?? "",
+    const rows = (): string[][] =>
+      [...block("En números").querySelectorAll(".num-row")].map((row) => [
+        row.querySelector(".num-fig")?.textContent ?? "",
+        row.querySelector(".num-fig .unit")?.textContent ?? "",
+        row.querySelector(".num-label")?.textContent ?? "",
+        row.querySelector(".num-detail")?.textContent ?? "",
+        (row.querySelector(".num-fill") as HTMLElement | null)?.style.getPropertyValue("--v") ?? "",
       ]);
-    expect(meters()).toEqual([
-      ["Parte de las salidas", "40", "40\u00A0% · 2 de 5 salidas"],
-      ["Parte de los km", "8", "8\u00A0% · 7 de 84\u00A0km"],
+    // 84,2 km in 5 rides: 16,8 km each. Short (under 5 km): 2 rides (4 and 3 km), 7 km.
+    const nb = String.fromCharCode(0xa0);
+    expect(rows()).toEqual([
+      [`16,8${nb}km`, "km", "Salida media", `84${nb}km entre 5 salidas: sale de las mismas cifras de arriba.`, ""],
+      [`40${nb}%`, "%", `Salidas de menos de 5${nb}km`, "2 de 5 salidas", "0.4000"],
+      [`8${nb}%`, "%", `De los km, en salidas de menos de 5${nb}km`, `7 de 84${nb}km`, (7 / 84.2).toFixed(4)],
     ]);
-    expect(block("Trayectos cortos").textContent).toContain("Salidas de menos de 5\u00A0km.");
     choose("2025");
-    expect(meters()).toEqual([
-      ["Parte de las salidas", "0", "0\u00A0% · 0 de 2 salidas"],
-      ["Parte de los km", "0", "0\u00A0% · 0 de 42\u00A0km"],
-    ]);
-    for (const meter of block("Trayectos cortos").querySelectorAll(".meter")) {
-      expect(meter.querySelector("label")?.getAttribute("for")).toBe(meter.querySelector("progress")?.id);
-    }
+    expect(rows().map((row) => row[0])).toEqual([`21,0${nb}km`, `0${nb}%`, `0${nb}%`]);
+    expect(rows()[1]?.[3]).toBe("0 de 2 salidas");
   });
 
   it("writes the share card of the chosen period", () => {
@@ -326,8 +325,9 @@ describe("Resumen, block by block", () => {
       "Récords",
       "Mes frente a mes",
       "Rachas",
+      "Calendario de actividad",
       "Días y horas",
-      "Trayectos cortos",
+      "En números",
       "Mantenimiento",
       "Tarjeta para compartir",
     ]);
@@ -350,14 +350,14 @@ describe("Resumen, block by block", () => {
   it("changes only the blocks that follow the period and leaves the others as they are", () => {
     show();
     const fixed = ["Km por mes", "Mes frente a mes", "Rachas", "Mantenimiento", "Estado"].map((title) => block(title));
-    const following = ["Récords", "Días y horas", "Trayectos cortos", "Tarjeta para compartir"].map((title) => block(title));
+    const following = ["Récords", "Calendario de actividad", "Días y horas", "En números", "Tarjeta para compartir"].map((title) => block(title));
     const readout = block(FIGURES).querySelector(".readout");
     const figures = [...(readout?.children ?? [])];
     choose("2025");
     // The same nodes for the blocks that do not follow the period: nothing of them is redrawn.
     expect(["Km por mes", "Mes frente a mes", "Rachas", "Mantenimiento", "Estado"].map((title) => block(title))).toEqual(fixed);
     // New nodes for those that do, in the same places, and new figures in the same readout.
-    const redrawn = ["Récords", "Días y horas", "Trayectos cortos", "Tarjeta para compartir"].map((title) => block(title));
+    const redrawn = ["Récords", "Calendario de actividad", "Días y horas", "En números", "Tarjeta para compartir"].map((title) => block(title));
     redrawn.forEach((one, index) => {
       expect(one).not.toBe(following[index]);
       expect(following[index]?.isConnected).toBe(false);

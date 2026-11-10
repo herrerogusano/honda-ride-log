@@ -6,7 +6,6 @@ import { DEMO_SEED } from "../src/demo/scenarios";
 import type { Route } from "../src/domain/model";
 import type { ToolCaller, ToolName } from "../src/service/contract";
 import { startApp, type App } from "../src/ui/app";
-import { cardContent, CARD_SIZE, drawCard } from "../src/ui/card";
 import type { RiderData } from "../src/ui/data";
 import { downloadBlob } from "../src/ui/download";
 import type { MapView } from "../src/ui/mapView";
@@ -455,39 +454,5 @@ describe("downloads", () => {
     expect(createObjectURL).toHaveBeenCalledWith(blob);
     expect(clicked).toEqual(["archivo.csv|blob:made-up|true"]);
     expect(document.querySelector("a")).toBeNull();
-  });
-});
-
-describe("share card drawing", () => {
-  function fakeCanvas(): { canvas: HTMLCanvasElement; texts: string[] } {
-    const texts: string[] = [];
-    const context = { fillRect: () => undefined, beginPath: () => undefined, moveTo: () => undefined, lineTo: () => undefined, closePath: () => undefined, fill: () => undefined, fillText: (value: string) => void texts.push(value) };
-    const canvas = { width: 0, height: 0, getContext: () => context } as unknown as HTMLCanvasElement;
-    return { canvas, texts };
-  }
-  const list = rides([{ start: "2026-07-04T09:00:00-07:00", km: 70, minutes: 60 }]);
-
-  it("draws the title and every figure, and marks synthetic data only when it is synthetic", () => {
-    const demo = fakeCanvas();
-    expect(drawCard(demo.canvas, cardContent(list, 2026, true))).toBe(true);
-    expect([demo.canvas.width, demo.canvas.height]).toEqual([CARD_SIZE, CARD_SIZE]);
-    expect(demo.texts).toEqual([
-      "TU 2026 EN MOTO",
-      "KILÓMETROS", "70\u00A0km",
-      "SALIDAS", "1",
-      "HORAS EN MARCHA", "1\u00A0h",
-      "RUTA MÁS LARGA", "70,0\u00A0km",
-      "MES CON MÁS KM", "julio · 70\u00A0km",
-      "Ride Log · km según el servicio, unidades sin confirmar",
-      "DATOS DE EJEMPLO",
-    ]);
-    const real = fakeCanvas();
-    drawCard(real.canvas, cardContent(list, 2026, false));
-    expect(real.texts).not.toContain("DATOS DE EJEMPLO");
-    expect(real.texts.length).toBe(demo.texts.length - 1);
-  });
-
-  it("says so when the browser gives no canvas", () => {
-    expect(drawCard({ width: 0, height: 0, getContext: () => null } as unknown as HTMLCanvasElement, cardContent(list, 2026, true))).toBe(false);
   });
 });

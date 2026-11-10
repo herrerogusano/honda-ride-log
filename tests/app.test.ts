@@ -369,7 +369,7 @@ describe("Resumen", () => {
   it("gives every chart a title and a table with the same figures", async () => {
     mount("#demo");
     await loaded();
-    const figures = [...panelOf("Resumen").querySelectorAll("figure")];
+    const figures = [...panelOf("Resumen").querySelectorAll("figure.chart")];
     expect(figures.length).toBe(3);
     for (const figure of figures) {
       const drawing = figure.querySelector("svg");
@@ -382,6 +382,8 @@ describe("Resumen", () => {
     const months = figures[0] as HTMLElement;
     expect([...months.querySelectorAll(".chart-legend li")].map((item) => item.textContent)).toEqual(["2024", "2025", "2026"]);
     expect(months.querySelectorAll("tbody tr").length).toBe(12);
+    // The activity calendar is a figure of its own, with its table too.
+    expect(panelOf("Resumen").querySelector("figure.cal details table tbody tr")).not.toBeNull();
   });
 
   it("offers the share card with figures only", async () => {

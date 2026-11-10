@@ -9,7 +9,9 @@ y su conexión con la interfaz (apartado 10); toda la información de cada
 ruta, velocidad máxima incluida (apartados 2 y 3); etapa 2 (aspecto y
 movimiento), fase 1: sistema visual (apartado 11); etapa 2, fase 2: una sola
 página con secciones numeradas, barra fija y selector de periodo en la barra
-(apartado 12).
+(apartado 12); etapa 2, fase 3: lista y mapa juntos (apartado 13); etapa 2,
+fase 4: secciones pulidas, calendario de actividad, tarjeta nueva, estados y
+pantalla de carga (apartado 14).
 
 ## 1. Qué es
 
@@ -105,6 +107,28 @@ Concretado al construirlo en la fase 2 (`src/domain/stats.ts`):
 8. **Trayectos cortos**: qué parte de las salidas y qué parte de los km son de
    rutas de menos de 5 km.
 
+Vistas de estas mismas cifras (etapa 2, fase 4; ninguna definición nueva):
+
+- **Calendario de actividad** (03 Hábitos, sigue al periodo): km por día
+  local, el día de inicio de cada ruta en la zona del navegador, con las
+  mismas rutas que cuentan en las cifras (`data.figures`). Una cuadrícula
+  por año del periodo (con «Todo», del año de la primera ruta al actual,
+  vacíos incluidos), semanas en columnas y el lunes arriba; el año en curso
+  llega hasta hoy. Cinco niveles: 0 sin salida, y 1 a 4 por cuartiles (rango
+  más cercano) de los km de los días con salida de todo el periodo; un día
+  con una salida de 0 km es nivel 1, nunca 0. Pie: «N días con al menos una
+  salida». Tabla alternativa por mes: días con salida y km.
+  `activityCalendar` en `src/domain/stats.ts`.
+- **Frases bajo días y horas**: la hora y el día con más salidas, de los
+  mismos conteos del gráfico («Tu hora favorita: 8:00–8:59 · 79 salidas.»,
+  «El jueves lidera con 78 salidas.»). En un empate se nombran todos; sin
+  salidas, «Sin salidas en este periodo.» (`src/ui/insights.ts`).
+- **En números** (sustituye al bloque «Trayectos cortos»): salida media
+  (km del periodo entre sus salidas, las dos cifras de 01 Resumen) y las dos
+  partes de los trayectos cortos, en cifras grandes.
+- **Mes frente a mes** enseña la diferencia en km con signo en grande; sigue
+  siendo este mes frente al mismo mes del año anterior, en km.
+
 Nota al pie fija: unidades sin confirmar, cuántas rutas de menos de 300 m no
 se cuentan y cuántas se han descartado por venir sin fecha o sin km.
 
@@ -159,7 +183,9 @@ se cuentan y cuántas se han descartado por venir sin fecha o sin km.
 - Tarjeta «Tu 2026 en moto» (el año elegido): solo cifras (km, salidas,
   horas, ruta más larga, mes con más km). Sin mapa, sin coordenadas y sin
   velocidades (la máxima tampoco: la tarjeta sale de la web). Se dibuja
-  en un `<canvas>` y se descarga como PNG.
+  en un `<canvas>` y se descarga como PNG. Desde la etapa 2, fase 4, con el
+  aspecto de la web (apartado 14): 2160 × 2160 px, Barlow Condensed y
+  Manrope, marca «DATOS DE EJEMPLO» solo en la demo.
 - Modo demo: funciona sin login con `createDemoService(generateRider(...))`
   de `src/demo/`. Recorre el mismo camino de código que los datos reales
   (mismos saneadores, mismos límites), así que sirve para separar un fallo de
@@ -504,7 +530,8 @@ política de seguridad de contenido, tal como se publicará: `npm run build`,
 | `src/config.ts` | Las dos respuestas de producto que el propietario aún puede cambiar. |
 | `src/storage/maintenance.ts` | El único archivo que usa `localStorage`. |
 | `src/ui/` | La página: `app.ts` (entrada, demo, carga y estados), `summary.ts`, `routesView.ts`, `mapView.ts` y `leafletSurface.ts` (el mapa), `charts.ts`, `card.ts`, `dom.ts`; `nav.ts` (enlaces de sección, seguimiento de la lectura y barra de progreso) y `period.ts` (selector de periodo de la barra), desde la etapa 2, fase 2. |
-| `src/ui/motion.ts`, `src/ui/sectionHeader.ts`, `src/styles.css` | Etapa 2: movimiento (aparecer al entrar en pantalla, cifras que cuentan), cabecera de sección numerada y la hoja de estilos con los tokens (apartado 11). |
+| `src/ui/motion.ts`, `src/ui/sectionHeader.ts`, `src/styles.css` | Etapa 2: movimiento (aparecer al entrar en pantalla, cifras que cuentan, la línea de barrido de las esperas), cabecera de sección numerada y la hoja de estilos con los tokens (apartado 11). |
+| `src/ui/calendar.ts`, `src/ui/insights.ts`, `src/ui/loadingStage.ts` | Etapa 2, fase 4: calendario de actividad, frases bajo los gráficos de hábitos y pantalla de carga (apartado 14). |
 | `src/assets/fonts/` | Las fuentes propias (woff2, subconjunto latino) y sus licencias SIL OFL. |
 | `public/favicon.svg` | El icono de la pestaña del navegador. |
 | `src/demo/` | Generador de datos sintéticos con semilla, servicio de demo en memoria y los escenarios de la demo. |
@@ -1067,7 +1094,7 @@ las cifras, 700 (`--w-figure`).
 - El contraste se calcula recortando cada canal al gamut sRGB; el navegador
   reduce el croma, así que la luminancia real puede diferir un poco. Los
   colores con transparencia y los del mapa no se comprueban.
-- La tarjeta para compartir (canvas) sigue con la letra del sistema.
+- La tarjeta para compartir (canvas) seguía con la letra del sistema; desde la fase 4 usa las fuentes propias (apartado 14).
 
 ## 12. Etapa 2, fase 2: una sola página
 
@@ -1371,4 +1398,130 @@ ordenando por distancia de menor a mayor.
   tienen como mucho 181) y en equipos lentos.
 - En pantallas anchas muy bajas (menos de unos 660 px de alto) la sección es
   más alta que la pantalla.
+- Una cuenta real (no hay servicio desplegado).
+
+## 14. Etapa 2, fase 4: secciones pulidas, estados y pantalla de carga
+
+Escrito el 2026-11-10. Petición del propietario: que 02 Ritmo, 03 Hábitos y
+05 Taller lleguen al nivel de 01 Resumen y 04 Rutas, movimiento en cada
+interacción, todo adaptable a cualquier ancho; y, tras probar las fases 1 a
+3, una pantalla de carga mejor «que siga la estética». No cambia ninguna
+definición del apartado 3 (las vistas nuevas están descritas allí), ni la
+privacidad, el saneador, el recorte, el login o el servicio.
+
+### Qué hay
+
+| Parte | Qué cambia |
+|---|---|
+| 02 Ritmo | Récords con la unidad pequeña y roja. «Mes frente a mes»: la diferencia en km con signo, enorme, y las dos barras. Km por mes: cada mes es una columna que responde al ratón, al dedo y al teclado (una parada de tabulador, ← → Inicio Fin; nombre accesible con las cifras) y escribe sus cifras en una línea bajo el gráfico; los años fuera del periodo elegido quedan apagados. |
+| 03 Hábitos | Calendario de actividad (apartado 3) con su leyenda, su pie y su tabla por mes; cada celda tiene nombre accesible (fecha, km, salidas) y se recorre con flechas (↑ ↓ un día, ← → una semana; una parada por año). En móviles se desplaza dentro de su caja, con el borde difuminado y «Desliza para ver el año entero →»; nunca la página. Las celdas aparecen columna a columna (el retraso se reparte para que un año entero no pase de `--dur-hero`). Días y horas: columnas como las de Ritmo, el pico en rojo vivo y el resto en `--red-mid` (3,09:1 sobre el fondo; antes `--red-dim`, 2,2:1) y la frase bajo cada uno. «En números» en lugar de «Trayectos cortos». |
+| 05 Taller | El mantenimiento dice su respuesta además en una cifra grande («Te faltan / Te has pasado» y los km) con una barra de la parte del intervalo recorrida, que se llena al aparecer y al guardar. La frase de siempre sigue siendo la línea `role="status"`; la cifra lleva `aria-hidden`. Mismos dos números, mismo almacenamiento. |
+| Tarjeta | Redibujada con el aspecto de la web: fondo casi negro, cuña roja inclinada, etiquetas numeradas en rojo, Barlow Condensed para título y cifras, Manrope para las etiquetas, unidades en rojo; 2160 × 2160 px (dibujada al doble). Espera a `document.fonts.load` de sus cuatro caras; si fallan o tardan más de 3 s, dibuja con las de reserva. Si la vista cambia antes, no dibuja. El botón de descarga se activa al terminar de dibujar. La vista previa escala con el ancho y aparece con un fundido. |
+| Estados | Cuenta sin rutas: «Aún sin salidas», un 0 enorme y qué significa. Errores: filo rojo inclinado a la izquierda, código en un recuadro monoespaciado, el botón de siempre. Avisos con una raya roja inclinada. Pie con títulos en Barlow. |
+| Carga | «Arranque de cuadro de instrumentos» (`src/ui/loadingStage.ts`), en lugar de las formas grises. Ver abajo. |
+
+### La línea de barrido, firma de las esperas
+
+El propietario eligió la línea roja que barre el mapa mientras carga una
+ruta como lo mejor de las fases 1 a 3. Es la misma en todas las esperas:
+`scanLine()` de `src/ui/motion.ts` crea el elemento (`.scan-line`, con los
+mismos `@keyframes scan` y la misma duración) y cada sitio solo pone la caja
+(`.map-scan`, `.scan-box`). Se usa en el mapa, en la tarjeta mientras espera
+sus fuentes y se dibuja, y en la pantalla de carga. No en lo que es
+instantáneo (el calendario se calcula en el acto).
+
+### Pantalla de carga
+
+- Primera pantalla oscura bajo la barra, el contenido abajo a la izquierda
+  como el héroe: la caja roja inclinada de los números de sección con el
+  paso o el año que se lee («Estado», «Vehículo», «2026», «2025»…; al
+  cambiar, el viejo sale hacia arriba y el nuevo sube, `--dur-ui`), «Leyendo
+  el historial», un contador enorme con las rutas cargadas de verdad (cuenta
+  desde la cifra anterior con `countUp`, `--dur-reveal`; antes de las rutas
+  enseña 0 apagado) y «RUTAS» en rojo, el estado de la moto en cuanto se
+  sabe, la línea de estado de siempre (`role="status"`, mismos textos) y la
+  regla de marcas de la tira de cifras.
+- El total no se sabe (la carga para en el primer año vacío): ni porcentaje
+  ni barra. Un tramo de marcas rojas avanza un paso por cada petición
+  terminada (16 pasos por vuelta) y deja las pasadas algo más claras.
+- La línea de barrido recorre la pantalla mientras espera; se para fuera de
+  pantalla o con la pestaña oculta.
+- Al llegar los datos, la pantalla se pone sobre el héroe de la página
+  nueva, su texto se desvanece y una cuña roja barre de izquierda a derecha
+  (`--dur-hero`, `--ease-in-out`, solo `transform`) hasta quedar donde vive
+  la cuña del héroe, mientras el título sube; luego se quita. La página está
+  debajo desde el primer momento: no salta y el desplazamiento sigue arriba.
+  Si la carga falla, en su sitio queda el panel de error, sin barrido.
+- Carga rápida: si los datos llegan antes de 650 ms desde que se ve, se
+  espera lo que falte, nunca más de 300 ms. Con movimiento reducido (o sin
+  `IntersectionObserver`) no hay espera, barrido, giro ni cuenta: la cifra y
+  el año cambian sin más.
+- Se suelta todo (observador, cuentas, temporizadores) al salir de la cuenta
+  o de la demo a mitad de carga, al cambiar de escenario y al terminar; un
+  aviso de progreso tardío de una carga abandonada ya no mueve nada (lo
+  encontró un test de esta fase).
+
+### Otros cambios
+
+- La etiqueta de sección entra desde −12 px (antes −24 px, que a 390 px la
+  sacaba 8 px de la pantalla mientras entraba).
+- Redes de seguridad del aparecer: `beforeprint` muestra todo; si el
+  observador no contesta en 2 s con la pestaña visible (un contexto que no
+  pinta), se muestra todo sin transición; `@media print` y
+  `@media (scripting: none)` dejan `.rv` visible.
+- «Ver los datos en tabla» se abre animado (`::details-content` con
+  `interpolate-size`, en Chrome; en otros navegadores se abre sin animar) y
+  su + gira a ×. Botones, opciones del periodo, filas y celdas responden al
+  pulsarlos; el ratón (solo con puntero fino) mueve filas, récords, cifras y
+  la tarjeta; los campos cambian de borde y fondo al enfocarlos.
+- Tokens nuevos: `--red-mid` y `--heat-1` a `--heat-4` (colores, no
+  movimiento; los tokens de movimiento no cambian).
+
+### Qué se ha comprobado y dónde
+
+- jsdom (Vitest), contra el servicio de demo y dobles: `tests/calendar.test.ts`
+  (día local con cambios de hora y fin de año, años bisiestos, año en curso
+  hasta hoy, cuartiles, año vacío, periodo, meses, nombres de celdas, tabla
+  igual a la cuadrícula, filas y columnas, teclado, rutas cortas fuera como
+  en las cifras, frases), `tests/card.test.ts` (contexto de canvas que graba:
+  las cinco cifras con su unidad en rojo, fuentes, 2×, ni velocidades ni
+  coordenadas ni fechas, marca solo en la demo, espera de fuentes, reserva
+  por fallo y por tiempo, nada tras cambiar de vista),
+  `tests/loading-stage.test.ts` (contador hasta la cifra exacta y desde la
+  anterior, año, regla, pausa, espera máxima, movimiento reducido, traspaso,
+  y en la página: textos de estado, salir a mitad, error sin barrido),
+  `tests/sections-polish.test.ts` (mantenimiento, columnas, años apagados,
+  redes del aparecer), más pares en `tests/contrast.test.ts` y reglas en
+  `tests/styles.test.ts`. Prueban el contrato tal como lo leemos, no lo que
+  se ve ni el servicio real.
+- Roturas: 30, una cada vez, lanzando `npm test` (el ejecutor se niega a
+  empezar si la suite no está en verde). Fallaron 28 a la primera; las dos
+  que sobrevivieron (el calendario ignorando el periodo en sus niveles y ←
+  moviendo un día) se cubrieron endureciendo dos tests y ya fallan. Es una
+  muestra del implementador, no la del revisor independiente.
+- Navegador real (Chrome sin cabeza, build de producción con la política,
+  `vite preview`, 2026-11-10), emulando 320, 360, 390, 768, 1024, 1280,
+  1920 y 2560 px en la demo, `heavy`, `empty`, `error`, la carga y las
+  secciones Ritmo, Hábitos y Taller: sin desplazamiento lateral, ningún
+  título ni cifra cortados, Barlow y Manrope cargadas, ningún control de
+  menos de 44 px, ningún error de consola ni infracción de la política,
+  solo peticiones al propio origen. La tarjeta se descargó con su botón y
+  se miró el PNG (2160 × 2160). Con movimiento reducido, a 1280 y 390: ninguna
+  animación en marcha, nada oculto, ninguna pantalla de carga sobrante. Con
+  la demo normal la pantalla de carga se ve desde unos 0,1 s, cuenta desde
+  unos 0,35 s y pasa a la página a unos 1,6 s (sin espera añadida: la carga
+  ya dura más de 650 ms).
+
+### Qué no se ha comprobado
+
+- Safari y Firefox; un móvil físico (el calendario desplazado con el dedo,
+  el toque en las columnas).
+- Un lector de pantalla real con las columnas y las celdas (`role="img"`
+  con tabulación móvil) y con la cifra del mantenimiento oculta.
+- La animación de «Ver los datos en tabla» fuera de Chrome.
+- Que la cuña del traspaso coincida al píxel con la del héroe en todos los
+  anchos: se miró a 1280 y 390.
+- Unos puntos blancos sueltos en algunas letras grandes de Barlow en las
+  capturas sin cabeza (también en la tarjeta); parecen del rasterizado de
+  Chrome sin cabeza, no se ha confirmado en un navegador con pantalla.
 - Una cuenta real (no hay servicio desplegado).

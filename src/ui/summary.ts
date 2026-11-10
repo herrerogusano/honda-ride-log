@@ -26,9 +26,11 @@ import {
   WEEKDAYS_SHORT,
   withUnit,
 } from "../domain/format";
-import { maintenanceStatus, validPlan, type MaintenancePlan } from "../domain/maintenance";
+import { maintenanceProgress, maintenanceStatus, validPlan, type MaintenancePlan } from "../domain/maintenance";
 import { TRIM_METERS } from "../domain/privacy";
 import {
+  activityCalendar,
+  averageRideKm,
   inPeriod,
   kmByMonth,
   lastUseMs,
@@ -45,12 +47,14 @@ import {
   type Streak,
 } from "../domain/stats";
 import { clearMaintenance, readMaintenance, writeMaintenance, type StorageScope } from "../storage/maintenance";
-import { cardContent, cardText, drawCard } from "./card";
-import { barChart } from "./charts";
+import { calendarCaption, calendarView } from "./calendar";
+import { cardContent, cardText, paintCard, splitUnit } from "./card";
+import { barChart, dimSeries } from "./charts";
 import type { RiderData } from "./data";
 import { clear, el, uniqueId } from "./dom";
 import { downloadBlob } from "./download";
-import { countUp, durationToken, MAX_STAGGER, reveal, watchOnScreen } from "./motion";
+import { hourInsight, weekdayInsight, type Insight } from "./insights";
+import { countUp, durationToken, MAX_STAGGER, reveal, scanLine, watchOnScreen } from "./motion";
 import { periodControl } from "./period";
 import { sectionHeader, type SectionHeader } from "./sectionHeader";
 
@@ -111,6 +115,12 @@ function statusPlate(data: RiderData): HTMLElement {
     ),
     el("p", { class: "plate-note" }, "Sin posición: esta web nunca enseña dónde está la moto."),
   );
+}
+
+/** A value with its unit small and red after it: «218,9» + «km». The text stays «218,9 km». */
+function withSmallUnit(value: string): (Node | string)[] {
+  const [number, unit] = splitUnit(value);
+  return unit === "" ? [number] : [number, NBSP, el("small", { class: "unit" }, unit)];
 }
 
 function signedKm(km: number): string {
@@ -207,10 +217,22 @@ function monthsBlock(data: RiderData): HTMLElement {
   );
 }
 
-/** The fourth figure, drawn: this month against the same month a year ago, as two bars. */
+/** «+25», «−236» or «0»: the difference in whole km, signed, without its unit. */
+function signedNumber(km: number): string {
+  const rounded = Math.round(km);
+  if (rounded === 0) return "0";
+  return `${rounded > 0 ? "+" : "−"}${formatNumber(Math.abs(rounded))}`;
+}
+
+/**
+ * The fourth figure, drawn: this month against the same month a year ago,
+ * as a big signed difference in km and two bars (same definition as the
+ * figure of section 01: km of each month and their difference).
+ */
 function monthDetailBlock(data: RiderData): HTMLElement {
   const month = monthVsLastYear(data.figures, data.nowMs);
   const peak = Math.max(month.km, month.previousKm);
+  const delta = el("span", { class: "delta-num" }, signedNumber(month.differenceKm));
   const bar = (label: string, km: number, now: boolean): HTMLElement => {
     const fill = el("span", { class: now ? "mbar-fill now" : "mbar-fill" });
     fill.style.setProperty("--v", peak > 0 ? (km / peak).toFixed(4) : "0");
@@ -227,24 +249,40 @@ function monthDetailBlock(data: RiderData): HTMLElement {
     "Mes frente a mes",
     "No depende del periodo",
     el(
-      "ul",
-      { class: "mbars" },
-      bar(`${name} de ${month.year - 1}`, month.previousKm, false),
-      bar(`${name} de ${month.year}`, month.km, true),
-    ),
-    el(
-      "p",
-      { class: "mbar-diff" },
-      el("strong", {}, signedKm(month.differenceKm)),
-      ` en ${name} frente al mismo mes del año pasado. El mes en curso aún no ha terminado.`,
+      "div",
+      { class: "delta-wrap" },
+      el(
+        "div",
+        { class: "delta" },
+        el("p", { class: "delta-figure", attrs: { "aria-label": `${signedKm(month.differenceKm)} en ${name} frente al mismo mes del año pasado` } }, delta, NBSP, el("small", { class: "unit" }, "km")),
+        el(
+          "p",
+          { class: "mbar-diff" },
+          `${name[0]?.toUpperCase()}${name.slice(1)} de ${month.year} frente a ${name} de ${month.year - 1}, en km. El mes en curso aún no ha terminado.`,
+        ),
+      ),
+      el(
+        "ul",
+        { class: "mbars" },
+        bar(`${name} de ${month.year - 1}`, month.previousKm, false),
+        bar(`${name} de ${month.year}`, month.km, true),
+      ),
     ),
   );
+}
+
+/** A sentence under a chart, its key words in bold. */
+function insightLine(insight: Insight): HTMLElement {
+  const [before, key, after] = insight;
+  return el("p", { class: "insight" }, before, key === "" ? null : el("b", {}, key), after);
 }
 
 function habitsBlock(data: RiderData, period: Period, periodLabel: string): HTMLElement {
   const routes = inPeriod(data.figures, period);
   const count = (value: number): string => formatNumber(value);
-  return block(
+  const weekdays = ridesByWeekday(routes);
+  const hours = ridesByHour(routes);
+  const made = block(
     "Días y horas",
     periodLabel,
     el(
@@ -259,10 +297,11 @@ function habitsBlock(data: RiderData, period: Period, periodLabel: string): HTML
           categories: WEEKDAYS_SHORT,
           categoryNames: WEEKDAYS_LONG,
           categoryHeader: "Día",
-          series: [{ label: "Salidas", values: ridesByWeekday(routes) }],
+          series: [{ label: "Salidas", values: weekdays }],
           formatValue: count,
           compact: true,
         }),
+        insightLine(weekdayInsight(weekdays)),
       ),
       el(
         "div",
@@ -273,20 +312,27 @@ function habitsBlock(data: RiderData, period: Period, periodLabel: string): HTML
           categories: Array.from({ length: 24 }, (_, hour) => String(hour)),
           categoryNames: Array.from({ length: 24 }, (_, hour) => withUnit(String(hour), "h")),
           categoryHeader: "Hora",
-          series: [{ label: "Salidas", values: ridesByHour(routes) }],
+          series: [{ label: "Salidas", values: hours }],
           formatValue: count,
           labelEvery: 3,
           compact: true,
         }),
+        insightLine(hourInsight(hours)),
       ),
     ),
   );
+  // Each sentence sits right under its chart, above the table.
+  for (const figure of made.querySelectorAll("figure.chart")) {
+    const insight = figure.parentElement?.querySelector(":scope > .insight");
+    if (insight) figure.insertBefore(insight, figure.querySelector(".chart-data"));
+  }
+  return made;
 }
 
 function recordsBlock(data: RiderData, period: Period, periodLabel: string): HTMLElement {
   const best = records(inPeriod(data.figures, period));
   const row = (label: string, value: string, when: string): HTMLElement =>
-    el("li", { class: "record" }, el("span", { class: "record-label" }, label), el("strong", {}, value), el("span", { class: "record-when" }, when));
+    el("li", { class: "record" }, el("span", { class: "record-label" }, label), el("strong", {}, ...withSmallUnit(value)), el("span", { class: "record-when" }, when));
   return block(
     "Récords",
     periodLabel,
@@ -337,28 +383,68 @@ function streaksBlock(data: RiderData): HTMLElement {
   );
 }
 
-function shortTripsBlock(data: RiderData, period: Period, periodLabel: string): HTMLElement {
-  const result = shortTrips(inPeriod(data.figures, period));
-  const meter = (label: string, share: number, detail: string): HTMLElement => {
-    const id = uniqueId("meter");
+/**
+ * «En números»: the average ride (total km over rides of the period, the
+ * same two figures as section 01) and the two shares of the short trips,
+ * as big figures with red units. The shares carry a thin bar that grows on
+ * reveal.
+ */
+function numbersBlock(data: RiderData, period: Period, periodLabel: string): HTMLElement {
+  const routes = inPeriod(data.figures, period);
+  const result = shortTrips(routes);
+  const short = withUnit(String(SHORT_TRIP_KM), "km");
+  const row = (value: string, label: string, detail: string, share: number | null): HTMLElement => {
+    let bar: HTMLElement | null = null;
+    if (share !== null) {
+      const fill = el("span", { class: "num-fill" });
+      fill.style.setProperty("--v", share.toFixed(4));
+      bar = el("span", { class: "num-bar", attrs: { "aria-hidden": "true" } }, fill);
+    }
     return el(
-      "div",
-      { class: "meter" },
-      el("label", { attrs: { for: id } }, label),
-      el("progress", { id, attrs: { max: 100, value: Math.round(share * 100) } }, formatPercent(share)),
-      el("span", { class: "meter-value" }, `${formatPercent(share)} · ${detail}`),
+      "li",
+      { class: "num-row" },
+      el("strong", { class: "num-fig" }, ...withSmallUnit(value)),
+      el("span", { class: "num-text" }, el("span", { class: "num-label" }, label), el("span", { class: "num-detail" }, detail)),
+      bar,
     );
   };
   return block(
-    "Trayectos cortos",
+    "En números",
     periodLabel,
-    el("p", { class: "lead" }, `Salidas de menos de ${withUnit(String(SHORT_TRIP_KM), "km")}.`),
-    meter(
-      "Parte de las salidas",
-      result.rideShare,
-      `${formatNumber(result.shortRides)} de ${plural(result.rides, "salida", "salidas")}`,
+    el(
+      "ul",
+      { class: "numbers" },
+      row(
+        formatKm(averageRideKm(routes)),
+        "Salida media",
+        `${formatWholeKm(result.km)} entre ${plural(result.rides, "salida", "salidas")}: sale de las mismas cifras de arriba.`,
+        null,
+      ),
+      row(
+        formatPercent(result.rideShare),
+        `Salidas de menos de ${short}`,
+        `${formatNumber(result.shortRides)} de ${plural(result.rides, "salida", "salidas")}`,
+        result.rideShare,
+      ),
+      row(
+        formatPercent(result.kmShare),
+        `De los km, en salidas de menos de ${short}`,
+        `${formatNumber(result.shortKm)} de ${formatWholeKm(result.km)}`,
+        result.kmShare,
+      ),
     ),
-    meter("Parte de los km", result.kmShare, `${formatNumber(result.shortKm)} de ${formatWholeKm(result.km)}`),
+  );
+}
+
+/** The activity calendar of the period: km per local day, one grid per year. */
+function calendarBlock(data: RiderData, period: Period, periodLabel: string): HTMLElement {
+  const calendar = activityCalendar(data.figures, period, data.nowMs);
+  const [count = "", ...rest] = calendarCaption(calendar).split(" ");
+  return block(
+    "Calendario de actividad",
+    periodLabel,
+    el("p", { class: "cal-caption" }, el("b", {}, count), ` ${rest.join(" ")}`),
+    calendarView(calendar),
   );
 }
 
@@ -376,17 +462,55 @@ function maintenanceBlock(data: RiderData, scope: StorageScope): HTMLElement {
     attrs: { type: "number", inputmode: "decimal", min: 0, max: 10000000, step: "any", required: true, value: stored?.lastServiceKm ?? null },
   });
   const result = el("p", { class: "maintenance-result", attrs: { role: "status" } });
+  // The same answer as the sentence, as a big figure and a bar; the sentence is what is read out.
+  const kicker = el("span", { class: "maint-kicker" });
+  const number = el("span", { class: "maint-num" });
+  const fill = el("span", { class: "maint-fill" });
+  const due = el("span", { class: "maint-due" });
+  const figure = el(
+    "div",
+    { class: "maint-figure", attrs: { "aria-hidden": "true" } },
+    kicker,
+    el("p", { class: "maint-value" }, number, NBSP, el("small", { class: "unit" }, "km")),
+    el("span", { class: "maint-bar" }, fill),
+    due,
+  );
+  figure.hidden = true;
 
-  function show(plan: MaintenancePlan | null, note = ""): void {
+  /** Shows the figure; `replay` fills the bar again from empty (after a save). */
+  function showFigure(remainingKm: number, share: number, dueText: string, replay: boolean): void {
+    figure.hidden = false;
+    figure.classList.toggle("over", remainingKm < 0);
+    kicker.textContent = remainingKm >= 0 ? "Te faltan" : "Te has pasado";
+    number.textContent = formatNumber(Math.abs(remainingKm));
+    due.textContent = dueText;
+    fill.style.setProperty("--v", share.toFixed(4));
+    if (replay) {
+      figure.classList.remove("fill");
+      // Reading the layout lets the bar start again from empty.
+      void figure.offsetWidth;
+    }
+    figure.classList.add("fill");
+  }
+
+  function show(plan: MaintenancePlan | null, note = "", replay = false): void {
     if (plan === null) {
+      figure.hidden = true;
       result.textContent = note || "Escribe los dos números para saber cuánto falta.";
       return;
     }
     if (odometer === null) {
+      figure.hidden = true;
       result.textContent = `El servicio no ha dado el odómetro, así que no se puede calcular. ${note}`.trim();
       return;
     }
     const status = maintenanceStatus(plan, odometer);
+    showFigure(
+      status.remainingKm,
+      maintenanceProgress(plan, odometer),
+      `${status.remainingKm >= 0 ? "Toca" : "Tocaba"} a los ${formatWholeKm(status.dueAtKm)} · odómetro ${formatWholeKm(odometer)}`,
+      replay,
+    );
     const due = formatWholeKm(status.dueAtKm);
     const text =
       status.remainingKm >= 0
@@ -428,7 +552,7 @@ function maintenanceBlock(data: RiderData, scope: StorageScope): HTMLElement {
       return;
     }
     const saved = writeMaintenance(scope, plan);
-    show(plan, saved ? "Guardado en este navegador." : "Este navegador no deja guardarlo: el cálculo vale hasta que cierres la página.");
+    show(plan, saved ? "Guardado en este navegador." : "Este navegador no deja guardarlo: el cálculo vale hasta que cierres la página.", true);
   });
   show(stored);
 
@@ -440,21 +564,21 @@ function maintenanceBlock(data: RiderData, scope: StorageScope): HTMLElement {
       { class: "lead" },
       "Escribe cada cuántos km toca revisión y el odómetro de la última. Los dos números se guardan solo en este navegador.",
     ),
+    figure,
     form,
     result,
   );
 }
 
-function cardBlock(data: RiderData, period: Period, periodLabel: string): HTMLElement {
+function cardBlock(data: RiderData, period: Period, periodLabel: string, signal: AbortSignal): HTMLElement {
   const content = cardContent(inPeriod(data.figures, period), period, data.demo);
   const text = cardText(content);
   const canvas = el("canvas", { class: "card-canvas", attrs: { role: "img", "aria-label": text } }, text);
-  const drawn = drawCard(canvas, content);
   const button = el(
     "button",
     {
       class: "button button-primary",
-      attrs: { type: "button", disabled: !drawn },
+      attrs: { type: "button", disabled: true },
       on: {
         click: () => {
           canvas.toBlob((blob) => {
@@ -465,12 +589,47 @@ function cardBlock(data: RiderData, period: Period, periodLabel: string): HTMLEl
     },
     "Descargar tarjeta (PNG)",
   );
+  // While the card waits for its fonts and draws, the house scan line sweeps its frame; it goes once drawn.
+  const scan = scanLine("scan-box card-scan");
+  const frame = el("div", { class: "card-frame is-loading" }, canvas, scan);
+  // The download waits for the drawing, which waits for the page's fonts.
+  const drawable = paintCard(
+    canvas,
+    content,
+    () => {
+      canvas.classList.add("drawn");
+      frame.classList.remove("is-loading");
+      scan.remove();
+      button.disabled = false;
+    },
+    { signal },
+  );
   return block(
     "Tarjeta para compartir",
     periodLabel,
-    el("p", { class: "lead" }, "Solo cifras: sin mapa, sin coordenadas y sin fechas de rutas concretas."),
-    drawn ? canvas : el("p", { class: "notice" }, text),
+    el("p", { class: "lead" }, "Solo cifras: sin mapa, sin coordenadas, sin velocidades y sin fechas de rutas concretas."),
+    drawable ? frame : el("p", { class: "notice" }, text),
     button,
+  );
+}
+
+/** An account without rides: a big zero and what it means, instead of empty blocks. */
+function emptyState(): HTMLElement {
+  return el(
+    "div",
+    { class: "empty-state rv", attrs: { role: "status" } },
+    el("p", { class: "empty-figure", attrs: { "aria-hidden": "true" } }, "0", el("small", { class: "unit" }, "salidas")),
+    el(
+      "div",
+      { class: "empty-copy" },
+      el("p", { class: "empty-title" }, "Todavía no hay rutas en esta cuenta."),
+      el(
+        "p",
+        {},
+        "Cuando salgas con la moto, aquí aparecerán tus cifras: kilómetros, horas, récords, el calendario de salidas y el mapa de cada ruta.",
+      ),
+      el("p", {}, "Mientras tanto, el estado de la moto y el mantenimiento ya funcionan."),
+    ),
   );
 }
 
@@ -617,29 +776,28 @@ export function renderRiderPage(data: RiderData, scope: StorageScope, options: R
 
   // Blocks that follow the period live in slots, refilled on each change.
   const slot = (): HTMLElement => el("div", { class: "slot" });
-  const slots = { records: slot(), habits: slot(), shortTrips: slot(), card: slot() };
+  const slots = { records: slot(), calendar: slot(), habits: slot(), numbers: slot(), card: slot() };
   const periodScope = el("span", { class: "scope" });
   const readout = el("dl", { class: "readout rv" });
 
   const summary = section(
     "resumen",
     "Resumen",
-    figuresTitle(period, currentYear),
-    empty
-      ? el("p", { class: "notice", attrs: { role: "status" } }, "Todavía no hay rutas en esta cuenta. Cuando salgas con la moto, aquí aparecerán tus cifras.")
-      : el("div", { class: "sec-top" }, periodScope, el("span", { class: "sec-hint" }, "El periodo se elige arriba, en la barra")),
+    empty ? ["Aún sin", "salidas"] : figuresTitle(period, currentYear),
+    empty ? emptyState() : el("div", { class: "sec-top" }, periodScope, el("span", { class: "sec-hint" }, "El periodo se elige arriba, en la barra")),
     empty ? null : readout,
   );
+  const months = empty ? null : monthsBlock(data);
   if (!empty) {
     section(
       "ritmo",
       "Ritmo",
       ["El pulso", "de los meses"],
-      monthsBlock(data),
+      months,
       el("div", { class: "grid-2" }, slots.records, monthDetailBlock(data)),
       streaksBlock(data),
     );
-    section("habitos", "Hábitos", ["Cada salida", "cuenta"], slots.habits, slots.shortTrips);
+    section("habitos", "Hábitos", ["Cada salida", "cuenta"], slots.calendar, slots.habits, slots.numbers);
   }
   if (options.archive !== undefined) section("rutas", "Rutas", ["El archivo", "de salidas"], options.archive);
   section("taller", "Taller", ["A punto"], el("div", { class: "grid-2 grid-taller" }, maintenanceBlock(data, scope), empty ? null : slots.card));
@@ -671,11 +829,17 @@ export function renderRiderPage(data: RiderData, scope: StorageScope, options: R
         countUp(element, value, (shown) => formatNumber(shown), { signal: motion.signal, durationMs });
       }),
     );
+    // The 12 months stay drawn; the years outside the period are quieter.
+    if (months !== null) {
+      const shown = period === "all" ? null : String(period);
+      dimSeries(months, shown !== null && months.querySelector(`[data-series="${shown}"]`) !== null ? shown : null);
+    }
     const blocks: [HTMLElement, HTMLElement][] = [
       [slots.records, recordsBlock(data, period, label)],
+      [slots.calendar, calendarBlock(data, period, label)],
       [slots.habits, habitsBlock(data, period, label)],
-      [slots.shortTrips, shortTripsBlock(data, period, label)],
-      [slots.card, cardBlock(data, period, label)],
+      [slots.numbers, numbersBlock(data, period, label)],
+      [slots.card, cardBlock(data, period, label, motion.signal)],
     ];
     let order = 0;
     for (const [place, made] of blocks) {

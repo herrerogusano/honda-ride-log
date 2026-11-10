@@ -218,7 +218,7 @@ describe("a period change", () => {
     showAll();
     const fixed = ["Km por mes", "Mes frente a mes", "Rachas", "Mantenimiento", "Estado"].map(block);
     const header = root.querySelector('section[data-section="resumen"] .sec-head') as HTMLElement;
-    // The records and the weekday chart are on screen; the short trips and the card are not.
+    // The records and the weekday chart are on screen; the calendar, «En números» and the card are not.
     for (const observer of live()) {
       for (const target of observer.targets) {
         if (target.classList.contains("slot") || target === header) {
@@ -228,7 +228,7 @@ describe("a period change", () => {
     }
     showOnly(block("Récords").parentElement as Element, block("Días y horas").parentElement as Element, header);
     pick(1);
-    const [records, habits, short, card] = ["Récords", "Días y horas", "Trayectos cortos", "Tarjeta para compartir"].map(block) as [HTMLElement, HTMLElement, HTMLElement, HTMLElement];
+    const [records, habits, calendar, numbers, card] = ["Récords", "Días y horas", "Calendario de actividad", "En números", "Tarjeta para compartir"].map(block) as [HTMLElement, HTMLElement, HTMLElement, HTMLElement, HTMLElement];
     expect([records, habits].map((one) => [one.classList.contains("swap"), one.classList.contains("in"), one.style.getPropertyValue("--d")])).toEqual([
       [true, true, "0"],
       [true, true, "1"],
@@ -236,11 +236,12 @@ describe("a period change", () => {
     // Their charts are shown at once, so their bars grow again.
     expect(habits.querySelectorAll(".rv:not(.in)")).toHaveLength(0);
     // Off screen: no fade now; revealed when they come on screen.
-    expect([short, card].map((one) => [one.classList.contains("swap"), one.classList.contains("in")])).toEqual([
+    expect([calendar, numbers, card].map((one) => [one.classList.contains("swap"), one.classList.contains("in")])).toEqual([
+      [false, false],
       [false, false],
       [false, false],
     ]);
-    for (const waiting of [short, card]) expect(live().some((observer) => observer.targets.has(waiting))).toBe(true);
+    for (const waiting of [calendar, numbers, card]) expect(live().some((observer) => observer.targets.has(waiting))).toBe(true);
     // The title of section 01 plays its entrance again, without the rule.
     expect([header.classList.contains("replay"), header.classList.contains("sweep")]).toEqual([true, false]);
     // The blocks that do not follow the period are the very same nodes, untouched.

@@ -2,6 +2,12 @@
  * Hand-written SVG bar charts. Each chart is a <figure> with a titled SVG,
  * a legend when there is more than one series and a table with the same
  * figures, so nothing depends on colour or on seeing the drawing.
+ *
+ * Over each drawing lies a row of columns, one per category, that answer
+ * the pointer, a tap and the keyboard (one tab stop per drawing; ← → move,
+ * Home and End jump): the active category lights up and its figures are
+ * written in the readout line under the chart. Each column has an
+ * accessible name with the same figures.
  */
 import { el, svg, uniqueId } from "./dom";
 
@@ -38,6 +44,9 @@ export interface BarChartOptions {
   };
 }
 
+/** What the readout line says before any column is picked. */
+export const CHART_HINT = "Pasa el cursor, toca o enfoca una columna para ver sus cifras.";
+
 const RIGHT = 8;
 const TOP = 12;
 const BOTTOM = 26;
@@ -52,6 +61,8 @@ interface Frame {
   readonly labelEvery: number;
   readonly formatTick: (value: number) => string;
   readonly className: string;
+  /** Class of the box that holds the drawing and its columns. */
+  readonly frameClass: string;
 }
 
 /**
@@ -78,6 +89,7 @@ export function barChart(options: BarChartOptions): HTMLElement {
   const top = ticks[ticks.length - 1] as number;
 
   let summary = "Sin datos.";
+  let peakCategory = 0;
   if (peak > 0) {
     let best = { series: 0, category: 0 };
     series.forEach((one, s) =>
@@ -85,11 +97,19 @@ export function barChart(options: BarChartOptions): HTMLElement {
         if (value > (series[best.series]?.values[best.category] ?? 0)) best = { series: s, category: c };
       }),
     );
+    peakCategory = best.category;
     const owner = series.length > 1 ? ` (${series[best.series]?.label})` : "";
     summary = `Máximo: ${names[best.category]}${owner}, ${formatValue(peak)}. Las cifras están en la tabla que sigue al gráfico.`;
   }
 
-  function draw(frame: Frame): SVGSVGElement {
+  /** «marzo: 2025, 0 km; 2026, 74 km», the accessible name of a column. */
+  function columnName(c: number): string {
+    const values = series.map((one) => (series.length > 1 ? `${one.label}, ` : "") + formatValue(one.values[c] ?? 0));
+    return `${names[c] ?? ""}: ${values.join("; ")}`;
+  }
+  const readout = el("p", { class: "chart-readout" }, CHART_HINT);
+
+  function draw(frame: Frame): HTMLElement {
     const { width, height, left } = frame;
     const plotWidth = width - left - RIGHT;
     const plotHeight = height - TOP - BOTTOM;
@@ -129,6 +149,8 @@ export function barChart(options: BarChartOptions): HTMLElement {
           {
             class: `chart-bar series-${s}${tone}${peakClass}`,
             attrs: {
+              "data-c": c,
+              "data-series": one.label,
               x: groupX + barWidth * s + 1,
               y: TOP + plotHeight - barHeight,
               width: Math.max(1, barWidth - 2),
@@ -148,7 +170,63 @@ export function barChart(options: BarChartOptions): HTMLElement {
         );
       }
     });
-    return drawing;
+    return el("div", { class: `chart-frame ${frame.frameClass}` }, drawing, columnsOver(drawing, frame, band, plotHeight));
+  }
+
+  /** The columns over one drawing, placed in fractions of its size; they light its bars and fill the readout. */
+  function columnsOver(drawing: SVGSVGElement, frame: Frame, band: number, plotHeight: number): HTMLElement {
+    const columns = el("div", { class: "chart-cols" });
+    columns.style.setProperty("--top", (TOP / frame.height).toFixed(5));
+    columns.style.setProperty("--ht", (plotHeight / frame.height).toFixed(5));
+    const cells = frame.categories.map((_, c) => {
+      const column = el("span", { class: "chart-col", attrs: { role: "img", tabindex: -1, "aria-label": columnName(c) } });
+      column.style.setProperty("--x", ((frame.left + band * c) / frame.width).toFixed(5));
+      column.style.setProperty("--wd", (band / frame.width).toFixed(5));
+      columns.append(column);
+      return column;
+    });
+    let current = peakCategory;
+    cells[current]?.setAttribute("tabindex", "0");
+    const light = (c: number | null): void => {
+      for (const one of drawing.querySelectorAll(".chart-bar.on")) one.classList.remove("on");
+      for (const one of cells) one.classList.remove("on");
+      drawing.classList.toggle("hot", c !== null);
+      if (c === null) return;
+      cells[c]?.classList.add("on");
+      for (const one of drawing.querySelectorAll(`.chart-bar[data-c="${c}"]`)) one.classList.add("on");
+      const values = series.map((one) => (series.length > 1 ? `${one.label}: ` : "") + formatValue(one.values[c] ?? 0));
+      readout.replaceChildren(el("b", {}, names[c] ?? ""), ` · ${values.join(" · ")}`);
+    };
+    const pick = (event: Event): void => {
+      const column = event.target instanceof Element ? event.target.closest(".chart-col") : null;
+      const c = column instanceof HTMLElement ? cells.indexOf(column) : -1;
+      if (c < 0) return;
+      if (event.type === "focusin") {
+        cells[current]?.setAttribute("tabindex", "-1");
+        current = c;
+        cells[c]?.setAttribute("tabindex", "0");
+      }
+      light(c);
+    };
+    for (const type of ["pointerover", "focusin", "click"]) columns.addEventListener(type, pick);
+    // The readout keeps the last figures; only the light goes when the pointer or the focus leaves.
+    columns.addEventListener("pointerleave", () => {
+      if (!columns.contains(document.activeElement)) light(null);
+    });
+    columns.addEventListener("focusout", (event) => {
+      if (!columns.contains(event.relatedTarget as Node | null)) light(null);
+    });
+    columns.addEventListener("keydown", (event) => {
+      const steps: Readonly<Record<string, number>> = { ArrowLeft: -1, ArrowRight: 1 };
+      let to: number;
+      if (event.key in steps) to = current + (steps[event.key] as number);
+      else if (event.key === "Home") to = 0;
+      else if (event.key === "End") to = cells.length - 1;
+      else return;
+      event.preventDefault();
+      cells[Math.min(cells.length - 1, Math.max(0, to))]?.focus();
+    });
+    return columns;
   }
 
   const compact = options.compact === true;
@@ -163,6 +241,7 @@ export function barChart(options: BarChartOptions): HTMLElement {
     labelEvery: options.labelEvery ?? 1,
     formatTick: formatValue,
     className: options.narrow === undefined ? "chart-svg" : "chart-svg chart-wide",
+    frameClass: options.narrow === undefined ? "frame-one" : "frame-wide",
   });
   // The phone drawing: as wide as a phone shows it, so its labels need no enlarging.
   const narrow =
@@ -176,6 +255,7 @@ export function barChart(options: BarChartOptions): HTMLElement {
           labelEvery: 1,
           formatTick: options.narrow.formatTick,
           className: "chart-svg chart-narrow",
+          frameClass: "frame-narrow",
         });
 
   const classes = [
@@ -186,14 +266,19 @@ export function barChart(options: BarChartOptions): HTMLElement {
     "rv",
   ];
   // On a narrow screen a wide chart without a phone drawing keeps a readable size and scrolls inside this box, never the page.
-  const figure = el("figure", { class: classes.filter(Boolean).join(" ") }, el("div", { class: "chart-scroll" }, wide, narrow));
+  const figure = el("figure", { class: classes.filter(Boolean).join(" ") }, el("div", { class: "chart-scroll" }, wide, narrow), readout);
   if (series.length > 1) {
     figure.append(
       el(
         "ul",
         { class: "chart-legend", attrs: { "aria-label": "Leyenda" } },
         ...series.map((one, s) =>
-          el("li", {}, el("span", { class: `chart-key series-${s}${one.tone === undefined ? "" : ` ${one.tone}`}`, attrs: { "aria-hidden": "true" } }), one.label),
+          el(
+            "li",
+            { attrs: { "data-series": one.label } },
+            el("span", { class: `chart-key series-${s}${one.tone === undefined ? "" : ` ${one.tone}`}`, attrs: { "aria-hidden": "true" } }),
+            one.label,
+          ),
         ),
       ),
     );
@@ -230,4 +315,15 @@ export function barChart(options: BarChartOptions): HTMLElement {
     el("details", { class: "chart-data" }, el("summary", {}, "Ver los datos en tabla"), el("div", { class: "table-scroll" }, table)),
   );
   return figure;
+}
+
+/**
+ * Dims every series of a chart but `keep` (bars and legend), or none when
+ * `keep` is null. The km-per-month chart does it for the years outside the
+ * chosen period: they stay drawn, quieter.
+ */
+export function dimSeries(chart: Element, keep: string | null): void {
+  for (const part of chart.querySelectorAll("[data-series]")) {
+    part.classList.toggle("dim", keep !== null && part.getAttribute("data-series") !== keep);
+  }
 }
