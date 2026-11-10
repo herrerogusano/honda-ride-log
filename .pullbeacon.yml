@@ -1,0 +1,36 @@
+# PullBeacon configuration. It is always read from the PR's base branch.
+version: 1
+
+# Reviews run only on request: comment "@pullbeacon review" on the pull request.
+automatic_review: false
+
+model:
+  provider: anthropic
+  name: anthropic/claude-sonnet-5-5
+  temperature: 0
+  timeout_seconds: 120
+
+limits:
+  max_changed_files: 60
+  max_changed_lines: 4000
+  max_context_chars: 120000
+  max_file_bytes: 200000
+  max_output_tokens: 8192
+  # Preventive per-run estimate, not an accounting cap; the API workspace has its own limit.
+  max_estimated_cost_usd: 1.00
+  max_inline_comments: 15
+  max_batches: 4
+
+policy:
+  include: ["**/*.ts", "**/*.mjs", "**/*.js", "**/*.css", "**/*.html", "**/*.json", "**/*.yml"]
+  exclude: ["package-lock.json", "dist/**", "node_modules/**", "src/assets/**"]
+  # The repository rules the reviewer must hold the change against.
+  context_files: ["AGENTS.md"]
+  min_inline_severity: medium
+  # Review only: PullBeacon never commits to this repository.
+  apply_enabled: false
+  allowed_apply_paths: []
+  min_apply_confidence: 0.80
+  max_apply_files: 5
+  max_apply_changed_lines: 120
+  apply_context_window: 10
