@@ -30,3 +30,13 @@ export function maintenanceStatus(plan: MaintenancePlan, odometerKm: number): Ma
   const dueAtKm = plan.lastServiceKm + plan.intervalKm;
   return { dueAtKm, remainingKm: dueAtKm - odometerKm };
 }
+
+/**
+ * How much of the interval has been ridden since the last service, 0 to 1,
+ * for the bar under the figure: full when the service is due or overdue,
+ * empty if the odometer reads less than at the last service.
+ */
+export function maintenanceProgress(plan: MaintenancePlan, odometerKm: number): number {
+  const share = (odometerKm - plan.lastServiceKm) / plan.intervalKm;
+  return Number.isFinite(share) ? Math.min(1, Math.max(0, share)) : 0;
+}

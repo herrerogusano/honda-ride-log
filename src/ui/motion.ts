@@ -20,7 +20,15 @@ export interface MotionOptions {
 export interface CountUpOptions extends MotionOptions {
   /** How long the count lasts; by default the `--dur-hero` token. */
   readonly durationMs?: number | undefined;
+  /** Where the count starts (default 0): the loading counter goes on from the value it showed. */
+  readonly from?: number | undefined;
 }
+
+/**
+ * How long `reveal` waits for its observer's first answer before showing
+ * everything anyway. A rendering browser answers within a frame.
+ */
+export const REVEAL_SAFETY_MS = 2000;
 
 /** The most stagger steps one batch of revealed elements gets, so nothing waits long. */
 export const MAX_STAGGER = 8;
@@ -90,8 +98,10 @@ export function reveal(root: Element, options: MotionOptions = {}): () => void {
     for (const target of targets) target.classList.add("in");
     return () => undefined;
   }
+  let heard = false;
   const observer = new IntersectionObserver(
     (entries) => {
+      heard = true;
       let index = 0;
       for (const entry of entries) {
         if (!entry.isIntersecting) continue;
@@ -106,15 +116,50 @@ export function reveal(root: Element, options: MotionOptions = {}): () => void {
   );
   for (const target of targets) observer.observe(target);
   let done = false;
+  let safety = 0;
   const dispose = (): void => {
     if (done) return;
     done = true;
     observer.disconnect();
+    window.clearTimeout(safety);
+    window.removeEventListener("beforeprint", dispose);
+    document.removeEventListener("visibilitychange", arm);
     // What was never seen is shown as it is, without a transition to wait for.
     for (const target of targets) target.classList.add("in");
   };
+  // Safety nets: printing shows everything; and if the observer never answers
+  // in a visible tab (a context that does not render), everything is shown
+  // rather than left invisible. A hidden tab waits: it renders when shown.
+  function arm(): void {
+    window.clearTimeout(safety);
+    if (done || heard || document.hidden) return;
+    safety = window.setTimeout(() => {
+      if (!heard && !document.hidden) dispose();
+    }, REVEAL_SAFETY_MS);
+  }
+  window.addEventListener("beforeprint", dispose);
+  document.addEventListener("visibilitychange", arm);
+  arm();
   onAbort(options.signal, dispose);
   return dispose;
+}
+
+/**
+ * The house loading signature: a red scan line that sweeps its box from
+ * side to side (stylesheet: `.scan-line` and `@keyframes scan`). The map
+ * shows it while a trace loads, the share card while it waits for its fonts
+ * and draws, the loading page over its grey shapes. `className` places the
+ * box; the line and its timing are the same everywhere. Only for real
+ * waits: nothing instant gets it.
+ */
+export function scanLine(className: string): HTMLElement {
+  const box = document.createElement("div");
+  box.className = className;
+  box.setAttribute("aria-hidden", "true");
+  const line = document.createElement("span");
+  line.className = "scan-line";
+  box.append(line);
+  return box;
 }
 
 /** Strong ease-out, close to the `--ease-out` curve. */
@@ -136,7 +181,8 @@ export function countUp(element: HTMLElement, value: number, format: (value: num
   final.textContent = format(value);
   element.replaceChildren(final);
   element.classList.add("cu");
-  if (!canAnimate() || !Number.isFinite(value) || value === 0) return () => undefined;
+  const from = options.from ?? 0;
+  if (!canAnimate() || !Number.isFinite(value) || !Number.isFinite(from) || value === from) return () => undefined;
 
   let frame = 0;
   let copy: HTMLElement | null = null;
@@ -172,7 +218,7 @@ export function countUp(element: HTMLElement, value: number, format: (value: num
     const running = document.createElement("span");
     running.className = "cu-anim";
     running.setAttribute("aria-hidden", "true");
-    running.textContent = format(0);
+    running.textContent = format(from);
     copy = running;
     element.append(running);
     element.classList.add("counting");
@@ -185,7 +231,7 @@ export function countUp(element: HTMLElement, value: number, format: (value: num
         finish();
         return;
       }
-      running.textContent = format(value * easeOut(Math.max(0, t)));
+      running.textContent = format(from + (value - from) * easeOut(Math.max(0, t)));
       frame = requestAnimationFrame(step);
     };
     frame = requestAnimationFrame(step);

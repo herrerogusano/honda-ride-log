@@ -27,7 +27,7 @@ import type { RiderData } from "./data";
 import { clear, el } from "./dom";
 import { errorText } from "./errors";
 import { createLeafletSurface, type MapSurface, type SurfaceFactory } from "./leafletSurface";
-import { canAnimate, countUp, durationToken } from "./motion";
+import { canAnimate, countUp, durationToken, scanLine } from "./motion";
 import { drawDuration, drawTrace, planTrace, type Drawing } from "./traceDraw";
 
 export interface MapView {
@@ -113,7 +113,7 @@ export function createMapView(
   const strip = el("div", { class: "route-strip", attrs: { "aria-hidden": "true" } }, span, el("dl", { class: "rs-grid" }, km.cell, time.cell, average.cell, top.cell));
   strip.hidden = true;
 
-  const scan = el("div", { class: "map-scan", attrs: { "aria-hidden": "true" } }, el("span", { class: "scan-line" }));
+  const scan = scanLine("map-scan");
   const empty = el(
     "div",
     { class: "map-empty", attrs: { "aria-hidden": "true" } },

@@ -74,6 +74,8 @@ const PAIRS: readonly (readonly [string, string, number, string])[] = [
   ["--red-hi", "--bg", 3, "this year's bars"],
   ["--bar-prev", "--bg", 3, "last year's bars"],
   ["--bar-old", "--bg", 3, "older years' bars"],
+  // Weekday and hour charts: the bars that are not the peak (the peak is --red-hi).
+  ["--red-mid", "--bg", 3, "weekday and hour bars"],
 ];
 
 describe("colour contrast of the stylesheet tokens", () => {

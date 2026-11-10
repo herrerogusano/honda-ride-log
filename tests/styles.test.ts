@@ -122,3 +122,36 @@ describe("focus and targets", () => {
     expect([px(declaration(zoom, "width")), px(declaration(zoom, "height"))]).toEqual([44, 44]);
   });
 });
+
+describe("phase 4 rules", () => {
+  it("draws the bars that are not the peak in the red that keeps 3:1, and the peak bright", () => {
+    expect(declaration(rule(".chart-bar"), "fill")).toBe("var(--red-mid)");
+    expect(declaration(rule(".chart-bar.peak"), "fill")).toBe("var(--red-hi)");
+  });
+
+  it("caps the calendar's column stagger so a year takes at most --dur-hero", () => {
+    const cells = rule(".cal-year.in .cal-grid .cal-cell");
+    expect(declaration(cells, "animation")).toBe("cell-in var(--dur-ui) var(--ease-out) backwards");
+    // 53 week columns at most: the last starts at --dur-hero minus its own --dur-ui.
+    expect(declaration(cells, "animation-delay")).toBe("calc(var(--w, 0) * (var(--dur-hero) - var(--dur-ui)) / 53)");
+  });
+
+  it("reuses the map's scan line for every wait, with the same keyframes", () => {
+    expect(declaration(rule(".scan-line"), "animation")).toBe("scan calc(var(--dur-hero) * 2) var(--ease-in-out) infinite");
+    expect(css.match(/@keyframes\s+scan\b/g)).toHaveLength(1);
+    expect(rule(".map-scan,\n.scan-box")).toMatch(/overflow:\s*hidden/);
+  });
+
+  it("never leaves revealed content hidden when printing or without scripting", () => {
+    const print = block("@media print");
+    const shown = rule(".rv,\n  .sec-head .sec-tag,\n  .sec-head .ln-in,\n  .cal-cell,\n  .card-canvas", print);
+    expect([declaration(shown, "opacity"), declaration(shown, "transform")]).toEqual(["1 !important", "none !important"]);
+    const noScript = rule(".rv", block("@media (scripting: none)"));
+    expect([declaration(noScript, "opacity"), declaration(noScript, "transform")]).toEqual(["1", "none"]);
+  });
+
+  it("starts the section tag close enough that it never leaves the page on a phone", () => {
+    expect(declaration(rule(".sec-head .sec-tag"), "transform")).toBe("translateX(-12px)");
+    expect(block("@keyframes tag-in")).toMatch(/translateX\(-12px\)/);
+  });
+});
