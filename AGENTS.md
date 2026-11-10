@@ -44,8 +44,12 @@ npm run build   # typecheck + vite build + publication checks on dist/
 ## Process
 
 - Small pull requests against `main`; CI (lint, tests, build) must be green
-  and an independent reviewer agent must have looked at the change before a
-  merge. No direct pushes to `main`.
+  and an independent reviewer must have looked at the change before a
+  merge: PullBeacon (comment `@pullbeacon review` on the PR; review only,
+  `.pullbeacon.yml`) reads the diff, and a browser check at phone and desktop
+  widths covers what it cannot see. Changes to privacy, data or sign-in code
+  also get a reviewer agent that runs the tests and breaks the code on
+  purpose. No direct pushes to `main`.
 - Every new test must be seen failing once with broken data before it counts.
 - A green test against a fake proves the contract as we read it, not that
   the real service behaves that way. Say which one you ran.

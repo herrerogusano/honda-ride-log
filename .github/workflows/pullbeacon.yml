@@ -1,0 +1,48 @@
+# PullBeacon reviews a pull request when someone with write access comments
+# "@pullbeacon review" on it. Review only: it never changes code here.
+#
+# Security model (PullBeacon's SECURITY.md):
+# - issue_comment runs this workflow from the default branch, never from the PR.
+# - Nothing from the PR is checked out, installed, built or executed.
+# - Commands require write access, verified through the GitHub API before any model call.
+# - The configuration is read from the PR's base branch (.pullbeacon.yml).
+name: PullBeacon
+
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull request number to review
+        required: true
+
+permissions: {}
+
+concurrency:
+  group: >-
+    pullbeacon-${{ github.event_name == 'issue_comment'
+    && format('comment-{0}', github.event.comment.id)
+    || format('pr-{0}', inputs.pr_number) }}
+  cancel-in-progress: false
+
+jobs:
+  review:
+    # Cheap pre-filter only; PullBeacon re-checks permissions through the API.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request &&
+       contains(github.event.comment.body, '@pullbeacon') &&
+       github.event.comment.user.type != 'Bot' &&
+       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: herrerogusano/pullbeacon@2e7a19478220ca19f28157b64be5775b5cf8a3d2 # v0.3.0
+        with:
+          mode: review
+          automatic-review: "false"
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
