@@ -12,6 +12,7 @@ const sealedImport = (name, where) => ({
 });
 const ROUTE_ID_SEAL = sealedImport("serviceRouteId", "the code that requests a route detail, in src/service/");
 const TRACE_SEAL = sealedImport("untrimmedLines", "the trim function in src/domain/trim.ts");
+const PLACES_SEAL = sealedImport("sensitivePlaces", "the trim function in src/domain/trim.ts");
 
 export default tseslint.config(
   { ignores: ["dist/", "node_modules/", "coverage/"] },
@@ -52,13 +53,17 @@ export default tseslint.config(
           selector: "ImportExpression",
           message: "No dynamic imports: they slip past the import rules that guard the privacy seals.",
         },
+        {
+          selector: "MemberExpression[object.type='MetaProperty'][property.name=/^glob/]",
+          message: "No import.meta.glob: it loads modules past the import rules that guard the privacy seals.",
+        },
       ],
-      "no-restricted-imports": ["error", { patterns: [ROUTE_ID_SEAL, TRACE_SEAL] }],
+      "no-restricted-imports": ["error", { patterns: [ROUTE_ID_SEAL, TRACE_SEAL, PLACES_SEAL] }],
     },
   },
   {
     files: ["src/service/**"],
-    rules: { "no-restricted-imports": ["error", { patterns: [TRACE_SEAL] }] },
+    rules: { "no-restricted-imports": ["error", { patterns: [TRACE_SEAL, PLACES_SEAL] }] },
   },
   {
     files: ["src/domain/trim.ts"],
