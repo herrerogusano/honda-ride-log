@@ -29,7 +29,7 @@ export function isDemoScenario(value: string): value is DemoScenario {
  * `#demo=heavy`. Null when the fragment does not ask for the demo.
  */
 export function scenarioFromHash(hash: string): DemoScenario | null {
-  const match = /^#demo(?:=([a-z]+))?$/.exec(hash);
+  const match = /^#demo(?:=([a-z]*))?$/.exec(hash);
   if (match === null) return null;
   const name = match[1];
   if (name === undefined) return "commuter";
