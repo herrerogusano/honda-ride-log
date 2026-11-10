@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createDemoService } from "../src/demo/fakeService";
 import { generateRider } from "../src/demo/generator";
-import { formatDateLong, formatDuration, formatKm, formatTime } from "../src/domain/format";
+import { formatDateLong, formatDuration, formatEndTime, formatInferred, formatKm, formatSpeed, formatTime } from "../src/domain/format";
 import type { LatLng, TraceLine } from "../src/domain/model";
 import { distanceMeters } from "../src/domain/trim";
 import { ToolCallError, type RawRouteDetail, type ToolCaller, type ToolName } from "../src/service/contract";
@@ -307,14 +307,23 @@ describe("Mapa tab", () => {
     expect(button("Ruta siguiente").disabled).toBe(true);
   });
 
-  it("writes the date, the start, the km and the duration of the open route", async () => {
+  it("writes the date and every figure of the open route", async () => {
     const h = await harness();
     const route = h.data.routes[5] as RiderData["routes"][number];
     expect(button("Ruta siguiente").parentElement?.hidden).toBe(true);
     h.view.open(route);
     expect(document.querySelector(".map-view .lead")?.textContent).toBe(
-      `Salida a las ${formatTime(route.startMs)} · ${formatKm(route.distanceKm)} · ${formatDuration(route.durationS)}`,
+      [
+        `Salida: ${formatTime(route.startMs)}`,
+        `Llegada: ${formatEndTime(route.startMs, route.endMs)}`,
+        `Duración: ${formatDuration(route.durationS)}`,
+        formatKm(route.distanceKm),
+        `Vel. media: ${formatSpeed(route.averageSpeed)}`,
+        `Vel. máxima: ${formatSpeed(route.maxSpeed)}`,
+        `Tramos inferidos: ${formatInferred(route.hasInferredSegments)}`,
+      ].join(" · "),
     );
+    expect(route.maxSpeed).not.toBeNull();
     await vi.waitFor(() => expect(h.shown.length).toBe(1));
     expect(text()).not.toContain("Cargando el recorrido");
   });

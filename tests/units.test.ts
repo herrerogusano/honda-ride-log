@@ -210,6 +210,20 @@ describe("selectRoutes", () => {
     expect(kms(selectRoutes(list, "", "km_asc"))).toEqual(["2026-03-14:10", "2026-03-07:30", "2026-04-01:30", "2025-03-01:50"]);
   });
 
+  it("orders by maximum speed, fastest first, a tie oldest first and an unknown one last", () => {
+    const fast = rides([
+      { start: "2026-03-07T10:00:00-08:00", km: 1, maxSpeed: 80 },
+      { start: "2026-03-08T10:00:00-07:00", km: 2, maxSpeed: null },
+      { start: "2026-03-09T10:00:00-07:00", km: 3, maxSpeed: 95 },
+      { start: "2026-03-10T10:00:00-07:00", km: 4, maxSpeed: 80 },
+      { start: "2026-03-11T10:00:00-07:00", km: 5, maxSpeed: 0 },
+      { start: "2025-03-01T10:00:00-08:00", km: 6, maxSpeed: 80 },
+    ]);
+    const byKm = (routes: readonly { distanceKm: number }[]): number[] => routes.map((route) => route.distanceKm);
+    expect(byKm(selectRoutes(fast, "", "max_speed_desc"))).toEqual([3, 6, 1, 4, 5, 2]);
+    expect(byKm(selectRoutes(fast, "marzo 2026", "max_speed_desc"))).toEqual([3, 1, 4, 5, 2]);
+  });
+
   it("filters by the date text and leaves the given list untouched", () => {
     expect(kms(selectRoutes(list, "marzo 2026", "date_asc"))).toEqual(["2026-03-07:30", "2026-03-14:10"]);
     expect(selectRoutes(list, "diciembre", "date_asc")).toEqual([]);

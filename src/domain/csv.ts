@@ -1,18 +1,28 @@
 /**
  * CSV export of the routes on screen, with the same columns as the list:
- * date, start time, duration, km and average speed. It has no identifiers
- * and no coordinates: a `Route` carries neither in readable form.
+ * date, start and end time, duration, km, average and maximum speed and the
+ * inferred-segments label. It has no identifiers and no coordinates: a
+ * `Route` carries neither in readable form.
  *
  * The format is the one a Spanish spreadsheet opens directly: semicolons,
  * decimal commas, CRLF line ends and a byte order mark.
  */
-import { formatIsoDate, formatTime } from "./format";
+import { formatEndTime, formatIsoDate, formatTime } from "./format";
 import type { Route } from "./model";
 
 /** Byte order mark: tells a spreadsheet the file is UTF-8. Built from its code so no invisible character sits in the source. */
 const BOM = String.fromCharCode(0xfeff);
 
-export const CSV_HEADER =["Fecha", "Hora de salida", "Duración (min)", "Km", "Velocidad media (km/h)"] as const;
+export const CSV_HEADER = [
+  "Fecha",
+  "Hora de salida",
+  "Hora de llegada",
+  "Duración (min)",
+  "Km",
+  "Velocidad media (km/h)",
+  "Velocidad máxima (km/h)",
+  "Tramos inferidos",
+] as const;
 
 /**
  * One cell, safe for a spreadsheet: a text starting with `=`, `+`, `-`, `@`,
@@ -37,9 +47,12 @@ export function routesToCsv(routes: readonly Route[]): string {
     rows.push([
       formatIsoDate(route.startMs),
       formatTime(route.startMs),
+      route.endMs === null ? "" : formatEndTime(route.startMs, route.endMs),
       route.durationS === null ? "" : String(Math.round(route.durationS / 60)),
       decimal(route.distanceKm, 2),
       route.averageSpeed === null ? "" : decimal(route.averageSpeed, 1),
+      route.maxSpeed === null ? "" : decimal(route.maxSpeed, 1),
+      route.hasInferredSegments === null ? "" : route.hasInferredSegments ? "Sí" : "No",
     ]);
   }
   return rowsToCsv(rows);

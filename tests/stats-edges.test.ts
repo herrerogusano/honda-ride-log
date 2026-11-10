@@ -140,6 +140,6 @@ describe("CSV, edge cases", () => {
 
   it("rounds minutes to the nearest, like the list on screen", () => {
     const csv = routesToCsv(rides([{ start: "2026-03-07T10:00:00-08:00", km: 5, minutes: 1.6, speed: 30 }]));
-    expect(csv.split("\r\n")[1]).toBe("2026-03-07;10:00;2;5,00;30,0");
+    expect(csv.split("\r\n")[1]).toBe("2026-03-07;10:00;10:01;2;5,00;30,0;60,0;No");
   });
 });

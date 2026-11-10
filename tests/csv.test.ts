@@ -36,17 +36,18 @@ describe("routesToCsv", () => {
   it("writes the list columns in local time, for a Spanish spreadsheet", () => {
     const csv = routesToCsv(
       rides([
-        // 23:30 on Saturday 7 March in Los Angeles; 8 March in UTC.
-        { start: "2026-03-07T23:30:00-08:00", km: 8.257, minutes: 25, speed: 31 },
-        { start: "2026-03-09T07:05:00-07:00", km: 120, minutes: null, speed: null },
-        { start: "2026-03-10T10:00:00-07:00", km: 0.3, minutes: 1.4, speed: 12.345 },
+        // 23:30 on Saturday 7 March in Los Angeles; 8 March in UTC. It ends after midnight.
+        { start: "2026-03-07T23:30:00-08:00", km: 8.257, minutes: 45, speed: 31, maxSpeed: 64.25, inferred: true },
+        { start: "2026-03-09T07:05:00-07:00", km: 120, minutes: null, speed: null, maxSpeed: null, inferred: null },
+        { start: "2026-03-10T10:00:00-07:00", km: 0.3, minutes: 1.4, speed: 12.345, maxSpeed: 0, inferred: false },
       ]),
     );
     expect(csv).toBe(
-      BOM + "Fecha;Hora de salida;Duración (min);Km;Velocidad media (km/h)\r\n" +
-        "2026-03-07;23:30;25;8,26;31,0\r\n" +
-        "2026-03-09;07:05;;120,00;\r\n" +
-        "2026-03-10;10:00;1;0,30;12,3\r\n",
+      BOM +
+        "Fecha;Hora de salida;Hora de llegada;Duración (min);Km;Velocidad media (km/h);Velocidad máxima (km/h);Tramos inferidos\r\n" +
+        "2026-03-07;23:30;00:15 (+1 día);45;8,26;31,0;64,3;Sí\r\n" +
+        "2026-03-09;07:05;;;120,00;;;\r\n" +
+        "2026-03-10;10:00;10:01;1;0,30;12,3;0,0;No\r\n",
     );
   });
 
@@ -66,7 +67,7 @@ describe("routesToCsv", () => {
     expect(csv).not.toContain(FORBIDDEN_MARK);
     expect(csv).not.toContain(String(DEMO_BASE[0]).slice(0, 5));
     for (const line of lines.slice(1)) {
-      expect(line).toMatch(/^\d{4}-\d{2}-\d{2};\d{2}:\d{2};\d*;\d+,\d{2};(\d+,\d)?$/);
+      expect(line).toMatch(/^\d{4}-\d{2}-\d{2};\d{2}:\d{2};(\d{2}:\d{2}( \(\+\d+ días?\))?)?;\d*;\d+,\d{2};(\d+,\d)?;(\d+,\d)?;(Sí|No)?$/);
     }
   });
 });
