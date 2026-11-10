@@ -45,9 +45,49 @@ export function startApp(options: AppOptions): App {
   /** Each load gets a number; a load that is no longer the latest stops drawing. */
   let generation = 0;
 
-  const banner = el("div", { class: "demo-banner", attrs: { role: "note" } });
+  /** The demo scenario on screen, or null outside the demo. */
+  let scenarioShown: DemoScenario | null = null;
+
+  // The banner and its selector are built once and kept: rebuilding them on
+  // every change would throw the keyboard focus away.
+  const scenarioId = uniqueId("scenario");
+  const scenarioSelect = el(
+    "select",
+    { id: scenarioId },
+    ...DEMO_SCENARIOS.map((one) => el("option", { attrs: { value: one.id } }, one.label)),
+  );
+  scenarioSelect.addEventListener("change", () => {
+    if (isDemoScenario(scenarioSelect.value)) void startDemo(scenarioSelect.value);
+  });
+  const banner = el(
+    "div",
+    { class: "demo-banner", attrs: { role: "note" } },
+    el("p", {}, el("strong", {}, "Modo demo: datos de ejemplo. "), "Nada de lo que ves aquí viene de una moto ni de una cuenta real."),
+    el(
+      "div",
+      { class: "demo-controls" },
+      el("label", { attrs: { for: scenarioId } }, "Escenario"),
+      scenarioSelect,
+      el(
+        "button",
+        {
+          class: "button button-quiet",
+          attrs: { type: "button" },
+          on: {
+            click: () => {
+              showLanding();
+              // The button that was pressed is gone: leave the focus on the way back in.
+              content.querySelector("button")?.focus();
+            },
+          },
+        },
+        "Salir de la demo",
+      ),
+    ),
+  );
   banner.hidden = true;
-  const content = el("div", { class: "content" });
+  // Focusable by script only, to move the focus to what a button just replaced.
+  const content = el("div", { class: "content", attrs: { tabindex: -1 } });
   clear(root);
   root.append(
     el("header", { class: "topbar" }, el("h1", { class: "brand" }, el("span", { class: "brand-mark", attrs: { "aria-hidden": "true" } }), "Ride Log")),
@@ -57,8 +97,8 @@ export function startApp(options: AppOptions): App {
 
   function showLanding(): void {
     generation += 1;
+    scenarioShown = null;
     banner.hidden = true;
-    clear(banner);
     setHash("");
     clear(content);
     content.append(
@@ -81,35 +121,20 @@ export function startApp(options: AppOptions): App {
         el("p", {}, "El acceso con tu cuenta todavía no está disponible. Mientras tanto puedes ver cómo funciona con datos de ejemplo."),
         el(
           "button",
-          { class: "button button-primary", attrs: { type: "button" }, on: { click: () => void startDemo("commuter") } },
+          {
+            class: "button button-primary",
+            attrs: { type: "button" },
+            on: {
+              click: () => {
+                void startDemo("commuter");
+                content.focus();
+              },
+            },
+          },
           "Ver la demo",
         ),
       ),
     );
-  }
-
-  function showDemoBanner(scenario: DemoScenario): void {
-    const selectId = uniqueId("scenario");
-    const select = el(
-      "select",
-      { id: selectId },
-      ...DEMO_SCENARIOS.map((one) => el("option", { attrs: { value: one.id, selected: one.id === scenario } }, one.label)),
-    );
-    select.addEventListener("change", () => {
-      if (isDemoScenario(select.value)) void startDemo(select.value);
-    });
-    clear(banner);
-    banner.append(
-      el("p", {}, el("strong", {}, "Modo demo: datos de ejemplo. "), "Nada de lo que ves aquí viene de una moto ni de una cuenta real."),
-      el(
-        "div",
-        { class: "demo-controls" },
-        el("label", { attrs: { for: selectId } }, "Escenario"),
-        select,
-        el("button", { class: "button button-quiet", attrs: { type: "button" }, on: { click: showLanding } }, "Salir de la demo"),
-      ),
-    );
-    banner.hidden = false;
   }
 
   function errorPanel(error: LoadError, retry: () => void): HTMLElement {
@@ -120,7 +145,20 @@ export function startApp(options: AppOptions): App {
       el("h2", {}, text.title),
       el("p", {}, text.explanation),
       el("p", {}, "Código: ", el("code", {}, text.code)),
-      el("button", { class: "button", attrs: { type: "button" }, on: { click: retry } }, "Reintentar"),
+      el(
+        "button",
+        {
+          class: "button",
+          attrs: { type: "button" },
+          on: {
+            click: () => {
+              retry();
+              content.focus();
+            },
+          },
+        },
+        "Reintentar",
+      ),
     );
   }
 
@@ -164,7 +202,12 @@ export function startApp(options: AppOptions): App {
     const mine = generation;
     const current = (): boolean => mine === generation;
     const retry = (): void => void load(caller, loadOptions);
-    if (!loadOptions.demo) banner.hidden = true;
+    if (!loadOptions.demo) {
+      // A real account: nothing of the demo may stay on screen or in the address.
+      scenarioShown = null;
+      banner.hidden = true;
+      if (scenarioFromHash(location.hash) !== null) setHash("");
+    }
     const progress = el("p", { class: "loading", attrs: { role: "status" } }, "Leyendo el estado de la moto…");
     clear(content);
     content.append(progress);
@@ -197,12 +240,17 @@ export function startApp(options: AppOptions): App {
     }
     if (!current()) return;
 
-    progress.textContent = "Cargando rutas…";
+
     try {
-      const routes = await loadAllRoutes(caller, now(), (step) => {
-        if (!current()) return;
-        progress.textContent = `Cargando rutas de ${step.year}… ${formatNumber(step.loaded)} hasta ahora.`;
-      });
+      // A load that was replaced stops asking the service, not only drawing.
+      const routes = await loadAllRoutes(
+        caller,
+        now(),
+        (step) => {
+          progress.textContent = `Cargando rutas de ${step.year}… ${formatNumber(step.loaded)} hasta ahora.`;
+        },
+        current,
+      );
       if (!current()) return;
       showLoaded(buildRiderData(vehicle, info, routes, loadOptions.demo, now()), caller, warnings);
     } catch (error) {
@@ -215,9 +263,17 @@ export function startApp(options: AppOptions): App {
 
   async function startDemo(scenario: DemoScenario): Promise<void> {
     setHash(scenario === "commuter" ? "#demo" : `#demo=${scenario}`);
-    showDemoBanner(scenario);
+    scenarioShown = scenario;
+    scenarioSelect.value = scenario;
+    banner.hidden = false;
     await load(createDemoCaller(scenario, now(), options.demoDelayMs ?? 120), { demo: true });
   }
+
+  // Typing or following `#demo=...` on an open page changes the scenario too.
+  window.addEventListener("hashchange", () => {
+    const wanted = scenarioFromHash(location.hash);
+    if (wanted !== null && wanted !== scenarioShown) void startDemo(wanted);
+  });
 
   const fromHash = scenarioFromHash(location.hash);
   if (fromHash === null) showLanding();

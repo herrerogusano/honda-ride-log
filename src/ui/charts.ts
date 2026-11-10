@@ -31,13 +31,20 @@ const RIGHT = 8;
 const TOP = 12;
 const BOTTOM = 26;
 
-/** The smallest "round" number not below `value`, for the top of the axis. */
-export function niceMax(value: number): number {
-  if (!(value > 0)) return 1;
-  const power = 10 ** Math.floor(Math.log10(value));
-  const scaled = value / power;
-  const step = [1, 2, 2.5, 5, 10].find((candidate) => candidate >= scaled - 1e-9) ?? 10;
-  return step * power;
+/**
+ * Values to label on the axis: from 0 up to the first one that reaches
+ * `peak`, in whole steps of 1, 2 or 5 times a power of ten, at most five
+ * steps. Whole steps, so that a label printed without decimals says exactly
+ * where its line is (the charts show counts and whole km).
+ */
+export function axisTicks(peak: number): number[] {
+  if (!(peak > 0)) return [0, 1];
+  let power = 1;
+  while (peak / (5 * power) > 5) power *= 10;
+  const step = ([1, 2, 5].find((candidate) => peak / (candidate * power) <= 5) as number) * power;
+  const ticks: number[] = [];
+  for (let value = 0; value < peak + step; value += step) ticks.push(value);
+  return ticks;
 }
 
 export function barChart(options: BarChartOptions): HTMLElement {
@@ -46,7 +53,8 @@ export function barChart(options: BarChartOptions): HTMLElement {
   const WIDTH = options.compact === true ? 440 : 720;
   const HEIGHT = options.compact === true ? 230 : 250;
   const peak = Math.max(0, ...series.flatMap((one) => one.values));
-  const top = niceMax(peak);
+  const ticks = axisTicks(peak);
+  const top = ticks[ticks.length - 1] as number;
   const plotWidth = WIDTH - LEFT - RIGHT;
   const plotHeight = HEIGHT - TOP - BOTTOM;
   const band = plotWidth / Math.max(1, categories.length);
@@ -75,12 +83,11 @@ export function barChart(options: BarChartOptions): HTMLElement {
     svg("desc", { id: descId }, summary),
   );
 
-  for (const fraction of [0, 0.25, 0.5, 0.75, 1]) {
-    const value = top * fraction;
+  for (const value of ticks) {
     const lineY = y(value);
     drawing.append(
-      svg("line", { class: fraction === 0 ? "chart-base" : "chart-grid", attrs: { x1: LEFT, x2: WIDTH - RIGHT, y1: lineY, y2: lineY } }),
-      svg("text", { class: "chart-tick", attrs: { x: LEFT - 6, y: lineY + 4, "text-anchor": "end" } }, formatValue(value)),
+      svg("line", { class: value === 0 ? "chart-base" : "chart-grid", attrs: { x1: LEFT, x2: WIDTH - RIGHT, y1: lineY, y2: lineY } }),
+      svg("text", { class: "chart-tick chart-tick-y", attrs: { x: LEFT - 6, y: lineY + 4, "text-anchor": "end" } }, formatValue(value)),
     );
   }
 
