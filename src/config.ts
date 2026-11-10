@@ -2,6 +2,9 @@
  * Product choices the owner may still change (docs/PLAN.md, "Preguntas
  * abiertas"). Each one is a single switch so that changing the answer is a
  * one-line edit plus its test.
+ *
+ * The service a build talks to is not here: it lives in
+ * `environments.config.json`, read by `src/service/environment.ts`.
  */
 
 /**

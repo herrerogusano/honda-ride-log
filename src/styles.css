@@ -140,6 +140,16 @@ code {
   text-transform: uppercase;
 }
 
+.sign-out {
+  margin-left: auto;
+}
+
+.landing-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
 .brand-mark {
   width: 16px;
   height: 20px;

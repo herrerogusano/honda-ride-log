@@ -35,7 +35,7 @@ function mount(hash = ""): App {
   document.body.append(root);
   // jsdom cannot lay out a real map: the Mapa tab gets a surface that draws nothing.
   const surface = { show: () => undefined, clear: () => undefined, resize: () => undefined, destroy: () => undefined };
-  return startApp({ root, now: () => NOW, demoDelayMs: 0, createMap: (data, caller) => createMapView(data, caller, () => surface) });
+  return startApp({ root, now: () => NOW, demoDelayMs: 0, createMap: (data, caller, options) => createMapView(data, caller, options, () => surface) });
 }
 
 const page = (): string => new XMLSerializer().serializeToString(document);

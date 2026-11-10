@@ -16,16 +16,30 @@ import {
   serviceRouteId,
   ShapeError,
 } from "../domain/sanitize";
+import { AuthError, type AuthErrorKind } from "../auth/login";
 import { ToolCallError, type ToolCaller } from "./contract";
-
-/** The step of the load that failed. Each one has its own visible error code. */
-export type LoadStep = "status" | "details" | "routes" | "detail";
+import { ServiceError, type ServiceErrorKind } from "./mcpClient";
 
 /**
- * What went wrong, in closed terms. Phase 3 adds the kinds only a real
- * client can produce (missing configuration, login, network, 401, 403).
+ * The step that failed. Each one has its own visible error code. `login` is
+ * the way into the account: going to the login page or coming back from it.
  */
-export type FailureKind = "tool_error" | "unexpected_shape" | "too_many_routes" | "cancelled" | "unknown";
+export type LoadStep = "login" | "status" | "details" | "routes" | "detail";
+
+/**
+ * What went wrong, in closed terms. The first five can happen with any
+ * caller, the demo included; the sign-in kinds (`AuthErrorKind`) and the
+ * transport kinds of the real `/mcp` client (`ServiceErrorKind`) keep their
+ * own names (docs/PLAN.md, section 10, "Errores").
+ */
+export type FailureKind =
+  | "tool_error"
+  | "unexpected_shape"
+  | "too_many_routes"
+  | "cancelled"
+  | "unknown"
+  | AuthErrorKind
+  | ServiceErrorKind;
 
 /**
  * A failed load step. `detail` is safe to show: the service's error code, the
@@ -47,6 +61,11 @@ export class LoadError extends Error {
 
 const SAFE_CODE = /^[a-z][a-z0-9_]{0,63}$/;
 const SAFE_NAME = /^[A-Za-z][A-Za-z0-9]{0,63}$/;
+/** An HTTP status or a JSON-RPC error code, as the `/mcp` client reports them. */
+const SAFE_NUMBER = /^-?[0-9]{1,6}$/;
+
+const safeDetail = (detail: string | null): string | null =>
+  detail !== null && (SAFE_CODE.test(detail) || SAFE_NUMBER.test(detail)) ? detail : null;
 
 function toLoadError(step: LoadStep, error: unknown): LoadError {
   if (error instanceof LoadError) return error;
@@ -54,10 +73,19 @@ function toLoadError(step: LoadStep, error: unknown): LoadError {
     // The code comes from the service: show it only if it looks like a code.
     return new LoadError(step, "tool_error", SAFE_CODE.test(error.code) ? error.code : null);
   }
+  // Both carry a closed kind and a detail that is already a short code; the
+  // detail is filtered again by its form, in case a later change slips a
+  // value into it.
+  if (error instanceof AuthError || error instanceof ServiceError) return new LoadError(step, error.kind, safeDetail(error.detail));
   if (error instanceof ShapeError) return new LoadError(step, "unexpected_shape", error.path);
   // Messages of unknown errors may quote data or addresses: keep the class name only.
   const name = error instanceof Error ? error.name : "";
   return new LoadError(step, "unknown", SAFE_NAME.test(name) ? name : null);
+}
+
+/** A failure on the way into the account (`startLogin`, `completeLogin`), as a visible error. */
+export function signInError(error: unknown): LoadError {
+  return toLoadError("login", error);
 }
 
 async function step<T>(name: LoadStep, run: () => Promise<T>): Promise<T> {

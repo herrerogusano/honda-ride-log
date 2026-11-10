@@ -365,6 +365,9 @@ Cómo quedó en la fase 2 (`src/service/loader.ts`):
 
 ### Para la fase 3
 
+Hecho al conectar (apartado 10, «Cómo se conecta con la interfaz» y
+«Errores»). Se conserva como lo dejó la fase 2.
+
 - La puerta es `App.load(caller, { demo: false })` en `src/ui/app.ts`: tras
   el login se construye un `ToolCaller` y se llama. El resto (carga,
   pestañas, mapa, errores) no cambia. Hoy `src/main.ts` no guarda el objeto
@@ -468,7 +471,7 @@ política de seguridad de contenido, tal como se publicará: `npm run build`,
 | `src/demo/` | Generador de datos sintéticos con semilla, servicio de demo en memoria y los escenarios de la demo. |
 | `tests/` | Tests. Los de interfaz (`app`, `map`, `charts`) corren en jsdom, que no es un navegador: sin maquetación, sin canvas, sin política de seguridad de contenido. |
 | `csp.config.json` | La política de seguridad de contenido y la de referencia. |
-| `environments.config.json`, `src/auth/`, `src/service/environment.ts`, `src/service/mcpClient.ts` | Fase 3: entornos, login y cliente de `/mcp` (apartado 10). |
+| `environments.config.json`, `src/auth/`, `src/service/environment.ts`, `src/service/mcpClient.ts`, `src/boot.ts` | Fase 3: entornos, login, cliente de `/mcp` y su unión con la página (apartado 10). `src/config.ts` y `src/service/environment.ts` conviven: el primero guarda decisiones de producto, el segundo el servicio de cada build. |
 | `vite.config.ts` | Build, ruta base de Pages e inyección de la política. |
 | `scripts/check-dist.mjs` | Comprobaciones de publicación sobre `dist/index.html`. |
 | `.github/workflows/` | `ci.yml` y `pages.yml` (no hace nada mientras el repo sea privado). |
@@ -632,9 +635,10 @@ servicio, usando la dirección de retorno de `localhost`.
 
 ## 10. Fase 3: login y cliente de `/mcp`
 
-Escrito el 2026-11-10. Los módulos están hechos y probados contra un
-servidor falso; **todavía no están conectados con la interfaz** (eso es de
-una fase posterior) y nada se ha probado contra el servicio real.
+Escrito el 2026-11-10. Los módulos están hechos, **conectados con la
+interfaz** (apartado «Cómo se conecta con la interfaz») y probados contra un
+servidor falso. Nada se ha probado contra el servicio real: no hay nada
+desplegado.
 
 | Ruta | Qué hay |
 |---|---|
@@ -645,7 +649,9 @@ una fase posterior) y nada se ha probado contra el servicio real.
 | `src/auth/session.ts` | El token de acceso, en una variable cerrada. |
 | `src/auth/login.ts` | Ida al login, vuelta, canje del código y cierre de sesión. |
 | `src/service/mcpClient.ts` | El `ToolCaller` real. |
+| `src/boot.ts` | La unión con la página: vuelta del login, botones «Entrar» y «Salir», carga de la cuenta. `src/main.ts` solo lo llama. |
 | `tests/fakeServer.ts` | Login y `/mcp` falsos detrás de una función `fetch`. |
+| `tests/boot.test.ts`, `tests/sign-in-errors.test.ts` | La unión con la página, en jsdom contra el servidor falso, y los textos y acciones de cada error. |
 
 ### Configuración por entorno
 
@@ -761,49 +767,76 @@ Ningún mensaje lleva el token, el código de autorización, una dirección,
 un cuerpo de respuesta ni un mensaje del servicio. `detail` es nulo o un
 código corto.
 
-| Clase y `kind` | Cuándo | Qué debería decir la interfaz |
-|---|---|---|
-| `AuthError` `config_missing` | Build sin servicio | Solo demo |
-| `AuthError` `storage_unavailable` | `sessionStorage` bloqueado | El navegador no permite entrar (modo privado estricto) |
-| `AuthError` `state_mismatch` | Vuelta sin login pendiente, caducado o con otro `state` | Vuelve a entrar |
-| `AuthError` `login_failed` | El login devolvió `error=` (por ejemplo `access_denied`) | No se ha podido entrar |
-| `AuthError` `token_exchange` | El canje respondió con error (`invalid_grant`, `http_502`...) | No se ha podido entrar |
-| `AuthError` `token_network` | El canje no llegó (red o CORS) | No se ha podido conectar con el login |
-| `ServiceError` `reauth_required` | Token caducado, 401 o red tras entrar, o cualquier llamada después de que la sesión terminara (`detail`: `expired`, `unauthorized`, `network`, `forbidden` o `signed_out`) | Vuelve a entrar, sin botón de reintentar |
-| `ServiceError` `forbidden` | 403 | Tu cuenta no tiene acceso |
-| `ServiceError` `rate_limited` | 429 | Espera un momento |
-| `ServiceError` `http_status` | Otro estado HTTP (`detail`: el número) | Error del servicio |
-| `ServiceError` `timeout` | Sin respuesta en 20 s | El servicio tarda demasiado |
-| `ServiceError` `bad_response` | No es JSON, no es JSON-RPC, otro `id`, sin `structuredContent` | Respuesta inesperada |
-| `ServiceError` `rpc_error` | Error JSON-RPC (`detail`: su código numérico) | Error del servicio |
-| `ServiceError` `not_allowed` | Herramienta fuera de la lista o argumentos raros | Fallo de la web (no debería verse) |
-| `ToolCallError` | La herramienta respondió con error | Como en la demo |
+| Clase y `kind` | Cuándo | Qué dice la interfaz | Botón |
+|---|---|---|---|
+| `AuthError` `config_missing` | Build sin servicio | Solo está disponible la demo (no debería verse: sin servicio no hay botón de entrar) | Ninguno |
+| `AuthError` `storage_unavailable` | `sessionStorage` bloqueado | El navegador no deja guardar el inicio de sesión (modo privado estricto) | Ninguno |
+| `AuthError` `state_mismatch` | Vuelta sin login pendiente, caducado o con otro `state` | Vuelve a entrar | «Entrar» de la entrada |
+| `AuthError` `login_failed` | El login devolvió `error=` (por ejemplo `access_denied`) | El login no ha dado acceso; vuelve a entrar | «Entrar» de la entrada |
+| `AuthError` `token_exchange` | El canje respondió con error (`invalid_grant`, `http_502`...) | El login no ha entregado un acceso válido; vuelve a entrar | «Entrar» de la entrada |
+| `AuthError` `token_network` | El canje no llegó (red o CORS) | No se ha podido conectar con el login | «Entrar» de la entrada |
+| `ServiceError` `reauth_required` | Token caducado, 401 o red tras entrar, o cualquier llamada después de que la sesión terminara (`detail`: `expired`, `unauthorized`, `network`, `forbidden` o `signed_out`) | Tu sesión ha caducado o el servicio ya no la acepta; vuelve a entrar | «Volver a entrar», nunca «Reintentar» |
+| `ServiceError` `forbidden` | 403 | Tu cuenta no tiene acceso | «Volver a entrar» (la sesión ya terminó) |
+| `ServiceError` `rate_limited` | 429 | Espera un momento | «Reintentar» |
+| `ServiceError` `http_status` | Otro estado HTTP (`detail`: el número) | Error del servicio | «Reintentar» |
+| `ServiceError` `timeout` | Sin respuesta en 20 s | El servicio tarda demasiado | «Reintentar» |
+| `ServiceError` `bad_response` | No es JSON, no es JSON-RPC, otro `id`, sin `structuredContent` | Respuesta inesperada | «Reintentar» |
+| `ServiceError` `rpc_error` | Error JSON-RPC (`detail`: su código numérico) | El servicio ha rechazado la petición | «Reintentar» |
+| `ServiceError` `not_allowed` | Herramienta fuera de la lista o argumentos raros | Fallo de la web (no debería verse) | Ninguno |
+| `ToolCallError` | La herramienta respondió con error | Como en la demo | «Reintentar» |
 
-El cargador de la fase 2 (`src/service/loader.ts`) todavía no conoce
-`AuthError` ni `ServiceError`: hoy los mostraría como `unknown` con el nombre
-de la clase. Hay que ampliar su `FailureKind` y los textos de
-`src/ui/errors.ts` al conectar.
+Cómo quedó al conectar: `FailureKind` (`src/service/loader.ts`) incluye las
+seis clases de `AuthError` y las ocho de `ServiceError` con sus mismos
+nombres, y hay un paso nuevo, `login`, para la ida y la vuelta del login. En
+pantalla se ve, por ejemplo, `login/state_mismatch` o
+`status/reauth_required (unauthorized)`. El cargador vuelve a filtrar el
+`detail` por su forma (un código en minúsculas o un número de hasta seis
+cifras) aunque estas dos clases ya lo traigan limpio. `src/ui/errors.ts` da a
+cada clase un texto y una acción (`retry`, `sign_in` o `none`); el panel de
+error de la página y el de la pestaña Mapa solo ofrecen «Reintentar» con
+`retry`. Un «Reintentar» tras un 401 repetiría la llamada con un token que el
+cliente ya ha olvidado.
 
 ### Cómo se conecta con la interfaz
 
-```ts
-import { browserDeps, completeLogin, logout, startLogin } from "./auth/login";
-import { currentEnvironment } from "./service/environment";
-import { createMcpClient } from "./service/mcpClient";
+`src/main.ts` llama a `boot` (`src/boot.ts`) con `currentEnvironment()` y
+`browserDeps`, y guarda el objeto `App` que devuelve.
 
-const environment = currentEnvironment();
-if (environment.kind === "service") {
-  const deps = browserDeps();
-  // Al cargar la página, antes de pintar nada: quita ?code y ?state.
-  const back = await completeLogin(environment.config, deps);
-  if (back.status === "signed_in") {
-    const caller = createMcpClient(environment.config.mcpUrl, back.session);
-    // app.load(caller, { demo: false });
-  }
-  // Botón «Entrar»: startLogin(environment.config, deps)
-  // Botón «Salir»: logout(environment.config, session, deps)
-}
-```
+1. **Sin servicio** en el modo construido: `startApp` como en la fase 2. La
+   entrada dice que el acceso con cuenta no está disponible y solo ofrece la
+   demo; no hay botón «Entrar» ni se ejecuta nada del login.
+2. **Con servicio**: antes de arrancar la página, `completeLogin`. Si la
+   dirección no es una vuelta del login, no toca nada. Si lo es, quita
+   `?code` y `?state` de la barra de direcciones antes de cualquier otra
+   cosa (también antes de que la página lea el fragmento) y canjea el código;
+   mientras tanto la página dice «Comprobando el acceso…».
+3. Con sesión: `createMcpClient(config.mcpUrl, session)` y
+   `app.load(caller, { demo: false })`. La página arranca con
+   `initialView: "none"`, así que un `#demo` en la dirección de vuelta ni
+   siquiera empieza la demo; `load` lo borra de la dirección.
+4. Si la vuelta falla, la entrada aparece con el panel de error encima
+   (`login/...`) y su botón «Entrar».
+5. **«Entrar»** (en la entrada y, como «Volver a entrar», en los paneles de
+   error que piden sesión nueva): `startLogin`. Si no puede empezar (sin
+   `sessionStorage`), lo dice en la entrada sin salir de la página.
+6. **«Salir»** (arriba a la derecha, solo con una cuenta en pantalla, también
+   con su error): primero `showLanding()`, que sube el número de carga (la
+   carga anterior deja de pedir antes de su siguiente petición:
+   `stillWanted`), suelta el mapa, borra la vista y con ella los datos;
+   después `logout`, que termina la sesión (las peticiones que esperaban en la
+   cola del cliente ya no salen) y borra el login pendiente. Si el build
+   conoce `logoutUri`, además lleva al navegador al `/logout` del login.
+   La petición que ya está en vuelo no se cancela: su respuesta llega y se
+   descarta.
+7. Cambiar de cuenta es salir y volver a entrar: la ida al login abandona la
+   página y con ella la memoria. Un segundo `load` con otro `ToolCaller` en
+   la misma página también deja de pedir con el primero (test).
+8. La pestaña Mapa olvida al soltarse las trazas recortadas que guardaba,
+   también las que llegan tarde.
+
+El token no sale de `src/auth/session.ts` más que como cabecera de cada
+petición: `boot` guarda el objeto de sesión (para `logout`) y el cliente lo
+usa; ni la página ni la dirección lo ven (test).
 
 ### Riesgo de origen compartido en GitHub Pages (decisión del propietario)
 
@@ -834,6 +867,31 @@ las del revisor (por ejemplo, aceptar `http:` en el dominio del login o
 quitar el plazo del canje); se cubrieron con tests nuevos y ahora fallan
 todas. Es una muestra de roturas pensadas por dos agentes, no una prueba de
 que no quede ninguna.
+
+La conexión con la interfaz (`tests/boot.test.ts`) corre en jsdom con el
+mismo servidor falso detrás: entrada sin servicio, ida y vuelta del login,
+`#demo` a la vuelta y escrito después, vuelta con otro `state`, canje sin
+red, 401, 403 y red caída tras entrar, token que caduca a mitad de la carga,
+fallo del recorrido de una ruta con la sesión terminada, salir con la cuenta
+cargada y a mitad de carga, otra cuenta a mitad de carga y salir con
+`logoutUri`. Se vieron fallar con 36 roturas del implementador, una cada
+vez, sobre `app.ts`, `boot.ts`, `loader.ts`, `errors.ts`, `mapView.ts`, la
+política de seguridad y las dos excepciones de almacenamiento: las 36
+fallaron. jsdom no es un navegador: no navega de verdad (la ida al login se
+anota en una lista), no aplica la política de seguridad ni CORS.
+
+En un navegador de verdad (Chromium, build de producción sin servicio y
+`vite preview`, 2026-11-10): la entrada solo ofrece «Ver la demo», la
+política sigue con `connect-src 'self'`, la demo abre las tres pestañas, el
+mapa carga teselas de `tile.openstreetmap.org` con su atribución y dibuja la
+ruta, `#demo=heavy` cambia el escenario y «Salir de la demo» vuelve a la
+entrada; ninguna infracción de la política registrada desde que se abrió la
+página (el escuchador se puso tras la primera carga; el HTML inicial lo
+vigila `scripts/check-dist.mjs`). Un build con valores sintéticos
+(`example.test`) dio `connect-src 'self' https://api.example.test
+https://login.example.test` y pasó `check-dist.mjs`; no se abrió en el
+navegador porque no hay servicio al que llamar. **El login real no se ha
+probado: no hay nada desplegado.**
 
 No demuestran: que Cognito acepte este cliente, el parámetro `resource` o la
 dirección de retorno; que `/oauth2/token` y `/mcp` respondan con CORS a un
