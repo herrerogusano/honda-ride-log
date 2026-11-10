@@ -108,6 +108,9 @@ describe("demo scenarios", () => {
     expect(scenarioFromHash("#demo=empty")).toBe("empty");
     expect(scenarioFromHash("#demo=error")).toBe("error");
     expect(scenarioFromHash("#demo=unknown")).toBe("commuter");
+    expect(scenarioFromHash("#demo=")).toBe("commuter");
+    expect(scenarioFromHash("#demo&x")).toBeNull();
+    expect(scenarioFromHash("#demo=heavy2")).toBeNull();
     expect(DEMO_SCENARIOS.map((one) => one.id)).toEqual(["commuter", "heavy", "empty", "error"]);
   });
 

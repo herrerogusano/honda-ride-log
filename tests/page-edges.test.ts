@@ -20,8 +20,11 @@ const rider = generateRider({ seed: DEMO_SEED, nowMs: NOW });
 
 let root: HTMLElement;
 const mapCalls: string[] = [];
+let mounted: App | undefined;
 
 function mount(hash = ""): App {
+  // Only one app at a time listens to the address.
+  mounted?.dispose();
   history.replaceState(null, "", hash === "" ? "/" : `/${hash}`);
   document.body.replaceChildren();
   root = document.createElement("main");
@@ -32,7 +35,8 @@ function mount(hash = ""): App {
     open: () => void mapCalls.push("open"),
     shown: () => void mapCalls.push("shown"),
   });
-  return startApp({ root, now: () => NOW, demoDelayMs: 0, createMap });
+  mounted = startApp({ root, now: () => NOW, demoDelayMs: 0, createMap });
+  return mounted;
 }
 
 const text = (): string => document.body.textContent ?? "";
@@ -192,6 +196,17 @@ describe("demo controls", () => {
     expect(root.querySelector<HTMLSelectElement>(".demo-banner select")?.value).toBe("empty");
   });
 
+  it("stops following the address once it is disposed of", async () => {
+    const app = mount();
+    app.dispose();
+    history.replaceState(null, "", "/#demo");
+    window.dispatchEvent(new HashChangeEvent("hashchange"));
+    await tick();
+    expect(root.querySelector(".tabs")).toBeNull();
+    expect(root.querySelector(".loading")).toBeNull();
+    expect(text()).toContain("Ver la demo");
+  });
+
   it("does not start again when the address names the scenario already on screen", async () => {
     mount("#demo=heavy");
     await loaded();
@@ -228,6 +243,8 @@ describe("demo controls", () => {
     window.dispatchEvent(new HashChangeEvent("hashchange"));
     await tick();
     expect(root.querySelector(".tabs")).toBe(view);
+    // And the request for the demo does not stay in the address, where a reload would obey it.
+    expect(location.hash).toBe("");
     expect(root.querySelector(".demo-banner")?.hasAttribute("hidden")).toBe(true);
     history.replaceState(null, "", "/");
     window.dispatchEvent(new HashChangeEvent("hashchange"));

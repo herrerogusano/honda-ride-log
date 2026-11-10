@@ -31,6 +31,8 @@ export interface App {
   /** Loads a rider through any caller. Phase 3 calls this after the login. */
   load(caller: ToolCaller, options: { readonly demo: boolean }): Promise<void>;
   showLanding(): void;
+  /** Stops listening to the address and abandons any load in progress. The page keeps what it shows. */
+  dispose(): void;
 }
 
 function setHash(hash: string): void {
@@ -275,21 +277,34 @@ export function startApp(options: AppOptions): App {
   }
 
   // Typing or following `#demo=...` on an open page changes the scenario too.
-  window.addEventListener("hashchange", () => {
+  const onHashChange = (): void => {
     const wanted = scenarioFromHash(location.hash);
     // A real account on screen is never replaced by the demo from the address bar.
-    if (accountShown) return;
+    if (accountShown) {
+      // Nor does the request stay in the address, where a reload would obey it.
+      if (wanted !== null) setHash("");
+      return;
+    }
     if (wanted === null) {
       // The fragment was removed while the demo was on screen: leave the demo.
       if (scenarioShown !== null) showLanding();
       return;
     }
     if (wanted !== scenarioShown) void startDemo(wanted);
-  });
+  };
+  window.addEventListener("hashchange", onHashChange);
 
   const fromHash = scenarioFromHash(location.hash);
   if (fromHash === null) showLanding();
   else void startDemo(fromHash);
 
-  return { startDemo, load, showLanding };
+  return {
+    startDemo,
+    load,
+    showLanding,
+    dispose() {
+      generation += 1;
+      window.removeEventListener("hashchange", onHashChange);
+    },
+  };
 }
