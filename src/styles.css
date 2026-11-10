@@ -728,6 +728,25 @@ h3 {
   border-top-style: dotted;
 }
 
+/* Leaflet draws its zoom buttons at 30 px: make them as easy to hit as the rest. */
+.map-canvas.leaflet-container .leaflet-bar a,
+.map-canvas.leaflet-touch .leaflet-bar a {
+  width: 44px;
+  height: 44px;
+  line-height: 44px;
+  font-size: 24px;
+}
+
+.map-canvas .leaflet-control-attribution {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.map-canvas .leaflet-control-attribution a {
+  display: inline-block;
+  padding: 6px 2px;
+}
+
 @media (max-width: 520px) {
   .data-table th,
   .data-table td {

@@ -138,7 +138,7 @@ alternativo con las mismas cifras, nada que dependa solo del color.
 |---|---|
 | Nunca matrícula, bastidor, datos del concesionario ni posición actual | `src/domain/sanitize.ts` copia una lista cerrada de campos y descarta el resto al recibir la respuesta. Que ningún otro módulo lea respuestas sin sanear es una convención: ninguna herramienta lo impide. |
 | Nunca identificadores de ruta en pantalla ni en exportaciones | El identificador vive detrás de un `RouteRef` opaco y sin campos; solo `serviceRouteId` lo recupera, y ESLint solo deja importar esa función desde `src/service/` (donde irá la petición de detalle). Serializar una ruta no lo incluye. |
-| Recortar 400 m al inicio y al final de cada traza antes de dibujarla | `TRIM_METERS` en `src/domain/privacy.ts` y `trimTrace` en `src/domain/trim.ts` (fase 2). La longitud del recorte no es un parámetro: nadie puede pedir un corte más corto. La pestaña Mapa solo guarda en memoria las líneas ya recortadas. El saneador devuelve un `UntrimmedTrace` sellado, sin campos legibles; sus líneas solo salen con `untrimmedLines`, que ESLint solo deja importar desde ese archivo. |
+| Recortar 400 m al inicio y al final de cada traza antes de dibujarla | `TRIM_METERS` en `src/domain/privacy.ts` y `trimTrace` en `src/domain/trim.ts` (fase 2). Se cumple con una regla más fuerte: **no se dibuja nada a menos de 401 m en línea recta del inicio ni del final** (ver «Cómo quedó el recorte»). El radio no es un parámetro: nadie puede pedir un corte más corto. La pestaña Mapa solo guarda en memoria las líneas ya recortadas. El saneador devuelve un `UntrimmedTrace` sellado, sin campos legibles; sus líneas solo salen con `untrimmedLines` y los dos puntos de inicio y final con `sensitivePlaces`, y ESLint solo deja importar esas dos funciones desde ese archivo (`tests/lint-seals.test.ts`). |
 | Ocultar rutas de menos de 300 m | `hideShortRoutes` en `src/domain/privacy.ts`. |
 | Token solo en memoria | Ver «Almacenamiento» en el apartado 2. ESLint prohíbe `localStorage` y `sessionStorage` en todo el código, con una sola excepción, abierta en la fase 2: **`src/storage/maintenance.ts` puede usar `localStorage`** (y solo `localStorage`) para guardar los dos números del mantenimiento que escribe el usuario, con una clave para la cuenta y otra para la demo. `tests/units.test.ts` comprueba que la excepción vale para ese archivo y para ningún otro, y que `sessionStorage` sigue prohibido también ahí. La fase 3 necesitará otra excepción, para `sessionStorage`, en el archivo del login. |
 | Sin analítica ni terceros, salvo las teselas de OpenStreetMap | Política de seguridad de contenido en `csp.config.json`. `scripts/check-dist.mjs` rompe el build si la página que genera Vite no lleva exactamente esa política, o si detecta código en línea o recursos de otro origen; `tests/csp.test.ts` fija su texto. Es una red contra errores propios hecha con expresiones regulares, no un analizador de HTML: no protege contra quien edite `dist/` a mano, y no tiene tests propios. |
@@ -165,16 +165,36 @@ Notas para quien implemente el recorte (comprobado con una lectura real):
 
 Cómo quedó el recorte (fase 2):
 
-- Los huecos entre dos líneas no cuentan como distancia recorrida: se
-  recortan 400 m de trazo dibujado por cada extremo.
-- Son 400 m **de recorrido**, no en línea recta: en una ruta de ida y vuelta,
-  o con muchas curvas, el primer punto dibujado puede quedar a menos de 400 m
-  en línea recta del inicio real, y el trazo puede volver a pasar junto al
-  punto de salida. El recorte no lo evita.
+- La primera versión cortaba solo por distancia recorrida. La revisión
+  independiente enseñó que no bastaba: una ruta que vuelve a pasar por su
+  punto de salida (una ida y vuelta, por ejemplo) dibujaba ese punto exacto,
+  y si el servicio enviara las líneas desordenadas se cortarían los extremos
+  equivocados.
+- La regla actual es **por lugar**: no se dibuja nada a menos de
+  `HIDE_RADIUS_METERS` (401 m: los 400 de la regla más 1 de margen por medir
+  sobre un plano) en línea recta de ninguno de estos puntos: el primero y el
+  último de las líneas, y los dos puntos sueltos de inicio y final que trae
+  el detalle. Esos dos puntos ya no se tiran en el saneador: se guardan
+  sellados y solo el recorte los lee, para esconder lo que pase cerca.
+  Siguen sin dibujarse.
+- Esa regla contiene a la anterior (un punto a menos de 400 m por carretera
+  está a menos de 400 m en línea recta), así que el corte por distancia se
+  quitó por redundante. Una traza de 800 m o menos sigue quedándose sin nada.
+- Una ruta puede quedar partida en varios trozos (una ida y vuelta queda en
+  dos), y una ruta larga que no sale de los alrededores de su inicio queda
+  oculta entera.
+- No depende del orden ni del sentido en que lleguen las líneas, siempre que
+  el detalle traiga los dos puntos sueltos. Si no los trae **y** las líneas
+  llegan desordenadas, los centros serían los extremos de las líneas tal como
+  llegan y el inicio real podría dibujarse. No se ha visto ningún detalle sin
+  esos puntos, pero solo se ha visto uno.
+- Lo que no evita: quien conozca la zona puede deducir hacia dónde apunta un
+  trazo que empieza a 400 m de una casa. Y el recuadro del mapa, que se pide
+  a OpenStreetMap, suele contener el inicio y el final recortados.
 - Si no queda nada, la web dice «traza oculta por privacidad»; si el servicio
   no envió ninguna línea, dice que no hay recorrido. Son mensajes distintos.
-- La interpolación es lineal en latitud y longitud (suficiente a estas
-  distancias) y no contempla el antimeridiano.
+- La interpolación es lineal en latitud y longitud y no contempla el
+  antimeridiano (allí el dibujo saldría mal, no menos recortado).
 
 Leaflet y la política de seguridad de contenido (visto en un navegador):
 Leaflet cancela una tesela que aún está cargando apuntándola a una imagen
@@ -182,7 +202,16 @@ Leaflet cancela una tesela que aún está cargando apuntándola a una imagen
 una. En lugar de admitir `data:` en `img-src`, `src/ui/leafletSurface.ts`
 sustituye tres métodos privados de la capa de teselas de Leaflet 1.9
 (`_abortLoading`, `_removeTile`, `_tileReady`) para cancelar quitando la
-dirección. Hay que revisarlo al actualizar Leaflet.
+dirección. Hay que revisarlo al actualizar Leaflet. `tests/map.test.ts` los
+prueba llamándolos sobre una capa de mentira: comprueba lo que hacen, no que
+el navegador cancele de verdad la petición.
+
+Otros dos detalles del mapa: la atribución de OpenStreetMap es un control
+propio hecho con nodos, porque el de Leaflet recibe una cadena HTML; y si el
+recorrido llega con la pestaña Mapa oculta (pasa a menudo cuando el servicio
+tarda), el encuadre se aplaza hasta que la pestaña se enseña, porque un mapa
+sin tamaño no se puede encuadrar. Leaflet sigue usando `innerHTML` por dentro
+para sus propios botones; es código de la dependencia, con textos fijos.
 
 La política de referencia es `strict-origin`: las normas de uso de las teselas
 de OpenStreetMap exigen que el navegador envíe la cabecera `Referer`, y así
@@ -297,18 +326,33 @@ Cómo quedó en la fase 2 (`src/service/loader.ts`):
   identificadores ocurre dentro del cargador y no sale de él).
 - `LoadError` lleva el paso (`status`, `details`, `routes`, `detail`), un
   tipo cerrado (`tool_error`, `unexpected_shape`, `too_many_routes`,
-  `unknown`) y un detalle que se puede enseñar: el código del servicio si
-  tiene forma de código, la ruta del campo, o el nombre de la clase de una
-  excepción desconocida. Nunca un mensaje. En pantalla se ve como
-  `routes/tool_error (period_too_large)`.
+  `cancelled`, `unknown`) y un detalle que se puede enseñar: el código del
+  servicio si tiene forma de código, la ruta del campo, o el nombre de la
+  clase de una excepción desconocida. Nunca un mensaje. En pantalla se ve
+  como `routes/tool_error (period_too_large)`. El filtro del detalle mira la
+  forma (minúsculas, cifras y guion bajo; o un nombre de clase), no el
+  significado: quien lance el error no debe meter datos ahí.
 - Fallar el estado detiene la carga. Fallar los datos del vehículo solo deja
   un aviso: la web funciona sin modelo ni kilometraje de respaldo.
+- Una carga sustituida por otra (cambio de escenario, salir de la demo) deja
+  de pedir al servicio antes de su siguiente petición, no solo de dibujar:
+  `loadAllRoutes` recibe una función `stillWanted`. La petición que ya está
+  en vuelo no se cancela.
+- Un reloj del navegador atrasado deja fuera, sin aviso, las rutas
+  posteriores a la fecha que el reloj cree; un reloj que no es un número da
+  error.
 
 ### Para la fase 3
 
 - La puerta es `App.load(caller, { demo: false })` en `src/ui/app.ts`: tras
-  el login basta con construir un `ToolCaller` y llamarla. El resto (carga,
-  pestañas, mapa, errores) no cambia.
+  el login se construye un `ToolCaller` y se llama. El resto (carga,
+  pestañas, mapa, errores) no cambia. Hoy `src/main.ts` no guarda el objeto
+  que devuelve `startApp`: la fase 3 tiene que guardarlo para poder llamar a
+  `load`. Esa llamada esconde el aviso de demo y quita `#demo` de la
+  dirección.
+- Cerrar sesión o cambiar de cuenta a mitad de una carga: llamar a
+  `showLanding()` o a otro `load` basta para que la carga anterior deje de
+  pedir (con el `ToolCaller` antiguo) antes de su siguiente petición.
 - El cliente de `/mcp` debe lanzar `ToolCallError` con el código del servicio
   cuando la herramienta responda con error. Para lo que solo él puede ver
   (configuración ausente, `state` que no coincide, canje del código, red o
@@ -411,8 +455,15 @@ Reglas:
 - Cada test nuevo se ve fallar una vez con un dato roto antes de contar. En
   la fase 1 se hizo rompiendo el código de 56 maneras, una cada vez, más 32
   que probó por su cuenta el revisor; las que sobrevivieron se cubrieron
-  después con tests nuevos. En la fase 2, igual: 228 roturas de una línea
-  del autor, todas detectadas, más las de los revisores.
+  después con tests nuevos. En la fase 2 fueron unas 380 del autor y 151 de
+  los dos revisores; las que sobrevivieron se cubrieron con tests nuevos,
+  salvo unas pocas que no cambian nada observable.
+- **Antes de fiarse de un ejecutor de roturas, comprobar que la suite pasa
+  sin romper nada cuando se lanza como él la lanza.** En la fase 2 el primer
+  ejecutor arrancaba Vitest de un modo que no aplicaba la zona horaria de
+  los tests: dos tests fallaban siempre y toda rotura parecía «detectada».
+  Lo destapó el revisor, al que le sobrevivieron 91 de 97. El ejecutor
+  corregido se niega a empezar si la suite no está en verde.
 - Un test en verde contra el servicio de demo prueba el contrato tal como lo
   leímos, no que el servicio real se comporte así. Al informar de una
   prueba, di dónde corre y qué no demuestra.
@@ -452,11 +503,15 @@ repo del servicio. La web solo funciona en modo demo.
 - **Navegador de verdad** (Chromium, la página construida y servida en local
   con `vite preview`, con la política de seguridad de contenido puesta):
   las tres pestañas, el mapa con sus teselas de OpenStreetMap y su
-  atribución, los tramos inferidos en discontinuo, la tarjeta dibujada y
+  atribución, los tramos inferidos en punteado, la tarjeta dibujada y
   descargada como PNG, el CSV descargado, el mantenimiento guardado en
   `localStorage`, el ancho de un móvil (390 px, sin desbordes) y el tema
   oscuro. Ninguna infracción de la política después de corregir la de las
-  teselas canceladas (apartado 4).
+  teselas canceladas (apartado 4). Tras las correcciones de la revisión se
+  volvió a mirar: un recorrido que llega con la pestaña Mapa oculta queda
+  encuadrado al volver, el foco se queda en el selector al cambiar de
+  escenario, cambiar `#demo=...` en la dirección cambia el escenario y los
+  botones de zoom miden 44 px.
 - **Sin comprobar**: todo lo que dependa del servicio real o de un login;
   otros navegadores (Firefox, Safari) y un móvil físico; un lector de
   pantalla; el contraste medido con una herramienta (se eligió a ojo y por
@@ -474,7 +529,7 @@ La política del propietario pide repasar al cerrar cada punto de su lista
 | Lo primero que se mide es lo que recibe el usuario | Se abrió la web en un navegador y se miraron las tres pestañas. Las cinco cifras cotejadas a mano contra la app siguen pendientes: necesitan la fase 3 y al propietario. |
 | Comprobar cada suposición sobre el proveedor | No aplica en esta fase (prohibido llamar al servicio). Las suposiciones nuevas están escritas como tales: `to_time` en el futuro, orden de las rutas, unidades de la velocidad. |
 | Datos realistas antes de los fixtures | El generador de la fase 1 ya reproduce lo visto en real (puntos muy separados, tramos inferidos, rutas de metros). Falta en la demo una ruta de entre 300 y 800 m. |
-| La puerta se prueba antes de confiar en ella | Cada test nuevo se vio fallar: 228 roturas de una línea, todas detectadas. |
+| La puerta se prueba antes de confiar en ella | Cada test nuevo se vio fallar rompiendo el código una línea cada vez. **Aquí hubo un fallo de proceso**: el primer ejecutor de roturas daba todo por detectado sin estarlo (apartado 8). Se corrigió, se repitieron todas las pasadas y se añadieron los tests que faltaban. |
 | Un caso de punta a punta antes de treinta | El modo demo recorre el mismo código que recorrerán los datos reales, de la llamada a la pantalla. |
 | Decidir dónde se prueba | Tests en memoria y navegador en local; lo real, en la fase 3 contra el entorno de pruebas del servicio. |
 | Qué es suficiente | El alcance de la fase, verde en CI, revisión independiente y navegador sin errores de la política. |
@@ -518,6 +573,17 @@ fallos de ejecuciones reales y despliegue (no hay nada desplegado).
     anterior y a la siguiente. No hay selector propio en la pestaña Mapa.
 12. Hay cuatro PR de Dependabot abiertas (actualizaciones de las acciones de
     GitHub). Ningún agente las ha tocado.
+13. El recorte del mapa es ahora por cercanía (nada a menos de 401 m en línea
+    recta del inicio o del final), más estricto que «los primeros y últimos
+    400 m». Una ida y vuelta queda partida en dos trozos y una vuelta corta
+    por el barrio no se dibuja. ¿Es lo que se quiere?
+14. «Exportar CSV» exporta todas las rutas que cumplen la búsqueda, en el
+    orden elegido, no solo las 100 filas dibujadas.
+15. En un móvil la tabla de Rutas es más ancha que la pantalla y hay que
+    desplazarla de lado para ver la velocidad.
+16. Los años del gráfico de km por mes se distinguen por color y posición;
+    la leyenda, la tabla y el texto al pasar el ratón dan lo mismo sin color.
+    El contraste entre los tres colores es bajo. ¿Basta, o se añade trama?
 
 ### Aceptación real (no la sustituye ningún test)
 

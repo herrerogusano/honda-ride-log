@@ -10,6 +10,7 @@
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { TraceLine } from "../domain/model";
+import { el } from "./dom";
 
 export const TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 
@@ -19,8 +20,10 @@ export interface MapSurface {
   show(lines: readonly TraceLine[]): void;
   /** Removes every line. */
   clear(): void;
-  /** Call when the container changed size or became visible. */
+  /** Call when the container changed size or became visible: lines that arrived while it was hidden are framed now. */
   resize(): void;
+  /** Removes the map and its listeners. */
+  destroy(): void;
 }
 
 export type SurfaceFactory = (container: HTMLElement) => MapSurface;
@@ -35,9 +38,9 @@ interface TileRecord {
  * "data:" image. The Content Security Policy does not allow "data:" images
  * (and should not, just for this), so the browser would log an error for
  * every cancelled tile. This layer cancels by dropping the address instead.
- * It replaces a private method of Leaflet 1.9: check it when upgrading.
+ * It replaces three private methods of Leaflet 1.9: check them when upgrading.
  */
-const PolicyFriendlyTiles = L.TileLayer.extend({
+export const PolicyFriendlyTiles = L.TileLayer.extend({
   _abortLoading(this: L.TileLayer & { _tiles: Record<string, TileRecord>; _tileZoom: number | undefined }) {
     for (const key of Object.keys(this._tiles)) {
       const record = this._tiles[key];
@@ -71,17 +74,42 @@ const PolicyFriendlyTiles = L.TileLayer.extend({
   },
 }) as unknown as new (url: string, options: L.TileLayerOptions) => L.TileLayer;
 
+/**
+ * The attribution OpenStreetMap asks for, always visible. Built from DOM
+ * nodes: Leaflet's own attribution control takes an HTML string, and this
+ * repo does not hand HTML strings to anything.
+ */
+const Attribution = L.Control.extend({
+  onAdd(): HTMLElement {
+    return el(
+      "div",
+      { class: "leaflet-control-attribution" },
+      "© colaboradores de ",
+      el("a", { attrs: { href: "https://www.openstreetmap.org/copyright", target: "_blank", rel: "noopener noreferrer" } }, "OpenStreetMap"),
+    );
+  },
+});
+
 export const createLeafletSurface: SurfaceFactory = (container) => {
   const map = L.map(container, { zoomControl: false, attributionControl: false });
   L.control.zoom({ zoomInTitle: "Acercar", zoomOutTitle: "Alejar" }).addTo(map);
-  // The attribution OpenStreetMap asks for, always visible, without the Leaflet prefix.
-  L.control.attribution({ prefix: false }).addTo(map);
-  new PolicyFriendlyTiles(TILE_URL, {
-    maxZoom: 19,
-    attribution: '© colaboradores de <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-  }).addTo(map);
+  new Attribution({ position: "bottomright" }).addTo(map);
+  new PolicyFriendlyTiles(TILE_URL, { maxZoom: 19 }).addTo(map);
   // No view is set until there is a route to frame: no tile is asked for before that.
   const drawn = L.layerGroup().addTo(map);
+  /** Bounds still to be framed: set when lines arrive while the map has no size (its tab is hidden). */
+  let toFrame: L.LatLngBounds | null = null;
+
+  function frame(): void {
+    // A map without size (its tab is hidden) cannot be framed: it waits for
+    // `resize`. The size is read from the element: Leaflet would remember a
+    // size of zero until its first view is set.
+    if (container.clientWidth === 0 || container.clientHeight === 0) return;
+    map.invalidateSize();
+    if (toFrame === null) return;
+    map.fitBounds(toFrame, { padding: [24, 24], maxZoom: 16, animate: false });
+    toFrame = null;
+  }
 
   return {
     show(lines) {
@@ -94,14 +122,18 @@ export const createLeafletSurface: SurfaceFactory = (container) => {
         L.polyline(points, { className: "trace-casing", interactive: false }).addTo(drawn);
         L.polyline(points, { className: line.inferred === true ? "trace trace-inferred" : "trace", interactive: false }).addTo(drawn);
       }
-      map.invalidateSize();
-      if (bounds.isValid()) map.fitBounds(bounds, { padding: [24, 24], maxZoom: 16, animate: false });
+      toFrame = bounds.isValid() ? bounds : null;
+      frame();
     },
     clear() {
       drawn.clearLayers();
+      toFrame = null;
     },
     resize() {
-      map.invalidateSize();
+      frame();
+    },
+    destroy() {
+      map.remove();
     },
   };
 };

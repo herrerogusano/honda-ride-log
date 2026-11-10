@@ -12,7 +12,7 @@ import type { StorageScope } from "../storage/maintenance";
 import { buildRiderData, type RiderData } from "./data";
 import { clear, el, uniqueId } from "./dom";
 import { errorText } from "./errors";
-import { createMapView, type MapFactory } from "./mapView";
+import { createMapView, type MapFactory, type MapView } from "./mapView";
 import { renderRoutes } from "./routesView";
 import { renderSummary } from "./summary";
 import { createTabs } from "./tabs";
@@ -44,6 +44,12 @@ export function startApp(options: AppOptions): App {
   const mapFactory = options.createMap ?? createMapView;
   /** Each load gets a number; a load that is no longer the latest stops drawing. */
   let generation = 0;
+  /** The map of the view on screen; released when another view replaces it. */
+  let activeMap: MapView | null = null;
+  const releaseMap = (): void => {
+    activeMap?.destroy();
+    activeMap = null;
+  };
 
   /** The demo scenario on screen, or null outside the demo. */
   let scenarioShown: DemoScenario | null = null;
@@ -97,6 +103,7 @@ export function startApp(options: AppOptions): App {
 
   function showLanding(): void {
     generation += 1;
+    releaseMap();
     scenarioShown = null;
     banner.hidden = true;
     setHash("");
@@ -173,6 +180,7 @@ export function startApp(options: AppOptions): App {
   function showLoaded(data: RiderData, caller: ToolCaller, warnings: readonly string[]): void {
     const scope: StorageScope = data.demo ? "demo" : "account";
     const map = mapFactory(data, caller);
+    activeMap = map;
     const summaryPanel = el("div", {}, renderSummary(data, scope));
     const mapPanel = el("div", {}, map.element);
     const routesPanel = el("div", {});
@@ -199,6 +207,7 @@ export function startApp(options: AppOptions): App {
 
   async function load(caller: ToolCaller, loadOptions: { readonly demo: boolean }): Promise<void> {
     generation += 1;
+    releaseMap();
     const mine = generation;
     const current = (): boolean => mine === generation;
     const retry = (): void => void load(caller, loadOptions);
