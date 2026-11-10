@@ -119,7 +119,12 @@ se cuentan y cuántas se han descartado por venir sin fecha o sin km.
   inicio ni de fin. Los tramos marcados como inferidos por el servicio se
   dibujan con trazo discontinuo y una leyenda que dice que es una etiqueta
   descriptiva, no una garantía de precisión.
-- Si tras el recorte no queda traza, se dice «traza oculta por privacidad».
+- Si tras el recorte no queda traza, se dice «traza oculta por privacidad»;
+  si el servicio no envió ninguna línea, «sin recorrido». Son mensajes
+  distintos, cada uno con su estado vacío dentro del recuadro del mapa.
+- Convive con la lista en la sección «04 Rutas» (apartado 13): al elegir una
+  ruta, el mapa vuela a sus líneas recortadas y la traza se dibuja sola de
+  principio a fin; con movimiento reducido, salta y aparece entera.
 
 ### Rutas
 
@@ -129,8 +134,8 @@ se cuentan y cuántas se han descartado por venir sin fecha o sin km.
   o «—»; es una etiqueta descriptiva del servicio, no una garantía de
   precisión del GPS). Un dato que el servicio no envía se escribe «—». Si la
   llegada cae en otro día local, se añade «(+1 día)». Una nota bajo la lista
-  dice que las dos velocidades tienen unidades sin confirmar. La pestaña Mapa
-  enseña lo mismo de la ruta abierta, en una línea bajo el título.
+  dice que las dos velocidades tienen unidades sin confirmar. El mapa enseña
+  lo mismo de la ruta abierta, en cifras grandes bajo el recuadro.
 - Búsqueda por texto sobre la fecha (día, mes, año, día de la semana) y orden
   por fecha, por distancia o por velocidad máxima (de mayor a menor; en un
   empate, la más antigua primero; las que no la tienen, al final). Cada palabra de la búsqueda tiene que cuadrar:
@@ -141,8 +146,10 @@ se cuentan y cuántas se han descartado por venir sin fecha o sin km.
   relleno («de», «del», «el», «día») no cuentan, y un separador al final de
   una palabra se ignora, para que la lista no se vacíe mientras se escribe
   una fecha («7/»).
-- Al pulsar una ruta se abre en el mapa de la misma sección, que se trae a la
-  vista si no se veía (antes: en la pestaña Mapa).
+- Al pulsar una ruta se abre en el mapa que está al lado (pantallas anchas) o
+  fijo encima de la lista (estrechas); la página no se mueve y la fila elegida
+  queda marcada (apartado 13). Antes: en la pestaña Mapa y, en la fase 2,
+  trayendo el mapa a la vista.
 - Exportar CSV de lo que se ve, con esas mismas columnas (un dato que falta
   es una celda vacía). Sin identificadores ni coordenadas. Las celdas que empiecen por `=`, `+`, `-` o `@` se protegen
   para que una hoja de cálculo no las ejecute.
@@ -1079,7 +1086,7 @@ apartado 3, ni la privacidad, el login, el servicio o el recorte.
 | 01 Resumen | «Tu año / en cifras» (sigue al periodo), el periodo que enseña y las cuatro cifras. |
 | 02 Ritmo | «El pulso / de los meses»: km por mes, récords, «Mes frente a mes» (la cuarta cifra dibujada como dos barras) y rachas. |
 | 03 Hábitos | «Cada salida / cuenta»: días y horas (los dos gráficos) y trayectos cortos. |
-| 04 Rutas | «El archivo / de salidas»: el mapa y, debajo, la lista. Elegir una ruta la abre en ese mapa, mueve el foco a su título y trae el mapa a la vista si no se veía. Están en dos cajas (`.archive-map`, `.archive-list`) para que la fase 3 las ponga lado a lado. |
+| 04 Rutas | «El archivo / de salidas»: el mapa y la lista juntos (desde la fase 3, apartado 13: lado a lado desde 1024 px, el mapa fijo encima de la lista en pantallas más estrechas). |
 | 05 Taller | «A punto»: mantenimiento y tarjeta para compartir. |
 | Pie | Las cinco notas de siempre y las frases de privacidad. |
 
@@ -1207,4 +1214,161 @@ la página ya no vigila bloques que un cambio de periodo ha quitado.
   desplazamiento con el dedo.
 - Un lector de pantalla real con los enlaces de sección y el grupo de radio.
 - El contraste de los colores con transparencia (barra translúcida).
+- Una cuenta real (no hay servicio desplegado).
+
+## 13. Etapa 2, fase 3: lista y mapa juntos, y la traza que se dibuja
+
+Escrito el 2026-11-10. Petición del propietario: «Lista y mapa tienen que
+convivir: se elige y se ve en el mismo sitio.» No cambia ninguna cifra, ni el
+recorte, ni el saneador, ni los sellos de ESLint, ni el login.
+
+### Disposición
+
+| Ancho | Cómo se ve |
+|---|---|
+| 1024 px o más | Mapa a la izquierda, lista a la derecha, los dos tan altos como la pantalla bajo la barra (`clamp(560px, 100svh − barra − 32px, 980px)`). La lista se desplaza dentro de su propia caja; buscar, ordenar y «Exportar CSV» quedan encima, «Mostrar más rutas» al final. Al llegar a un extremo de la caja, la rueda sigue con la página. |
+| Menos de 1024 px | El mapa queda fijo (`position: sticky`) bajo la barra, a unos 31 svh en móviles (38 svh hasta 1023 px), con las cifras de la ruta debajo; la lista va en el flujo de la página, sin caja propia que atrape el desplazamiento. La altura de la barra (una o dos filas) la publica `src/ui/app.ts` en `--bar-h` con un `ResizeObserver` que se suelta con la vista. En móviles el título de la ruta solo lo oyen los lectores de pantalla y la fecha va en la franja de cifras, para que la parte fija no pase de la mitad de la pantalla. |
+
+La leyenda del mapa y la nota de la lista van debajo de los dos
+(`.archive-notes`). Cada ruta es una fila de tabla presentada como tarjeta:
+fecha y salida → llegada arriba; duración, distancia, media, máxima e
+inferidos debajo, cada uno con su etiqueta y su unidad en rojo. La tabla
+sigue siendo una tabla para los lectores de pantalla (cabecera oculta a la
+vista, no quitada; roles explícitos porque las filas cambian de `display`),
+y las etiquetas y unidades son texto generado con `content: attr(...) / ""`,
+que esos lectores no repiten. La búsqueda, el orden, el título de la tabla y
+el CSV no cambian.
+
+### Elegir una ruta
+
+- Pulsarla (o Intro/Espacio sobre su fecha) la abre en el mapa y **no mueve
+  la página**; el foco se queda en la lista. ↑ y ↓ sobre una fila pasan a la
+  ruta de arriba o de abajo y la abren.
+- La fila elegida lleva una raya roja a la izquierda que crece,
+  fondo propio y `aria-current="true"` en su botón; solo una a la vez.
+- «Ruta anterior / siguiente» van sobre el mapa, arriba a la derecha (en
+  móviles, solo las flechas; el nombre lo oyen los lectores). Siguen el orden
+  por fecha, como antes, y la lista marca la ruta que abren. Si su fila no se
+  ve, en pantallas anchas se desplaza **la caja de la lista**, nunca la
+  página; en estrechas (decisión de esta fase) se desplaza la página lo justo
+  para dejar la fila bajo el mapa fijo, que no se mueve. Si la fila no estaba
+  dibujada (más allá de «Mostrar más»), se dibujan las filas hasta ella.
+- Bajo el mapa, la franja de la ruta: salida → llegada, tramos inferidos y
+  cuatro cifras grandes (distancia, duración, velocidad media y máxima, con
+  unidades pequeñas en rojo) que cuentan desde 0 al cambiar de ruta
+  (`countUp`, `--dur-reveal`). Para los lectores de pantalla, la misma
+  información va en una frase (`routeFacts`); la franja lleva `aria-hidden`.
+- El detalle se sigue pidiendo solo al elegir la ruta, una vez por ruta, sin
+  reintentos automáticos; los errores conservan su código y su acción
+  («Reintentar» o «Volver a entrar»).
+
+### Cómo se dibuja la traza (`src/ui/traceDraw.ts`)
+
+1. El mapa vuela a los límites de las **líneas recortadas**
+   (`flyToBounds`, duración `--dur-hero`). La primera vez no hay vista que
+   animar: salta.
+2. Al aterrizar (`moveend`), las líneas crecen fotograma a fotograma con
+   `requestAnimationFrame` durante 1,5 a 2 veces `--dur-hero` (2 a partir de
+   30 km), con una curva de entrada y salida suave. El avance es proporcional
+   a la longitud medida sobre la proyección del mapa (Web Mercator), no al
+   número de puntos: el último tramo se corta en un punto interpolado sobre
+   esa proyección, donde el mapa dibuja el tramo recto. Así cada dibujo
+   parcial es un trozo del final y nunca sale de él.
+3. Una cabeza blanca con halo rojo (`circleMarker`, clase `trace-head`)
+   va delante del trazo y desaparece al terminar. Los tramos inferidos siguen
+   discontinuos y ámbar mientras crecen.
+4. Al final, el mapa tiene exactamente las líneas recortadas.
+
+Privacidad: la vista del mapa solo recibe `trimTrace(...).lines`; la cabeza y
+los puntos interpolados están sobre esas líneas; el encuadre y el vuelo usan
+solo sus límites; no hay marcadores de inicio ni de fin. `trim.ts`,
+`sanitize.ts` y los sellos no se han tocado.
+
+Cancelación y visibilidad: elegir otra ruta a mitad de vuelo o de dibujo lo
+para en el acto (el aterrizaje tardío no dibuja nada); soltar la vista (otro
+escenario, salir de la demo o de la cuenta) para el dibujo, el vuelo y el
+observador. No se dibuja con el mapa fuera de pantalla ni con la pestaña del
+navegador oculta: el mapa se encuadra de golpe y espera, y dibuja (sin vuelo)
+cuando se ve. Si se oculta o sale de pantalla a mitad, la traza se completa
+de golpe. Con movimiento reducido, o sin `IntersectionObserver`: salto,
+traza entera, ningún fotograma y ningún observador.
+
+Estados del recuadro (`data-state` en `.map-stage`): sin elegir (rejilla y
+«Elige una ruta»), cargando (una línea roja que barre el recuadro, con el
+texto en `role="status"`), dibujada, vacía («Traza oculta por privacidad» con
+filo ámbar, o «Sin recorrido») y error.
+
+### Demo
+
+El generador añade, al final de algunos días con salidas (2 %), un trayecto
+corto de 320 a 780 m, con su propio flujo de números aleatorios para que el
+resto de rutas no cambie. Se ve el caso «traza oculta por privacidad»
+ordenando por distancia de menor a mayor.
+
+### Otros cambios
+
+- «01 Resumen»: la línea del periodo queda a 16 px del título y de las cifras
+  (antes flotaba en un hueco de unos 60 px por arriba y por abajo).
+- `MapSurface` gana `frame` (encuadrar o volar, con aviso al terminar) y
+  `paint` (sustituir las líneas sin mover el mapa, reutilizando las
+  polilíneas); los controles de zoom pasan abajo a la izquierda.
+
+### Qué se ha comprobado y dónde
+
+- jsdom (Vitest), `tests/routes-map.test.ts` con observador y fotogramas
+  manejados a mano y una superficie de mapa que graba: la traza crece sin
+  retroceder hasta exactamente las líneas recortadas y ningún punto ni la
+  cabeza salen de ellas; el vuelo dura `--dur-hero` y el dibujo entre 1,2 y
+  1,6 s; se cancela al elegir otra ruta, al soltar la vista y al salir de la
+  cuenta; movimiento reducido = completa al momento, sin fotogramas ni
+  observadores; no empieza fuera de pantalla ni con la pestaña oculta y se
+  completa al salir; el trayecto corto de la demo da «traza oculta por
+  privacidad» sin dibujar nada; la fila elegida y «anterior / siguiente» van
+  a la par, desplazando la caja de la lista y no la página; ↑/↓; un detalle
+  por ruta; cada ruta con todos sus campos, etiquetas y unidades, y ninguna
+  regla de la hoja que esconda o corte una celda a ningún ancho (lectura del
+  texto de la hoja, no del dibujo). Además `tests/generator.test.ts` (los
+  trayectos cortos existen en los dos perfiles) y los tests de antes,
+  adaptados. Es el contrato tal como lo leemos, contra dobles: no prueba
+  Leaflet ni el navegador.
+- Roturas: cada test nuevo se vio fallar rompiendo el código de 23 maneras,
+  una cada vez (interpolación fuera de la proyección, cabeza en el vértice
+  siguiente, copia de las líneas al final, sin pintura final, sin vuelo, sin
+  esperar a verse, sin parar al ocultar la pestaña, sin cancelar al cambiar
+  de ruta, al soltar la vista o al salir de la cuenta, animar con movimiento
+  reducido, observar con movimiento reducido, dibujar una traza oculta, no
+  desmarcar la fila anterior, desplazar la página en lugar de la caja,
+  flechas sin `preventDefault`, revelar la fila también al pulsarla, demo sin
+  trayectos cortos, celda sin etiqueta, celda escondida por CSS, unidad
+  ausente, sin estado de carga, sin memoria de trazas). Fallaron las 23; la
+  última solo después de endurecer su test, que al principio pasaba. Es una
+  muestra del implementador, no la del revisor independiente.
+- Navegador real (Chrome sin cabeza, build de producción con la política,
+  `vite preview`, 2026-11-10), emulando 320, 360, 390, 768, 1024, 1280,
+  1920 y 2560 px: sin desplazamiento lateral, ninguna celda de ruta cortada,
+  el mapa a la vista al elegir y después de recorrer la lista (la caja en
+  pantallas anchas, la página en estrechas), la página no se mueve al elegir,
+  Barlow y Manrope cargadas, ningún control de menos de 44 px, ningún error
+  de consola ni infracción de la política, y solo peticiones al propio
+  origen y a `tile.openstreetmap.org`. En vivo a 1280 y 390 px, con clics
+  de ratón: tres rutas seguidas (fotogramas a mitad de vuelo, sin traza, y a
+  mitad de dibujo, con la cabeza), cambio de ruta a mitad de dibujo, doce
+  veces «anterior» (a 1280 la página no se movió y la caja de la lista bajó
+  para enseñar la fila 14), la ruta oculta por privacidad y la carga. Con
+  movimiento reducido: un solo encuadre, la traza entera, sin cabeza, sin
+  cuentas y sin animaciones en marcha.
+
+### Qué no se ha comprobado
+
+- Safari y Firefox; un móvil físico y el desplazamiento con el dedo (que la
+  lista bajo un mapa fijo se sienta bien al tacto).
+- Un lector de pantalla real con la tabla presentada como tarjetas, los
+  roles explícitos y el texto generado `/ ""` (Chrome lo omite; Safari 17.4+
+  y Firefox 128+ también, según su documentación, sin probar).
+- Que `flyToBounds` y `map.stop()` se comporten igual con teselas lentas o
+  sin red; el vuelo se probó con teselas reales de OpenStreetMap.
+- El rendimiento del dibujo con trazas de muchos puntos (las de la demo
+  tienen como mucho 181) y en equipos lentos.
+- En pantallas anchas muy bajas (menos de unos 660 px de alto) la sección es
+  más alta que la pantalla.
 - Una cuenta real (no hay servicio desplegado).

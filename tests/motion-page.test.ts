@@ -82,7 +82,7 @@ function mount(hash: string, account = false): App {
   history.replaceState(null, "", `/${hash}`);
   root = document.createElement("main");
   document.body.replaceChildren(root);
-  const surface = { show: () => undefined, clear: () => undefined, resize: () => undefined, destroy: () => undefined };
+  const surface = { show: () => undefined, clear: () => undefined, frame: (_lines: unknown, _fly: unknown, settled: () => void) => settled(), paint: () => undefined, resize: () => undefined, destroy: () => undefined };
   mounted = startApp({
     root,
     now: () => NOW,
@@ -281,8 +281,8 @@ describe("the bar's motion goes with the view", () => {
     window.dispatchEvent(new Event("scroll"));
     expect(frames.size).toBeGreaterThan(0);
     const sizes = FakeResize.all.filter((one) => !one.disconnected);
-    // The links' underline and the period pill.
-    expect(sizes.length).toBe(2);
+    // The links' underline, the period pill and the bar's height (for the pinned map).
+    expect(sizes.length).toBe(3);
     return { observers: live(), sizes };
   }
   function expectReleased(observers: FakeObserver[], sizes: FakeResize[]): void {

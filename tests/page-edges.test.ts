@@ -31,6 +31,7 @@ function mount(hash = ""): App {
   mapCalls.length = 0;
   const createMap = (): MapView => ({
     element: document.createElement("div"),
+    legend: document.createElement("ul"),
     open: () => void mapCalls.push("open"),
     shown: () => void mapCalls.push("shown"),
     destroy: () => void mapCalls.push("destroy"),

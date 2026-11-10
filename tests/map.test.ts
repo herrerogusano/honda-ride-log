@@ -47,6 +47,8 @@ async function harness(change?: (name: ToolName, args: unknown, answer: () => Pr
   const surface: MapSurface = {
     show: (lines) => void shown.push(lines),
     clear: () => void (cleared += 1),
+    frame: (_lines, _fly, settled) => settled(),
+    paint: () => undefined,
     resize: () => void (resized += 1),
     destroy: () => void (destroyed += 1),
   };
@@ -54,7 +56,7 @@ async function harness(change?: (name: ToolName, args: unknown, answer: () => Pr
     surfaces += 1;
     return surface;
   });
-  document.body.replaceChildren(view.element);
+  document.body.replaceChildren(view.element, view.legend);
   return { view, data, calls, shown, surfaces: () => surfaces, cleared: () => cleared, resized: () => resized, destroyed: () => destroyed };
 }
 
@@ -100,7 +102,7 @@ describe("Mapa tab", () => {
     expect(h.calls).toEqual([]);
     expect(h.surfaces()).toBe(0);
     expect(canvas().hidden).toBe(true);
-    expect(text()).toContain("Elige una ruta en la lista de abajo");
+    expect(text()).toContain("Elige una ruta de la lista");
     h.view.shown();
     expect(h.resized()).toBe(0);
   });
@@ -272,9 +274,9 @@ describe("Mapa tab", () => {
     const shown: unknown[] = [];
     const view = createMapView(data, service, { signIn: null }, () => {
       if (broken) throw new Error("map library failed");
-      return { show: (lines) => void shown.push(lines), clear: () => undefined, resize: () => undefined, destroy: () => undefined };
+      return { show: (lines) => void shown.push(lines), clear: () => undefined, frame: (_lines: unknown, _fly: unknown, settled: () => void) => settled(), paint: () => undefined, resize: () => undefined, destroy: () => undefined };
     });
-    document.body.replaceChildren(view.element);
+    document.body.replaceChildren(view.element, view.legend);
     view.open(data.routes[0] as RiderData["routes"][number]);
     await vi.waitFor(() => expect(document.querySelector('[role="alert"]')).not.toBeNull());
     expect(document.querySelector('[role="alert"] code')?.textContent).toBe("detail/unknown");
@@ -410,10 +412,10 @@ describe("Mapa tab", () => {
     const service = createDemoService(rider);
     const data = buildRiderData(await loadVehicleState(service), null, await loadAllRoutes(service, NOW), false, NOW);
     const ended: ToolCaller = { callTool: async () => Promise.reject(new ServiceError("reauth_required", "expired")) };
-    const surface: MapSurface = { show: () => undefined, clear: () => undefined, resize: () => undefined, destroy: () => undefined };
+    const surface: MapSurface = { show: () => undefined, clear: () => undefined, frame: (_lines: unknown, _fly: unknown, settled: () => void) => settled(), paint: () => undefined, resize: () => undefined, destroy: () => undefined };
     let signIns = 0;
     const view = createMapView(data, ended, { signIn: () => void (signIns += 1) }, () => surface);
-    document.body.replaceChildren(view.element);
+    document.body.replaceChildren(view.element, view.legend);
     view.open(data.routes[0] as RiderData["routes"][number]);
     await vi.waitFor(() => expect(text()).toContain("detail/reauth_required (expired)"));
     expect(button("Reintentar")).toBeUndefined();
