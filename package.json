@@ -9,7 +9,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build && node scripts/check-dist.mjs",
+    "build:cloudflare": "tsc --noEmit && vite build --mode cloudflare && node scripts/check-dist.mjs cloudflare",
     "preview": "vite preview",
+    "preview:cloudflare": "vite preview --mode cloudflare",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"

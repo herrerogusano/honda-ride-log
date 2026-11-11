@@ -19,7 +19,7 @@ import { loadingStage, type LoadingStage } from "./loadingStage";
 import { createMapView, type MapFactory, type MapView } from "./mapView";
 import { sectionNav } from "./nav";
 import { createRouteList } from "./routesView";
-import { heroTitle, PROMISES, renderRiderPage } from "./summary";
+import { heroTitle, promises, renderRiderPage } from "./summary";
 import { createTraceStore, type TraceStore } from "./traceStore";
 
 /**
@@ -49,6 +49,8 @@ export interface AppOptions {
    * start the demo.
    */
   readonly initialView?: "address" | "none";
+  /** Called each time the demo starts (a visit counter, docs/PLAN.md section 17). Never given any data. */
+  readonly onDemo?: () => void;
 }
 
 export interface App {
@@ -285,7 +287,7 @@ export function startApp(options: AppOptions): App {
             "aside",
             { class: "plate promises-plate", attrs: { "aria-label": "Lo que esta web promete" } },
             el("p", { class: "eyebrow plate-head" }, "Lo que esta web promete"),
-            el("ul", { class: "promises" }, ...PROMISES.map((promise) => el("li", {}, promise))),
+            el("ul", { class: "promises" }, ...promises().map((promise) => el("li", {}, promise))),
           ),
         ),
       ),
@@ -495,6 +497,7 @@ export function startApp(options: AppOptions): App {
     scenarioSelect.value = scenario;
     showDemoMarks(true);
     signOutButton.hidden = true;
+    options.onDemo?.();
     await load(createDemoCaller(scenario, now(), options.demoDelayMs ?? 120), { demo: true });
   }
 

@@ -3,9 +3,11 @@
  * It draws lines only. No markers, so the start and the end of a ride are
  * never pointed at.
  *
- * Tiles are the only third-party request of the whole web; the Content
- * Security Policy allows images from `tile.openstreetmap.org` and nothing
- * else (csp.config.json).
+ * Tiles are the only third-party request of the page itself; the only
+ * others are the two visit counters of src/analytics/, when configured
+ * (docs/PLAN.md, section 17). The Content Security Policy allows images
+ * from `tile.openstreetmap.org` and, for a counter, its own origins only
+ * (csp.config.json).
  */
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";

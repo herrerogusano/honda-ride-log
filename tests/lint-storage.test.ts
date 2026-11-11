@@ -1,7 +1,8 @@
-// Checks the two storage exceptions with the repository's own ESLint
-// configuration: localStorage only in src/storage/maintenance.ts (phase 2),
-// sessionStorage only in src/auth/pendingLogin.ts (phase 3), and each file
-// still banned from the other's storage and from the HTML sinks. The
+// Checks the three storage exceptions with the repository's own ESLint
+// configuration: localStorage only in src/storage/maintenance.ts (phase 2)
+// and in src/storage/consent.ts (with document.cookie, docs/PLAN.md section
+// 16), sessionStorage only in src/auth/pendingLogin.ts (phase 3), and each
+// file still banned from the others' storage and from the HTML sinks. The
 // maintenance file's own cases are in tests/units.test.ts.
 import { ESLint } from "eslint";
 import { describe, expect, it } from "vitest";
@@ -56,16 +57,51 @@ describe("browser storage rules", () => {
   }
 
   it.each([
-    ["src/auth/pendingLogin.ts", "sessionStorage"],
-    ["src/storage/maintenance.ts", "localStorage"],
+    ["src/auth/pendingLogin.ts", ["sessionStorage"]],
+    ["src/storage/maintenance.ts", ["localStorage"]],
+    ["src/storage/consent.ts", ["localStorage", "cookie"]],
   ])("bans in %s everything banned elsewhere except %s", async (file, lifted) => {
     for (const rule of ["no-restricted-globals", "no-restricted-properties"]) {
       const elsewhere = await banned("src/auth/login.ts", rule);
       const here = await banned(file, rule);
       expect(elsewhere.some((entry) => entry.endsWith(".sessionStorage"))).toBe(true);
       expect(elsewhere.some((entry) => entry.endsWith(".localStorage"))).toBe(true);
-      expect(here).toEqual(elsewhere.filter((entry) => !entry.endsWith(`.${lifted}`)));
+      expect(here).toEqual(elsewhere.filter((entry) => !lifted.some((name) => entry.endsWith(`.${name}`))));
     }
+  });
+
+  it("lets only the consent file touch document.cookie", async () => {
+    const code = "export const c = document.cookie;\n";
+    expect(await errorsIn("src/storage/consent.ts", code)).toEqual([]);
+    for (const file of ["src/storage/maintenance.ts", "src/auth/pendingLogin.ts", "src/analytics/tracker.ts", "src/ui/app.ts", "src/main.ts"]) {
+      expect(await errorsIn(file, code)).toEqual(["no-restricted-properties"]);
+    }
+  });
+
+  it("lets the consent file use localStorage and nothing else", async () => {
+    expect(await errorsIn("src/storage/consent.ts", "export const a = localStorage;\nexport const b = window.localStorage;\n")).toEqual([]);
+    expect(await errorsIn("src/storage/consent.ts", "export const s = sessionStorage;\ndocument.body.innerHTML = '';\n")).toEqual([
+      "no-restricted-globals",
+      "no-restricted-properties",
+    ]);
+  });
+
+  it("lets only the counters import the consent file", async () => {
+    const code = 'import { readConsent } from "../storage/consent";\nexport const r = readConsent;\n';
+    expect(await errorsIn("src/analytics/tracker.ts", code)).toEqual([]);
+    for (const file of ["src/ui/app.ts", "src/analytics/consentNotice.ts", "src/auth/login.ts", "src/main.ts", "src/boot.ts"]) {
+      expect(await errorsIn(file, code)).toEqual(["@typescript-eslint/no-restricted-imports"]);
+    }
+  });
+
+  it("lets only the entry point start the third-party counters, so a sign-in document can stay free of them", async () => {
+    const code =
+      'import { createTracker } from "./analytics/tracker";\nimport { mountConsentNotice } from "./analytics/consentNotice.ts";\nexport const t = [createTracker, mountConsentNotice];\n';
+    expect(await errorsIn("src/main.ts", code)).toEqual([]);
+    for (const file of ["src/boot.ts", "src/auth/login.ts", "src/ui/app.ts", "src/ui/summary.ts", "src/service/mcpClient.ts"]) {
+      expect(await errorsIn(file, code)).toEqual(["@typescript-eslint/no-restricted-imports", "@typescript-eslint/no-restricted-imports"]);
+    }
+    expect(await errorsIn("src/boot.ts", 'import type { Counter } from "./analytics/config";\nexport type C = Counter;\n')).toEqual([]);
   });
 
   it("bans every storage and HTML sink in an ordinary file", async () => {

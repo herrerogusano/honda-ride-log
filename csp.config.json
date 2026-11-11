@@ -9,5 +9,31 @@
     "font-src": ["'self'"],
     "base-uri": ["'none'"],
     "form-action": ["'none'"]
+  },
+  "headerOnly": {
+    "frame-ancestors": ["'none'"]
+  },
+  "analytics": {
+    "cloudflare": {
+      "script-src": ["https://static.cloudflareinsights.com"],
+      "connect-src": ["https://cloudflareinsights.com"]
+    },
+    "google": {
+      "script-src": ["https://www.googletagmanager.com"],
+      "img-src": ["https://www.googletagmanager.com", "https://www.google-analytics.com"],
+      "connect-src": [
+        "https://www.googletagmanager.com",
+        "https://www.google-analytics.com",
+        "https://region1.google-analytics.com",
+        "https://region1.analytics.google.com"
+      ]
+    }
+  },
+  "headers": {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Cross-Origin-Opener-Policy": "same-origin",
+    "Cross-Origin-Resource-Policy": "same-origin",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), browsing-topics=()"
   }
 }

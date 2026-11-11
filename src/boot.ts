@@ -12,6 +12,10 @@
  *
  * The session lives here and in the client only, in memory. Signing out
  * forgets it; the page drops the data and stops the load.
+ *
+ * The visit counters (docs/PLAN.md, section 17) start only after that
+ * return has been dealt with, so neither ever runs with `?code` in the
+ * address; then "signed in" is counted once the code became a session.
  */
 import { completeLogin, logout, startLogin, type AuthDeps, type LoginReturn } from "./auth/login";
 import type { AuthSession } from "./auth/session";
@@ -20,18 +24,29 @@ import { signInError, type LoadError } from "./service/loader";
 import { createMcpClient, type McpClientOptions } from "./service/mcpClient";
 import { clear, el } from "./ui/dom";
 import { startApp, type App, type AppOptions } from "./ui/app";
+import type { Counter } from "./analytics/config";
 
-export interface BootOptions extends Omit<AppOptions, "account" | "initialView"> {
+/** What `boot` needs of the visit counters (`createTracker` in the page, a fake in tests). */
+export type BootAnalytics = Counter;
+
+export interface BootOptions extends Omit<AppOptions, "account" | "initialView" | "onDemo"> {
   readonly environment: ServiceEnvironment;
   /** Browser objects of the sign-in; `browserDeps()` in the page, fakes in tests. Unused in demo. */
   readonly auth: () => AuthDeps;
   /** Only for tests: the `/mcp` client's fetch, clock and pacing. */
   readonly mcp?: McpClientOptions;
+  /** The visit counters; none if left out. */
+  readonly analytics?: BootAnalytics;
 }
 
 export async function boot(options: BootOptions): Promise<App> {
-  const { environment, auth, mcp, ...appOptions } = options;
-  if (environment.kind === "demo") return startApp(appOptions);
+  const { environment, auth, mcp, analytics, ...rest } = options;
+  const appOptions: Omit<AppOptions, "account" | "initialView"> = { ...rest, onDemo: () => analytics?.track("demo_open") };
+  if (environment.kind === "demo") {
+    // No login in this build, so the address never carries a code.
+    analytics?.start();
+    return startApp(appOptions);
+  }
 
   const { config } = environment;
   const deps = auth();
@@ -49,6 +64,9 @@ export async function boot(options: BootOptions): Promise<App> {
   } catch (error) {
     failure = signInError(error);
   }
+  // Only now: `completeLogin` has taken the login parameters out of the address.
+  analytics?.start();
+  if (back.status === "signed_in") analytics?.track("login");
 
   const app = startApp({
     ...appOptions,

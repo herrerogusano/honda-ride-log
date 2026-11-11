@@ -27,6 +27,7 @@ import {
   withUnit,
 } from "../domain/format";
 import { maintenanceProgress, maintenanceStatus, validPlan, type MaintenancePlan } from "../domain/maintenance";
+import { currentAnalytics, type AnalyticsConfig } from "../analytics/config";
 import { TRIM_METERS } from "../domain/privacy";
 import {
   activityCalendar,
@@ -61,12 +62,40 @@ import { sectionHeader, type SectionHeader } from "./sectionHeader";
 const days = (count: number): string => (count === 1 ? withUnit("1", "día") : withUnit(formatNumber(count), "días"));
 const plural = (count: number, one: string, many: string): string => `${formatNumber(count)} ${count === 1 ? one : many}`;
 
+/**
+ * What is counted of a visit, and what never is (docs/PLAN.md, section 17).
+ * Depends on the counters this build has; without any, it says so.
+ */
+export function countingPromise(config: AnalyticsConfig): string {
+  const cloudflare = config.cloudflareToken !== null;
+  const google = config.googleMeasurementId !== null;
+  if (!cloudflare && !google) return "Esta web no cuenta las visitas.";
+  const parts: string[] = [];
+  if (cloudflare) parts.push("Las visitas se cuentan con Cloudflare Web Analytics, sin cookies.");
+  if (google) {
+    parts.push(
+      cloudflare
+        ? "Si aceptas las cookies, también con Google Analytics, que además sabe si abres la demo."
+        : "Si aceptas las cookies, las visitas se cuentan con Google Analytics, que además sabe si abres la demo.",
+    );
+  }
+  parts.push(
+    cloudflare && google
+      ? "Ninguno de los dos se carga cuando entras con tu cuenta, así que no ven tus rutas, tus cifras ni los datos de tu moto."
+      : "No se carga cuando entras con tu cuenta, así que no ve tus rutas, tus cifras ni los datos de tu moto.",
+  );
+  return parts.join(" ");
+}
+
 /** What the page promises about the rider's data: on the landing and in the footer. */
-export const PROMISES: readonly string[] = [
-  "Los datos se leen y se calculan en tu navegador; esta web no tiene servidor propio ni analítica.",
-  "Nunca se muestran la matrícula, el bastidor, el concesionario ni la posición actual de la moto.",
-  `Los mapas ocultan los primeros y los últimos ${TRIM_METERS} m de cada ruta.`,
-];
+export function promises(config: AnalyticsConfig = currentAnalytics()): readonly string[] {
+  return [
+    "Tus datos se leen y se calculan en tu navegador y no salen de él: esta web no tiene servidor propio.",
+    countingPromise(config),
+    "Nunca se muestran la matrícula, el bastidor, el concesionario ni la posición actual de la moto.",
+    `Los mapas ocultan los primeros y los últimos ${TRIM_METERS} m de cada ruta.`,
+  ];
+}
 
 /** A block inside a numbered section: a small heading, the period it shows and its content. */
 function block(title: string, scope: string | null, ...children: (Node | null)[]): HTMLElement {
@@ -673,7 +702,7 @@ function footer(data: RiderData): HTMLElement {
       el(
         "ul",
         {},
-        ...PROMISES.map((promise) => el("li", {}, promise)),
+        ...promises().map((promise) => el("li", {}, promise)),
         el("li", {}, "Al salir, la web olvida tus datos. En este navegador solo quedan los dos números del mantenimiento, si los guardas."),
       ),
     ),

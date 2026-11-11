@@ -1,4 +1,4 @@
-# Honda Ride Log
+# Ride Log
 
 Web estática para ver las estadísticas de tus propias rutas en moto, a partir
 de tu cuenta de MAPIT (la app que localiza la moto).
@@ -30,11 +30,20 @@ Una sola página, oscura, con seis secciones:
 
 ## Privacidad
 
-- No hay servidor propio, ni analítica, ni terceros: la página solo pide las
-  teselas del mapa a OpenStreetMap.
+- No hay servidor propio. Tus rutas, tus cifras y los datos de tu moto se
+  quedan en tu navegador: no se envían a nadie más que al servicio del que
+  se leen.
+- Terceros: las teselas del mapa, a OpenStreetMap, y en la copia publicada
+  en Cloudflare Pages hasta dos contadores de visitas. Cloudflare Web
+  Analytics cuenta la visita sin cookies. Google Analytics solo se carga si
+  aceptas en el aviso de cookies, y cuenta la visita y si abres la demo; si
+  rechazas, no se carga. Se puede cambiar de opinión al final de la página.
+  Ninguno se carga en la página a la que vuelves tras iniciar sesión, y
+  ninguno recibe tus rutas, tus cifras ni la dirección completa de la
+  página.
 - Los datos se leen y se calculan en tu navegador y no se guardan. Lo único
   que se recuerda, en tu navegador, son los dos números de mantenimiento que
-  tú escribas.
+  tú escribas y tu respuesta al aviso de cookies.
 - Nunca se muestran la matrícula, el bastidor, el concesionario ni la
   posición actual de la moto.
 - El mapa y el atlas no dibujan nada a menos de 400 m de donde empieza o
@@ -70,7 +79,8 @@ npm run dev        # servidor de desarrollo: http://localhost:5173/#demo
 npm run lint       # ESLint
 npm run typecheck  # TypeScript sin emitir
 npm test           # tests (Vitest)
-npm run build      # typecheck + build en dist/ + comprobaciones de publicación
+npm run build      # typecheck + build para GitHub Pages en dist/ + comprobaciones de publicación
+npm run build:cloudflare  # lo mismo para Cloudflare Pages, con dist/_headers
 ```
 
 Las reglas para quien toque el código (personas o agentes) están en

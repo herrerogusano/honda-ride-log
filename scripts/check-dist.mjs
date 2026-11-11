@@ -6,7 +6,7 @@
 // loosened policy), written with regular expressions over the HTML that Vite
 // emits. It is not an HTML parser and does not defend against someone who
 // edits dist/ by hand: whoever can do that can also skip this script.
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const expected = JSON.parse(read("../csp.config.json"));
@@ -23,6 +23,18 @@ const value = (field) => (typeof entry?.[field] === "string" ? entry[field].trim
 if (value("mcpUrl") || value("loginDomain") || value("webClientId")) {
   const origins = [new URL(value("mcpUrl")).origin, new URL(value("loginDomain")).origin];
   expected.directives["connect-src"] = [...expected.directives["connect-src"], ...new Set(origins)];
+}
+// Each visit counter set in analytics.config.json adds the origins listed for
+// it under `analytics` in csp.config.json, and nothing else (section 17).
+const counters = JSON.parse(read("../analytics.config.json"));
+const counter = mode !== "$comment" && Object.hasOwn(counters, mode) ? counters[mode] : null;
+const counterSet = (field) => typeof counter?.[field] === "string" && counter[field].trim() !== "";
+for (const [field, name] of [["cloudflareToken", "cloudflare"], ["googleMeasurementId", "google"]]) {
+  if (!counterSet(field)) continue;
+  for (const [directive, values] of Object.entries(expected.analytics[name])) {
+    const current = expected.directives[directive] ?? [];
+    expected.directives[directive] = [...current, ...values.filter((one) => !current.includes(one))];
+  }
 }
 const html = read("../dist/index.html").replace(/<!--[\s\S]*?-->/g, "");
 if (html.includes("<!--")) problems.push("unterminated or nested HTML comment");
@@ -93,8 +105,33 @@ for (const name of assets.filter((one) => one.endsWith(".css"))) {
   if (/@import/i.test(sheet)) problems.push(`stylesheet ${name} has an @import`);
 }
 
+// Cloudflare Pages reads dist/_headers: the same policy as the <meta> tag
+// plus the header-only directives, the referrer policy and the other headers,
+// for every path. The GitHub Pages build has no such file.
+const headersPath = new URL("../dist/_headers", import.meta.url);
+const headers = existsSync(headersPath) ? readFileSync(headersPath, "utf8") : null;
+if (mode === "cloudflare") {
+  const policy = Object.entries({ ...expected.directives, ...expected.headerOnly })
+    .map(([name, values]) => `${name} ${values.join(" ")}`)
+    .join("; ");
+  const wanted = [
+    "/*",
+    `  Content-Security-Policy: ${policy}`,
+    `  Referrer-Policy: ${expected.referrer}`,
+    ...Object.entries(expected.headers).map(([name, value]) => `  ${name}: ${value}`),
+  ].join("\n") + "\n";
+  if (headers === null) problems.push("dist/_headers is missing");
+  else if (headers !== wanted) problems.push(`dist/_headers differs from csp.config.json:\n${headers}`);
+  if (!expected.headerOnly["frame-ancestors"]?.includes("'none'")) problems.push("frame-ancestors 'none' missing from headerOnly");
+} else if (headers !== null) {
+  problems.push(`dist/_headers found in a ${mode} build`);
+}
+
 if (problems.length > 0) {
   console.error("dist/index.html failed the publication checks:\n- " + problems.join("\n- "));
   process.exit(1);
 }
-console.log("dist/index.html: exact security policy present, no inline code, no foreign resources.");
+console.log(
+  `dist/index.html (${mode}): exact security policy present, no inline code, no foreign resources` +
+    (mode === "cloudflare" ? "; dist/_headers matches." : "."),
+);
