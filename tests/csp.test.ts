@@ -5,6 +5,7 @@ import {
   CSP_DIRECTIVES,
   cspContent,
   directivesFor,
+  analyticsFor,
   environmentFor,
   HEADER_ONLY_DIRECTIVES,
   headersFile,
@@ -164,5 +165,22 @@ describe("content security policy", () => {
     for (const directive of ["default-src", "style-src", "font-src", "base-uri", "form-action"]) expect(everything[directive]).toEqual(CSP_DIRECTIVES[directive]);
     expect(everything["frame-src"]).toBeUndefined();
     expect(Object.keys(ANALYTICS_SOURCES)).toEqual(["cloudflare", "google"]);
+  });
+
+  it("writes exactly these headers for the Cloudflare Pages build as configured (demo only, Google's id, no Cloudflare token)", () => {
+    const directives = directivesFor(environmentFor("cloudflare").environment, analyticsFor("cloudflare").analytics);
+    expect(headersFile(directives)).toBe(
+      "/*\n" +
+        "  Content-Security-Policy: default-src 'none'; script-src 'self' https://www.googletagmanager.com; style-src 'self'; " +
+        "img-src 'self' https://tile.openstreetmap.org https://www.googletagmanager.com https://www.google-analytics.com; " +
+        "connect-src 'self' https://www.googletagmanager.com https://www.google-analytics.com https://region1.google-analytics.com " +
+        "https://region1.analytics.google.com; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'\n" +
+        "  Referrer-Policy: strict-origin\n" +
+        "  X-Content-Type-Options: nosniff\n" +
+        "  X-Frame-Options: DENY\n" +
+        "  Cross-Origin-Opener-Policy: same-origin\n" +
+        "  Cross-Origin-Resource-Policy: same-origin\n" +
+        "  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), browsing-topics=()\n",
+    );
   });
 });

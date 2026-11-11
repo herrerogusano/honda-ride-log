@@ -1,0 +1,56 @@
+name: Deploy to Cloudflare Pages
+
+# Builds the `cloudflare` mode (docs/PLAN.md, section 17) when main changes
+# and uploads dist/ to the Cloudflare Pages project `my-ride-log`, which has
+# no Git connection of its own: the build happens here, after the same checks
+# as the CI.
+#
+# Needs two repository secrets, CLOUDFLARE_API_TOKEN (a token limited to
+# "Cloudflare Pages: Edit" on that account) and CLOUDFLARE_ACCOUNT_ID. Until
+# both exist, the build still runs and the upload is skipped with a notice,
+# so nothing fails for lack of them. Pull requests never run this workflow.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build:cloudflare
+      - name: Skip the upload while the secrets are missing
+        if: ${{ env.CLOUDFLARE_API_TOKEN == '' || env.CLOUDFLARE_ACCOUNT_ID == '' }}
+        run: echo "::notice::CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID is not set; dist/ was built and checked but not uploaded."
+      - name: Upload dist/ to Cloudflare Pages
+        if: ${{ env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' }}
+        uses: cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0 # v4.1.3
+        with:
+          apiToken: ${{ env.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4.156.2"
+          command: pages deploy dist --project-name=my-ride-log --branch=main --commit-dirty=true

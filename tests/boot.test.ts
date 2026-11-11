@@ -482,7 +482,26 @@ describe("visit counters (docs/PLAN.md, section 17)", () => {
     expect(seen).toEqual(["start ", "demo_open "]);
   });
 
-  it("never hand Google Analytics the login code, even with consent given earlier", async () => {
+  it("load no counter at all in the page that came back from the login, with the account on screen", async () => {
+    const landing = await start(SERVICE);
+    button("Entrar").click();
+    await vi.waitFor(() => expect(navigations).toHaveLength(1));
+    const back = new URL(server.approve(navigations[0] ?? ""));
+    landing.dispose();
+    writeConsent("granted", Date.now());
+    // A browser keeps the arrival address, code included, in its navigation timing entry.
+    analyticsUnderTest = createTracker(
+      { cloudflareToken: "0123456789abcdef0123456789abcdef", googleMeasurementId: "G-TEST1234" },
+      { arrival: () => back.href },
+    );
+    await start(SERVICE, back.pathname + back.search);
+    await loaded();
+    expect(location.search).toBe("");
+    expect(document.head.querySelectorAll("script")).toHaveLength(0);
+    expect((window as unknown as { dataLayer?: unknown }).dataLayer).toBeUndefined();
+  });
+
+  it("never hand Google Analytics the login code, even where the browser keeps no arrival address", async () => {
     const landing = await start(SERVICE);
     button("Entrar").click();
     await vi.waitFor(() => expect(navigations).toHaveLength(1));
@@ -491,7 +510,10 @@ describe("visit counters (docs/PLAN.md, section 17)", () => {
     expect(code).not.toBe("");
     landing.dispose();
     writeConsent("granted", Date.now());
-    analyticsUnderTest = createTracker({ cloudflareToken: "0123456789abcdef0123456789abcdef", googleMeasurementId: "G-TEST1234" });
+    analyticsUnderTest = createTracker(
+      { cloudflareToken: "0123456789abcdef0123456789abcdef", googleMeasurementId: "G-TEST1234" },
+      { arrival: () => null },
+    );
     await start(SERVICE, back.pathname + back.search);
     await loaded();
     const scripts = [...document.head.querySelectorAll("script")].map((one) => one.src);

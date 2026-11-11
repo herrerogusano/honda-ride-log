@@ -489,7 +489,7 @@ política de seguridad de contenido, tal como se publicará: `npm run build`,
 | `vite.config.ts` | Build, ruta base de cada publicación (GitHub Pages o Cloudflare Pages), inyección de la política y `_headers`. |
 | `analytics.config.json`, `src/analytics/`, `src/storage/consent.ts` | Contadores de visitas, aviso de cookies y la respuesta guardada (apartado 17). |
 | `scripts/check-dist.mjs` | Comprobaciones de publicación sobre `dist/index.html`. |
-| `.github/workflows/` | `ci.yml` (construye las dos publicaciones) y `pages.yml` (publica `dist/` en GitHub Pages cuando cambia `main`). |
+| `.github/workflows/` | `ci.yml` (construye las dos publicaciones), `pages.yml` (publica `dist/` en GitHub Pages cuando cambia `main`) y `cloudflare-pages.yml` (publica el modo `cloudflare` en Cloudflare Pages cuando cambia `main`; apartado 17). |
 
 Reglas:
 
@@ -1389,7 +1389,7 @@ apartado 4:
 | Modo de Vite | Dónde | Orden | Ruta base | Servicio | Contadores | `dist/_headers` |
 |---|---|---|---|---|---|---|
 | `production` | GitHub Pages (`pages.yml`), como hasta ahora | `npm run build` | `/honda-ride-log/` | el de producción | ninguno | no |
-| `cloudflare` | Cloudflare Pages | `npm run build:cloudflare` | `/` | ninguno, de momento (solo demo) | los de `analytics.config.json` | sí |
+| `cloudflare` | Cloudflare Pages, proyecto `my-ride-log` (`cloudflare-pages.yml`) | `npm run build:cloudflare` | `/` | ninguno, de momento (solo demo) | los de `analytics.config.json`: hoy Google Analytics (identificador público `G-JVB68585NG`); el token de Cloudflare, vacío | sí |
 
 - `pages.yml` sigue publicando en GitHub Pages: mientras exista, hay dos
   copias publicadas, y la de GitHub Pages no tiene contadores.
@@ -1400,6 +1400,14 @@ apartado 4:
   `production` con esa dirección en `redirectUri` y `logoutUri`. Con un
   botón «Entrar» antes de eso, el login respondería con un error.
 - La CI construye las dos.
+- `.github/workflows/cloudflare-pages.yml` publica en Cloudflare Pages al
+  cambiar `main` (o a mano): las mismas comprobaciones que la CI,
+  `npm run build:cloudflare` y la subida de `dist/` al proyecto
+  `my-ride-log` con wrangler (acción y versión de wrangler fijadas). El
+  proyecto no está conectado a Git: se construye aquí y se sube hecho. Usa
+  los secretos `CLOUDFLARE_API_TOKEN` y `CLOUDFLARE_ACCOUNT_ID`; sin ellos
+  construye y comprueba, se salta la subida y lo dice con un aviso. Las PR
+  no lo ejecutan.
 
 ### Cabeceras (`dist/_headers`)
 
@@ -1453,27 +1461,41 @@ la política es exactamente la de antes (test):
   dos funciones, `start()` y `track(evento)`.
 - **Orden:** `boot` llama a `start()` solo después de resolver la vuelta del
   login (`completeLogin` ya ha quitado `?code` y `?state` de la dirección),
-  salga bien o mal. Ningún script de los contadores corre con nada del
-  inicio de sesión en la dirección. Además, `start()` se niega si la
-  dirección aún lleva un parámetro del login. Test en `tests/boot.test.ts`,
-  visto fallar con el orden invertido (tres tests en rojo).
-- Eventos: la visita (`page_view`), `demo_open` y `login`, una lista cerrada
-  sin parámetros nuestros. Ningún identificador, ruta, cifra ni fragmento
-  puede ir en ellos.
+  salga bien o mal. Test en `tests/boot.test.ts`, visto fallar con el orden
+  invertido (tres tests en rojo).
+- **Ningún contador en una carga que llegó del login.** Quitar `?code` y
+  `?state` de la barra (`history.replaceState`) no los quita de la entrada
+  de navegación del navegador (`performance.getEntriesByType("navigation")`),
+  que conserva la dirección de llegada y que un script de terceros puede
+  leer. Por eso `start()` mira la dirección actual **y** la de llegada, y si
+  cualquiera lleva un parámetro del login (`code`, `state`, `error`...), no
+  carga nada en esa carga de página, ni después al aceptar. Toda sesión con
+  cuenta empieza así, y el token solo vive en esa carga, de modo que
+  **ningún contador comparte página con los datos de una cuenta**: solo con
+  la portada y la demo.
+- Eventos: la visita (`page_view`) y `demo_open`, sin parámetros nuestros.
+  Ningún identificador, ruta, cifra ni fragmento puede ir en ellos (test
+  con igualdad exacta de todo lo que se deja a Google). El evento `login`
+  sigue en la lista, pero con este login nunca se envía (ver el punto
+  anterior); contarlo exigiría guardar algo entre cargas, que no se hace.
 - A Google se le da la dirección como origen y ruta, sin consulta ni
   fragmento (`page_location`), la página anterior solo como origen
   (`page_referrer`), el título fijo «Ride Log», y `allow_google_signals` y
   `allow_ad_personalization_signals` apagados.
-- Cloudflare: su script lee la dirección por su cuenta; cuando carga ya no
-  lleva nada del login, pero sí el fragmento `#demo` si lo hay (no es un
-  dato de nadie). `spa: false`: cambiar el fragmento no cuenta otra visita.
+- Cloudflare: su script lee por su cuenta la dirección y, según se cree,
+  datos de rendimiento de la página. Comprobado: no se carga en una carga
+  que llegó con parámetros del login (tests), así que no puede leer ni la
+  dirección ni la entrada de navegación de esa carga. Sin comprobar qué
+  envía exactamente en el resto (lleva el fragmento `#demo` si lo hay, que
+  no es un dato de nadie). `spa: false`: cambiar el fragmento no debería
+  contar otra visita.
   **Hay que usar el fragmento manual de Cloudflare, no la inyección
   automática de su panel de Pages:** la automática mete el script en el HTML
   en el borde, antes de que la página limpie la dirección, y sin pasar por
   `analytics.config.json` ni por `check-dist`.
-- **Sin verificar:** qué envían de verdad los scripts de Cloudflare y de
-  Google, que el de Cloudflare lea `spa: false` cuando lo añade nuestro
-  código, y que Google no use otra fuente que no controlamos.
+- **Sin verificar** (ver «Qué no se ha comprobado»): qué envían de verdad los
+  dos scripts, que el de Cloudflare respete `spa: false` añadido por nuestro
+  código y que, pudiendo leer la página, no recojan lo que hay en pantalla.
 - Google Analytics tiene «medición mejorada», que se configura en su panel,
   no en el código, y puede recoger clics en enlaces externos, descargas,
   formularios y búsquedas por parámetros de la dirección. Hay que apagarla
@@ -1493,14 +1515,18 @@ la política es exactamente la de antes (test):
   con su propio interruptor (`ga-disable-<id>`) y se borran sus cookies
   (`_ga`, `_ga_<id>`). El script ya cargado no se puede descargar de la
   página: deja de enviar, pero sigue en memoria hasta recargar.
-- La respuesta caduca al año y entonces se vuelve a preguntar.
+- Una respuesta dada en otra pestaña se aplica en esta (evento `storage`):
+  una retirada apaga Google y borra sus cookies también aquí.
+- La respuesta caduca al año y entonces se vuelve a preguntar; las cookies
+  de una aceptación caducada se borran al cargar la página.
 
 ### Almacenamiento: tercera excepción
 
 **`src/storage/consent.ts` puede usar `localStorage`** (y de los
 almacenamientos, solo ese) para guardar la respuesta al aviso (`granted` o
 `denied`) y el día, bajo una clave, y **`document.cookie` solo para borrar
-las cookies de Google Analytics** al retirar el consentimiento. No escribe
+las cookies de Google Analytics** al retirar el consentimiento o al caducar
+una aceptación. No escribe
 cookies propias. `sessionStorage` y el HTML siguen prohibidos en ese archivo,
 y solo `src/analytics/tracker.ts` puede importarlo. `document.cookie` pasa a
 estar prohibido en el resto del código (antes ESLint no lo veía). Lo
@@ -1533,7 +1559,7 @@ antes de `start()`. Habría que elegir entre:
 
 ### Qué se ha comprobado y dónde
 
-- Tests (Vitest, jsdom, local en Windows con Node 24): 707 en verde. Los de
+- Tests (Vitest, jsdom, local en Windows con Node 24): 722 en verde. Los de
   los contadores prueban qué scripts pide la página y qué deja en la capa
   de datos de Google, no lo que esos scripts envían después.
 - El orden «primero limpiar la dirección, después los contadores» se vio
@@ -1542,8 +1568,16 @@ antes de `start()`. Habría que elegir entre:
   (con la suite en verde lanzada igual antes de empezar): todas detectadas.
   La única que pareció sobrevivir cambiaba un comentario; repetida sobre el
   código, se detectó.
+- Una revisión independiente encontró roturas que la suite no veía (la
+  entrada de navegación, parámetros de más en los eventos, el referente sin
+  limpiar, la retirada en otra pestaña, el borrado de cookies sin Google
+  cargado, la guarda que solo miraba `code`, el doble «Aceptar»). Se
+  arreglaron o se cubrieron con tests, y 16 roturas más, una por arreglo y
+  por cada caso del revisor, se vieron detectar (dos sobrevivieron al
+  principio y se cubrieron).
 - `check-dist`: falla con `_headers` alterado, ausente en `cloudflare` o
-  presente en `production`.
+  presente en `production`; y un test fija el `_headers` exacto del modo
+  `cloudflare` tal como está configurado.
 - Navegador (Chromium, `vite preview` del build `cloudflare` hecho con
   identificadores inventados, sin commitearlos; 2026-11-11), a 320 y
   1280 px:
@@ -1567,13 +1601,30 @@ antes de `start()`. Habría que elegir entre:
 
 ### Qué no se ha comprobado
 
-- Nada contra cuentas reales de Cloudflare ni de Google: los
-  identificadores son inventados. Ni que Cloudflare Pages lea `_headers`
-  como esperamos (`vite preview` no envía esas cabeceras, así que
-  `frame-ancestors` no se ha visto actuar), ni las visitas en sus paneles,
-  ni que Cloudflare respete `spa: false`.
-- El evento `login` en un navegador real: solo en tests (no hay login desde
-  `pages.dev`).
+- Nada contra cuentas reales: en el navegador los identificadores eran
+  inventados. Ni que Cloudflare Pages lea `_headers` como esperamos
+  (`vite preview` no envía esas cabeceras, así que `frame-ancestors` no se
+  ha visto actuar), ni las visitas en los paneles, ni el flujo de
+  despliegue (falta crear los secretos).
+- **Qué envían de verdad los dos scripts.** Cómo comprobarlo con el token y
+  la propiedad reales, en `pages.dev`: abrir la pestaña de red, cargar la
+  portada, abrir la demo y cambiar de escenario, y leer el **cuerpo** de
+  cada petición a `cloudflareinsights.com` y a
+  `region1.google-analytics.com` (no solo la dirección): ni una ruta, ni
+  una cifra, ni `code`/`state`, ni la dirección con consulta.
+- **Que Cloudflare respete `spa: false` puesto por nuestro código.** Cómo:
+  en la misma prueba, cambiar el fragmento (`#demo` → `#demo=heavy`) varias
+  veces y ver que no sale ningún envío nuevo a `cloudflareinsights.com`, y
+  que el panel cuenta una visita.
+- **Que los scripts, que pueden leer la página, no recojan lo que hay en
+  pantalla.** Con este login no comparten página con una cuenta (ver «Qué
+  se envía»), así que lo único que podrían leer son las cifras de la demo,
+  que son inventadas. Cómo comprobarlo: en la prueba anterior, buscar en
+  los cuerpos alguna cifra de las que la demo enseña; y en los paneles,
+  que no aparezca ningún texto de la página más allá del título.
+- Que el evento `login` no se envía nunca en un navegador real: solo en
+  tests (no hay login desde `pages.dev`). Que la entrada de navegación
+  conserva la consulta tras `history.replaceState` se vio en Chromium.
 - El login desde `pages.dev` (no está dado de alta en el servicio).
 - Safari, Firefox, un móvil físico, un lector de pantalla con el aviso.
 - Si el texto del aviso basta legalmente: no es asesoramiento jurídico.

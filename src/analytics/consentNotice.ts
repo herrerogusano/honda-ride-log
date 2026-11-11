@@ -20,7 +20,7 @@ export interface ConsentNotice {
 
 function explanation(tracker: Tracker): string {
   const google =
-    "Google Analytics, que guarda cookies en este navegador y envía a Google la visita, si abres la demo y si entras con tu cuenta";
+    "Google Analytics, que guarda cookies en este navegador y envía a Google la visita y si abres la demo";
   const parts =
     tracker.config.cloudflareToken === null
       ? [`Si aceptas, esta web cuenta las visitas con ${google}.`]
@@ -75,6 +75,11 @@ export function mountConsentNotice(host: HTMLElement, tracker: Tracker): Consent
   prefsButton.addEventListener("click", () => {
     show(true);
     accept.focus();
+  });
+
+  // An answer given in another tab: keep the line at the end of the page true.
+  tracker.onChange(() => {
+    state.textContent = stateText(tracker);
   });
 
   host.hidden = false;

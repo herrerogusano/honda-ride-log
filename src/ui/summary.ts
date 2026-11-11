@@ -75,11 +75,15 @@ export function countingPromise(config: AnalyticsConfig): string {
   if (google) {
     parts.push(
       cloudflare
-        ? "Si aceptas las cookies, también con Google Analytics, que además sabe si abres la demo o entras con tu cuenta."
-        : "Si aceptas las cookies, las visitas se cuentan con Google Analytics, que además sabe si abres la demo o entras con tu cuenta.",
+        ? "Si aceptas las cookies, también con Google Analytics, que además sabe si abres la demo."
+        : "Si aceptas las cookies, las visitas se cuentan con Google Analytics, que además sabe si abres la demo.",
     );
   }
-  parts.push(`${cloudflare && google ? "Ninguno de los dos recibe" : "No recibe"} tus rutas, tus cifras ni los datos de tu moto.`);
+  parts.push(
+    cloudflare && google
+      ? "Ninguno de los dos se carga cuando entras con tu cuenta, así que no ven tus rutas, tus cifras ni los datos de tu moto."
+      : "No se carga cuando entras con tu cuenta, así que no ve tus rutas, tus cifras ni los datos de tu moto.",
+  );
   return parts.join(" ");
 }
 

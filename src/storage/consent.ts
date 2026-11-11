@@ -15,24 +15,38 @@
 
 export type ConsentChoice = "granted" | "denied";
 
-const KEY = "ride-log.consent.v1";
+/** The storage key; a `storage` event with this key means another tab changed the answer. */
+export const CONSENT_KEY = "ride-log.consent.v1";
 /** About a year: the notice asks again after it. */
 export const CONSENT_MAX_AGE_MS = 365 * 24 * 60 * 60 * 1000;
 
-/** The stored answer, or null if there is none, it is damaged, too old or storage is unavailable. */
-export function readConsent(now: number): ConsentChoice | null {
+/** The stored record, whatever its age, or null if there is none, it is damaged or storage is unavailable. */
+function readRecord(): { readonly choice: ConsentChoice; readonly at: number } | null {
   try {
-    const text = localStorage.getItem(KEY);
+    const text = localStorage.getItem(CONSENT_KEY);
     if (text === null) return null;
     const parsed: unknown = JSON.parse(text);
     if (typeof parsed !== "object" || parsed === null) return null;
     const { choice, at } = parsed as Record<string, unknown>;
     if (choice !== "granted" && choice !== "denied") return null;
-    if (typeof at !== "number" || !Number.isFinite(at) || at > now || now - at > CONSENT_MAX_AGE_MS) return null;
-    return choice;
+    if (typeof at !== "number" || !Number.isFinite(at)) return null;
+    return { choice, at };
   } catch {
     return null;
   }
+}
+
+/** The stored answer, or null if there is none, it is damaged, too old or storage is unavailable. */
+export function readConsent(now: number): ConsentChoice | null {
+  const record = readRecord();
+  if (record === null || record.at > now || now - record.at > CONSENT_MAX_AGE_MS) return null;
+  return record.choice;
+}
+
+/** True when there is an acceptance older than `CONSENT_MAX_AGE_MS`: its cookies outlived it. */
+export function consentExpired(now: number): boolean {
+  const record = readRecord();
+  return record !== null && record.choice === "granted" && now - record.at > CONSENT_MAX_AGE_MS;
 }
 
 /** Stores the answer. False when the browser refuses (private mode, storage full or disabled). */
@@ -41,7 +55,7 @@ export function writeConsent(choice: ConsentChoice, now: number): boolean {
   // The day only: the exact time is not needed to know when to ask again.
   const day = Math.floor(now / 86_400_000) * 86_400_000;
   try {
-    localStorage.setItem(KEY, JSON.stringify({ choice, at: day }));
+    localStorage.setItem(CONSENT_KEY, JSON.stringify({ choice, at: day }));
     return true;
   } catch {
     return false;

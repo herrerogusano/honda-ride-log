@@ -5,12 +5,12 @@
 // pushes to Google's data layer: not what Cloudflare's or Google's scripts
 // then send, nor that either service accepts it.
 /* eslint-disable no-restricted-globals, no-restricted-properties -- the test reads and resets the storage and cookies that src/storage/consent.ts writes */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import analyticsFile from "../analytics.config.json" with { type: "json" };
 import { AnalyticsConfigError, NO_ANALYTICS, parseAnalytics, type AnalyticsConfig } from "../src/analytics/config";
 import { mountConsentNotice } from "../src/analytics/consentNotice";
-import { cleanLocation, cleanReferrer, createTracker } from "../src/analytics/tracker";
-import { CONSENT_MAX_AGE_MS, deleteGoogleCookies, readConsent, writeConsent } from "../src/storage/consent";
+import { arrivalAddress, cleanLocation, cleanReferrer, createTracker, type TrackerOptions } from "../src/analytics/tracker";
+import { CONSENT_KEY, CONSENT_MAX_AGE_MS, deleteGoogleCookies, readConsent, writeConsent } from "../src/storage/consent";
 import { countingPromise } from "../src/ui/summary";
 import { analyticsFor } from "../vite.config";
 
@@ -26,7 +26,13 @@ const scripts = (): string[] => [...document.querySelectorAll("script")].map((on
 const flags = (): Record<string, unknown> => window as unknown as Record<string, unknown>;
 const layer = (): unknown[][] => ((flags()["dataLayer"] as IArguments[] | undefined) ?? []).map((one) => [...one]);
 
+/** Each test's trackers stop listening to `storage` when it ends. */
+let listening = new AbortController();
+const newTracker = (config: AnalyticsConfig, options: TrackerOptions = {}) => createTracker(config, { signal: listening.signal, ...options });
+
 beforeEach(() => {
+  listening.abort();
+  listening = new AbortController();
   history.replaceState(null, "", "/");
   localStorage.clear();
   document.head.replaceChildren();
@@ -40,11 +46,167 @@ beforeEach(() => {
 afterEach(() => {
   delete flags()["dataLayer"];
   Reflect.deleteProperty(flags(), `ga-disable-${GA}`);
+  Reflect.deleteProperty(document, "referrer");
+  vi.restoreAllMocks();
+});
+
+/** Another tab changing the stored answer: the browser fires `storage` in this one. */
+function answerInAnotherTab(choice: "granted" | "denied"): void {
+  writeConsent(choice, Date.now());
+  window.dispatchEvent(new StorageEvent("storage", { key: CONSENT_KEY }));
+}
+
+const COOKIES = (): string[] => document.cookie.split(";").map((one) => one.trim()).filter((one) => one !== "").sort();
+
+describe("a page load that arrived from the login", () => {
+  it("loads no counter, even after the address was cleaned, when it arrived with the code", () => {
+    const tracker = newTracker(BOTH, { arrival: () => "http://localhost:3000/?code=synthetic&state=synthetic" });
+    writeConsent("granted", Date.now());
+    tracker.start();
+    tracker.grant();
+    tracker.track("login");
+    expect(scripts()).toEqual([]);
+    expect(flags()["dataLayer"]).toBeUndefined();
+  });
+
+  it("loads no counter when it arrived with a login error instead of a code", () => {
+    const tracker = newTracker(CLOUDFLARE_ONLY, { arrival: () => "http://localhost:3000/?error=access_denied&state=synthetic" });
+    tracker.start();
+    expect(scripts()).toEqual([]);
+    history.replaceState(null, "", "/?error=access_denied&state=synthetic");
+    newTracker(CLOUDFLARE_ONLY, { arrival: () => null }).start();
+    expect(scripts()).toEqual([]);
+  });
+
+  it("reads the arrival address from the browser's navigation timing entry", () => {
+    vi.spyOn(performance, "getEntriesByType").mockImplementation((type) =>
+      type === "navigation" ? [{ name: "http://localhost:3000/?code=synthetic&state=synthetic" } as PerformanceEntry] : [],
+    );
+    expect(arrivalAddress()).toBe("http://localhost:3000/?code=synthetic&state=synthetic");
+    newTracker(CLOUDFLARE_ONLY).start();
+    expect(scripts()).toEqual([]);
+  });
+
+  it("loads as usual when the arrival address is an ordinary one", () => {
+    newTracker(CLOUDFLARE_ONLY, { arrival: () => "http://localhost:3000/?utm_source=x#demo" }).start();
+    expect(scripts()).toEqual(["https://static.cloudflareinsights.com/beacon.min.js"]);
+  });
+});
+
+describe("what Google is handed, exactly", () => {
+  it("only the origin of a referrer with a path and a query, and no parameter of ours in events", () => {
+    Object.defineProperty(document, "referrer", {
+      configurable: true,
+      get: () => "https://login.example.test/oauth2/authorize?client_id=synthetic&state=synthetic",
+    });
+    history.replaceState(null, "", "/app/?utm_source=x#demo");
+    writeConsent("granted", NOW);
+    const tracker = newTracker(GOOGLE_ONLY, { now: () => NOW, arrival: () => null });
+    tracker.start();
+    tracker.track("demo_open");
+    tracker.track("login");
+    expect(layer()).toEqual([
+      ["js", new Date(NOW)],
+      [
+        "config",
+        GA,
+        {
+          send_page_view: false,
+          page_location: "http://localhost:3000/app/",
+          page_referrer: "https://login.example.test/",
+          page_title: "Ride Log",
+          allow_google_signals: false,
+          allow_ad_personalization_signals: false,
+        },
+      ],
+      ["event", "page_view", { page_location: "http://localhost:3000/app/", page_title: "Ride Log" }],
+      ["event", "demo_open", { page_location: "http://localhost:3000/app/" }],
+      ["event", "login", { page_location: "http://localhost:3000/app/" }],
+    ]);
+  });
+
+  it("counts the visit once when accepting twice", () => {
+    const tracker = newTracker(GOOGLE_ONLY, { arrival: () => null });
+    tracker.start();
+    tracker.grant();
+    tracker.grant();
+    expect(layer().filter((one) => one[1] === "page_view")).toHaveLength(1);
+  });
+});
+
+describe("consent across tabs and over time", () => {
+  it("follows a withdrawal made in another tab: Google stops sending and its cookies go", () => {
+    const tracker = newTracker(GOOGLE_ONLY, { arrival: () => null });
+    const changes: (string | null)[] = [];
+    tracker.onChange(() => changes.push(tracker.choice()));
+    tracker.start();
+    tracker.grant();
+    document.cookie = "_ga=GA1.1.synthetic; Path=/";
+    answerInAnotherTab("denied");
+    expect(tracker.choice()).toBe("denied");
+    expect(flags()[`ga-disable-${GA}`]).toBe(true);
+    expect(COOKIES()).toEqual([]);
+    const before = layer().length;
+    tracker.track("demo_open");
+    expect(layer()).toHaveLength(before);
+    expect(changes).toEqual(["granted", "denied"]);
+  });
+
+  it("follows an acceptance made in another tab, and the line at the end of the page says so", () => {
+    const tracker = newTracker(GOOGLE_ONLY, { arrival: () => null });
+    const host = document.createElement("div");
+    document.body.append(host);
+    mountConsentNotice(host, tracker);
+    tracker.start();
+    answerInAnotherTab("granted");
+    expect(scripts()).toEqual([`https://www.googletagmanager.com/gtag/js?id=${GA}`]);
+    expect(host.querySelector(".consent-state")?.textContent).toBe("Google Analytics: aceptado.");
+    window.dispatchEvent(new StorageEvent("storage", { key: "another-key" }));
+    expect(scripts()).toHaveLength(1);
+  });
+
+  it("ignores changes to other storage keys", () => {
+    const tracker = newTracker(GOOGLE_ONLY, { arrival: () => null });
+    tracker.start();
+    tracker.grant();
+    writeConsent("denied", Date.now());
+    window.dispatchEvent(new StorageEvent("storage", { key: "ride-log.maintenance.v1" }));
+    expect(tracker.choice()).toBe("granted");
+    expect(flags()[`ga-disable-${GA}`]).toBe(false);
+  });
+
+  it("deletes Google's cookies on refusal even when Google never loaded in this page", () => {
+    document.cookie = "_ga=GA1.1.synthetic; Path=/";
+    document.cookie = "_ga_TEST1234=GS1.1.synthetic; Path=/";
+    const tracker = newTracker(GOOGLE_ONLY, { arrival: () => null });
+    tracker.start();
+    tracker.deny();
+    expect(COOKIES()).toEqual([]);
+  });
+
+  it("deletes the cookies of an acceptance that has expired, and asks again", () => {
+    writeConsent("granted", NOW - CONSENT_MAX_AGE_MS - 2 * 86_400_000);
+    document.cookie = "_ga=GA1.1.synthetic; Path=/";
+    document.cookie = "other=kept; Path=/";
+    const tracker = newTracker(GOOGLE_ONLY, { now: () => NOW, arrival: () => null });
+    expect(tracker.choice()).toBeNull();
+    expect(COOKIES()).toEqual(["other=kept"]);
+    tracker.start();
+    expect(scripts()).toEqual([]);
+  });
+
+  it("keeps Google's cookies of a current acceptance", () => {
+    writeConsent("granted", NOW);
+    document.cookie = "_ga=GA1.1.synthetic; Path=/";
+    newTracker(GOOGLE_ONLY, { now: () => NOW, arrival: () => null });
+    expect(COOKIES()).toEqual(["_ga=GA1.1.synthetic"]);
+  });
 });
 
 describe("analytics.config.json", () => {
-  it("is empty in the repository: no counter until real identifiers are written there", () => {
-    for (const mode of ["cloudflare", "production", "development", "demo", "test", "$comment"]) {
+  it("gives counters to the Cloudflare Pages build only: Google's public id, no Cloudflare token yet", () => {
+    expect(analyticsFor("cloudflare").analytics).toEqual({ cloudflareToken: null, googleMeasurementId: "G-JVB68585NG" });
+    for (const mode of ["production", "development", "demo", "test", "$comment"]) {
       expect(analyticsFor(mode).analytics).toEqual(NO_ANALYTICS);
     }
     expect(Object.keys(analyticsFile).sort()).toEqual(["$comment", "cloudflare"]);
@@ -65,7 +227,7 @@ describe("analytics.config.json", () => {
 
 describe("without identifiers", () => {
   it("asks nothing of anyone and shows no notice", () => {
-    const tracker = createTracker(NO_ANALYTICS);
+    const tracker = newTracker(NO_ANALYTICS);
     const host = document.createElement("div");
     document.body.append(host);
     mountConsentNotice(host, tracker);
@@ -83,7 +245,7 @@ describe("without identifiers", () => {
 
 describe("Cloudflare Web Analytics", () => {
   it("loads its beacon at start, with spa off, and asks no consent", () => {
-    const tracker = createTracker(CLOUDFLARE_ONLY);
+    const tracker = newTracker(CLOUDFLARE_ONLY);
     expect(tracker.needsConsent).toBe(false);
     expect(scripts()).toEqual([]);
     tracker.start();
@@ -97,7 +259,7 @@ describe("Cloudflare Web Analytics", () => {
 
   it("does not load while the address carries a return from the login", () => {
     history.replaceState(null, "", "/?code=synthetic&state=synthetic");
-    const tracker = createTracker(CLOUDFLARE_ONLY);
+    const tracker = newTracker(CLOUDFLARE_ONLY);
     tracker.start();
     expect(scripts()).toEqual([]);
     history.replaceState(null, "", "/");
@@ -108,7 +270,7 @@ describe("Cloudflare Web Analytics", () => {
 
 describe("Google Analytics", () => {
   it("is never requested without consent, and refusing keeps it out", () => {
-    const tracker = createTracker(BOTH);
+    const tracker = newTracker(BOTH);
     tracker.start();
     tracker.track("login");
     expect(scripts()).toEqual(["https://static.cloudflareinsights.com/beacon.min.js"]);
@@ -121,7 +283,7 @@ describe("Google Analytics", () => {
 
   it("loads after accepting, counts the visit with the clean address and only the listed events", () => {
     history.replaceState(null, "", "/some/path?utm_source=x#demo=heavy");
-    const tracker = createTracker(GOOGLE_ONLY, { now: () => NOW });
+    const tracker = newTracker(GOOGLE_ONLY, { now: () => NOW });
     tracker.track("login");
     tracker.grant();
     expect(scripts()).toEqual([]);
@@ -143,14 +305,14 @@ describe("Google Analytics", () => {
 
   it("remembers an earlier yes and loads at start", () => {
     writeConsent("granted", Date.now());
-    const tracker = createTracker(GOOGLE_ONLY);
+    const tracker = newTracker(GOOGLE_ONLY);
     expect(tracker.choice()).toBe("granted");
     tracker.start();
     expect(scripts()).toEqual([`https://www.googletagmanager.com/gtag/js?id=${GA}`]);
   });
 
   it("switches off and deletes its cookies when consent is withdrawn, and back on when given again", () => {
-    const tracker = createTracker(GOOGLE_ONLY);
+    const tracker = newTracker(GOOGLE_ONLY);
     tracker.start();
     tracker.grant();
     document.cookie = "_ga=GA1.1.synthetic; Path=/";
@@ -205,7 +367,7 @@ describe("the stored answer", () => {
 
 describe("the cookie notice", () => {
   function mount(config: AnalyticsConfig) {
-    const tracker = createTracker(config);
+    const tracker = newTracker(config);
     const host = document.createElement("div");
     host.hidden = true;
     document.body.append(host);
@@ -228,7 +390,7 @@ describe("the cookie notice", () => {
     const title = document.getElementById(notice?.getAttribute("aria-labelledby") ?? "");
     expect(title?.textContent).toBe("Cookies");
     expect(document.getElementById(notice?.getAttribute("aria-describedby") ?? "")?.textContent).toBe(
-      "Esta web cuenta las visitas con Cloudflare Web Analytics, que no usa cookies. Si aceptas, también con Google Analytics, que guarda cookies en este navegador y envía a Google la visita, si abres la demo y si entras con tu cuenta. Si rechazas, Google Analytics no se carga. Tus rutas, tus cifras y los datos de tu moto nunca salen de tu navegador.",
+      "Esta web cuenta las visitas con Cloudflare Web Analytics, que no usa cookies. Si aceptas, también con Google Analytics, que guarda cookies en este navegador y envía a Google la visita y si abres la demo. Si rechazas, Google Analytics no se carga. Tus rutas, tus cifras y los datos de tu moto nunca salen de tu navegador.",
     );
     expect(button("Aceptar").className).toBe(button("Rechazar").className);
     expect(host.querySelector("[style]")).toBeNull();
@@ -279,11 +441,13 @@ describe("what the footer promises", () => {
   it("says exactly which counters this build has", () => {
     expect(countingPromise(NO_ANALYTICS)).toBe("Esta web no cuenta las visitas.");
     expect(countingPromise(CLOUDFLARE_ONLY)).toBe(
-      "Las visitas se cuentan con Cloudflare Web Analytics, sin cookies. No recibe tus rutas, tus cifras ni los datos de tu moto.",
+      "Las visitas se cuentan con Cloudflare Web Analytics, sin cookies. No se carga cuando entras con tu cuenta, así que no ve tus rutas, tus cifras ni los datos de tu moto.",
     );
     expect(countingPromise(BOTH)).toBe(
-      "Las visitas se cuentan con Cloudflare Web Analytics, sin cookies. Si aceptas las cookies, también con Google Analytics, que además sabe si abres la demo o entras con tu cuenta. Ninguno de los dos recibe tus rutas, tus cifras ni los datos de tu moto.",
+      "Las visitas se cuentan con Cloudflare Web Analytics, sin cookies. Si aceptas las cookies, también con Google Analytics, que además sabe si abres la demo. Ninguno de los dos se carga cuando entras con tu cuenta, así que no ven tus rutas, tus cifras ni los datos de tu moto.",
     );
-    expect(countingPromise(GOOGLE_ONLY)).toContain("Si aceptas las cookies, las visitas se cuentan con Google Analytics");
+    expect(countingPromise(GOOGLE_ONLY)).toBe(
+      "Si aceptas las cookies, las visitas se cuentan con Google Analytics, que además sabe si abres la demo. No se carga cuando entras con tu cuenta, así que no ve tus rutas, tus cifras ni los datos de tu moto.",
+    );
   });
 });

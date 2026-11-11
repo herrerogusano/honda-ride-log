@@ -1,4 +1,4 @@
-# Honda Ride Log
+# Ride Log
 
 Web estática para ver las estadísticas de tus propias rutas en moto, a partir
 de tu cuenta de MAPIT (la app que localiza la moto).
@@ -34,12 +34,13 @@ Una sola página, oscura, con seis secciones:
   quedan en tu navegador: no se envían a nadie más que al servicio del que
   se leen.
 - Terceros: las teselas del mapa, a OpenStreetMap, y en la copia publicada
-  en Cloudflare Pages dos contadores de visitas. Cloudflare Web Analytics
-  cuenta la visita sin cookies. Google Analytics solo se carga si aceptas
-  en el aviso de cookies, y cuenta la visita y si abres la demo o entras
-  con tu cuenta; si rechazas, no se carga. Se puede cambiar de opinión al
-  final de la página. Ninguno recibe tus rutas, tus cifras, nada del inicio
-  de sesión ni la dirección completa de la página.
+  en Cloudflare Pages hasta dos contadores de visitas. Cloudflare Web
+  Analytics cuenta la visita sin cookies. Google Analytics solo se carga si
+  aceptas en el aviso de cookies, y cuenta la visita y si abres la demo; si
+  rechazas, no se carga. Se puede cambiar de opinión al final de la página.
+  Ninguno se carga en la página a la que vuelves tras iniciar sesión, y
+  ninguno recibe tus rutas, tus cifras ni la dirección completa de la
+  página.
 - Los datos se leen y se calculan en tu navegador y no se guardan. Lo único
   que se recuerda, en tu navegador, son los dos números de mantenimiento que
   tú escribas y tu respuesta al aviso de cookies.
