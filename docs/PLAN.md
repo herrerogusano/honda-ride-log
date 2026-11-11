@@ -28,18 +28,19 @@ las decisiones anotadas aquí.
 
 | Tema | Decisión |
 |---|---|
-| Forma | Web estática en un repo propio y público, publicada en GitHub Pages. |
+| Forma | Web estática en un repo propio y público, publicada en GitHub Pages y, con el modo `cloudflare`, en Cloudflare Pages con cabeceras de seguridad propias (apartado 17). |
 | Alcance | Una sola página que se desplaza, con secciones numeradas (Resumen, Ritmo, Hábitos, Rutas con el mapa y la lista, Atlas, Taller) bajo una barra fija; la primera versión tenía tres pestañas (Resumen, Mapa, Rutas). Tarjeta para compartir solo con cifras, modo demo sin login. |
 | Fuera | Sección de territorio, filtros de «geometría inferida», exportación JSON. (Las fuentes incrustadas estuvieron fuera hasta D-025: ver «Aspecto». El atlas 3D estuvo fuera hasta el apartado 15.) |
 | Velocidad máxima | Se enseña en cada ruta (lista, mapa y CSV), nunca en la tarjeta para compartir, porque la tarjeta sale de la web. Desde el 2026-11-10; antes estaba fuera en cualquier parte. |
 | Aspecto | Solo tema oscuro (D-026). Fuentes propias servidas por la web, Barlow Condensed y Manrope (D-025). Movimiento sin librería, con unas duraciones fijas (D-027). Detalle en el apartado 11. |
 | Privacidad | Ver el apartado 4. Son requisitos. |
+| Terceros | Solo tres, cerrados: las teselas de OpenStreetMap, Cloudflare Web Analytics y Google Analytics 4 (este, solo si el visitante acepta las cookies). Los dos contadores están apagados mientras `analytics.config.json` esté vacío y reciben la visita y los eventos `demo_open` y `login`, nada más. Cualquier otro tercero (otra analítica, etiquetas, fuentes, CDN) sigue prohibido: la política de seguridad no lo deja cargar y `tests/csp.test.ts` fija la lista entera de orígenes ajenos. Apartado 17. |
 | Unidades | «km» a secas, con nota al pie: se usan los campos `*_km` del servicio, que el propio servicio marca como conversión sin confirmar. Nunca se convierte la distancia nativa. |
 | Zona horaria | Una sola: la del navegador. El campo `timezone` de cada ruta no se usa. |
 | Pila | Vite y TypeScript estricto, sin framework. Leaflet como única dependencia de ejecución. Gráficos en SVG a mano. Vitest y ESLint. |
 | Rutas de menos de 300 m | Se excluyen de todo (lista, mapa y cifras) y se dice cuántas son en una nota. Cambiarlo es una línea: `SHORT_ROUTES_COUNT_IN_FIGURES` en `src/config.ts` (y su test en `tests/units.test.ts`). |
 | Periodo del Resumen | Las cifras son del año elegido, por defecto el actual, con opción «Todo». Se cambia con `SUMMARY_DEFAULT_PERIOD` en `src/config.ts`. |
-| Almacenamiento | El token de acceso vive en una variable y nada más. El verificador de PKCE y el `state` van a `sessionStorage` solo durante la ida y vuelta al login y se borran al volver. El token de renovación se descarta. En `localStorage` solo va lo que el usuario escribe para el mantenimiento. |
+| Almacenamiento | El token de acceso vive en una variable y nada más. El verificador de PKCE y el `state` van a `sessionStorage` solo durante la ida y vuelta al login y se borran al volver. El token de renovación se descarta. En `localStorage` solo va lo que el usuario escribe para el mantenimiento y su respuesta al aviso de cookies (`src/storage/consent.ts`, que además puede borrar las cookies de Google Analytics). |
 | Llamadas | Sin sesión MCP: una petición por herramienta, en serie (como mucho de 2 en 2). |
 | Proceso | PR pequeñas contra `main`, CI en verde y revisión independiente antes de fusionar. |
 
@@ -206,9 +207,9 @@ color, foco visible y zonas de pulsación de 44 px como mínimo.
 | Nunca identificadores de ruta en pantalla ni en exportaciones | El identificador vive detrás de un `RouteRef` opaco y sin campos; solo `serviceRouteId` lo recupera, y ESLint solo deja importar esa función desde `src/service/` (donde va la petición de detalle; `tests/lint-seals.test.ts`). Serializar una ruta no lo incluye. |
 | Recortar 400 m al inicio y al final de cada traza antes de dibujarla | `TRIM_METERS` en `src/domain/privacy.ts` y `trimTrace` en `src/domain/trim.ts`. Se cumple con una regla más fuerte: **no se dibuja nada a menos de 401 m en línea recta del inicio ni del final** (ver «Cómo quedó el recorte»). El radio no es un parámetro: nadie puede pedir un corte más corto. El mapa y el atlas solo guardan en memoria las líneas ya recortadas (`src/ui/traceStore.ts`). El saneador devuelve un `UntrimmedTrace` sellado, sin campos legibles; sus líneas solo salen con `untrimmedLines` y los dos puntos de inicio y final con `sensitivePlaces`, y ESLint solo deja importar esas dos funciones desde ese archivo (`tests/lint-seals.test.ts`). |
 | Ocultar rutas de menos de 300 m | `hideShortRoutes` en `src/domain/privacy.ts`. |
-| Token solo en memoria | Ver «Almacenamiento» en el apartado 2. ESLint prohíbe `localStorage` y `sessionStorage` en todo el código, con dos excepciones de un único archivo cada una. **`src/storage/maintenance.ts` puede usar `localStorage`** (y solo `localStorage`) para guardar los dos números del mantenimiento que escribe el usuario, con una clave para la cuenta y otra para la demo. **`src/auth/pendingLogin.ts` puede usar `sessionStorage`** (y solo `sessionStorage`) para el login a medio hacer, y solo lo importa `src/auth/login.ts` (apartado 10). `tests/units.test.ts` y `tests/lint-storage.test.ts` comprueban que cada excepción vale para su archivo y para ningún otro, que cada uno sigue teniendo prohibido el almacenamiento del otro y que las listas de prohibiciones no se separan. |
-| Sin analítica ni terceros, salvo las teselas de OpenStreetMap | Política de seguridad de contenido en `csp.config.json`. `scripts/check-dist.mjs` rompe el build si la página que genera Vite no lleva exactamente esa política, o si detecta código en línea o recursos de otro origen; `tests/csp.test.ts` fija su texto. Es una red contra errores propios hecha con expresiones regulares, no un analizador de HTML: no protege contra quien edite `dist/` a mano, y no tiene tests propios. |
-| Los datos viven solo en el navegador y solo durante la sesión | Nada se guarda salvo los dos números de mantenimiento. |
+| Token solo en memoria | Ver «Almacenamiento» en el apartado 2. ESLint prohíbe `localStorage`, `sessionStorage` y `document.cookie` en todo el código, con tres excepciones de un único archivo cada una (la tercera, `src/storage/consent.ts`, en el apartado 17). **`src/storage/maintenance.ts` puede usar `localStorage`** (y solo `localStorage`) para guardar los dos números del mantenimiento que escribe el usuario, con una clave para la cuenta y otra para la demo. **`src/auth/pendingLogin.ts` puede usar `sessionStorage`** (y solo `sessionStorage`) para el login a medio hacer, y solo lo importa `src/auth/login.ts` (apartado 10). `tests/units.test.ts` y `tests/lint-storage.test.ts` comprueban que cada excepción vale para su archivo y para ningún otro, que cada uno sigue teniendo prohibido el almacenamiento del otro y que las listas de prohibiciones no se separan. |
+| Sin terceros salvo las teselas de OpenStreetMap y dos contadores de visitas (apartado 17): Cloudflare Web Analytics y, solo si el visitante acepta, Google Analytics. A ninguno se le envía una ruta, una cifra, un identificador ni la dirección completa; con `analytics.config.json` vacío no se carga ninguno | Política de seguridad de contenido en `csp.config.json`; los orígenes de cada contador se añaden solo si tiene valor. `scripts/check-dist.mjs` rompe el build si la página que genera Vite no lleva exactamente esa política, o si detecta código en línea o recursos de otro origen; `tests/csp.test.ts` fija su texto. Es una red contra errores propios hecha con expresiones regulares, no un analizador de HTML: no protege contra quien edite `dist/` a mano, y no tiene tests propios. |
+| Los datos viven solo en el navegador y solo durante la sesión | Nada se guarda salvo los dos números de mantenimiento y la respuesta al aviso de cookies (tercera excepción: **`src/storage/consent.ts` puede usar `localStorage`**, y `document.cookie` solo para borrar las de Google Analytics; apartado 17). |
 
 Lo que se vio en una lectura real, que el recorte tiene en cuenta:
 
@@ -296,7 +297,8 @@ de OpenStreetMap exigen que el navegador envíe la cabecera `Referer`, y así
 solo se envía el origen del sitio, nunca la ruta de la página.
 
 La política de seguridad de contenido se envía en una etiqueta `<meta>`
-porque GitHub Pages no permite cabeceras propias. Consecuencias: no se puede
+porque GitHub Pages no permite cabeceras propias (en Cloudflare Pages va
+además como cabecera, con `frame-ancestors 'none'`: apartado 17). Consecuencias: no se puede
 usar `frame-ancestors` (no hay protección contra incrustar la página en un
 marco) y los estilos se aplican con hojas de estilo o con `elemento.style`
 desde JavaScript, nunca con atributos `style` en el HTML ni con
@@ -484,9 +486,10 @@ política de seguridad de contenido, tal como se publicará: `npm run build`,
 | `tests/` | Tests. Los de interfaz (`app`, `map`, `charts`) corren en jsdom, que no es un navegador: sin maquetación, sin canvas, sin política de seguridad de contenido. |
 | `csp.config.json` | La política de seguridad de contenido y la de referencia. |
 | `environments.config.json`, `src/auth/`, `src/service/environment.ts`, `src/service/mcpClient.ts`, `src/boot.ts` | Entornos, login, cliente de `/mcp` y su unión con la página (apartado 10). `src/config.ts` y `src/service/environment.ts` conviven: el primero guarda decisiones de producto, el segundo el servicio de cada build. |
-| `vite.config.ts` | Build, ruta base de Pages e inyección de la política. |
+| `vite.config.ts` | Build, ruta base de cada publicación (GitHub Pages o Cloudflare Pages), inyección de la política y `_headers`. |
+| `analytics.config.json`, `src/analytics/`, `src/storage/consent.ts` | Contadores de visitas, aviso de cookies y la respuesta guardada (apartado 17). |
 | `scripts/check-dist.mjs` | Comprobaciones de publicación sobre `dist/index.html`. |
-| `.github/workflows/` | `ci.yml` y `pages.yml` (publica `dist/` en GitHub Pages cuando cambia `main`). |
+| `.github/workflows/` | `ci.yml` (construye las dos publicaciones) y `pages.yml` (publica `dist/` en GitHub Pages cuando cambia `main`). |
 
 Reglas:
 
@@ -1364,3 +1367,213 @@ y la política aplicada (2026-11-10), emulando por el protocolo de depuración
   Chrome sin interfaz, sin confirmar en un navegador con pantalla.
 - Qué ve el navegador ante un 401 o un 403 del autorizador sin cabeceras
   CORS, y los demás puntos de «Sin comprobar» del apartado 5.
+
+## 17. Cloudflare Pages y contadores de visitas
+
+Escrito el 2026-11-11. Cambia la regla «sin analítica ni terceros» del
+apartado 4:
+
+1. La web se publica también en Cloudflare Pages, en una dirección
+   `*.pages.dev`: un origen propio (no compartido con otras webs) y
+   cabeceras de seguridad enviadas por el servidor.
+2. Las visitas se cuentan con dos sistemas: Cloudflare Web Analytics siempre
+   (sin cookies ni almacenamiento del navegador) y Google Analytics 4 solo
+   si el visitante acepta en el aviso de cookies. Si no acepta, el script de
+   Google no se pide nunca (nada de «modo consentimiento» con envíos sin
+   cookies).
+3. Las rutas y las estadísticas siguen sin salir del navegador: a los
+   contadores solo les llega la visita.
+
+### Dos publicaciones
+
+| Modo de Vite | Dónde | Orden | Ruta base | Servicio | Contadores | `dist/_headers` |
+|---|---|---|---|---|---|---|
+| `production` | GitHub Pages (`pages.yml`), como hasta ahora | `npm run build` | `/honda-ride-log/` | el de producción | ninguno | no |
+| `cloudflare` | Cloudflare Pages | `npm run build:cloudflare` | `/` | ninguno, de momento (solo demo) | los de `analytics.config.json` | sí |
+
+- `pages.yml` sigue publicando en GitHub Pages: mientras exista, hay dos
+  copias publicadas, y la de GitHub Pages no tiene contadores.
+- `cloudflare` es solo demo en `environments.config.json` porque la
+  dirección de retorno del login tiene que estar dada de alta en el
+  servicio, carácter a carácter, y la de `pages.dev` no lo está (es un
+  cambio en producción del servicio). Cuando lo esté, su entrada es la de
+  `production` con esa dirección en `redirectUri` y `logoutUri`. Con un
+  botón «Entrar» antes de eso, el login respondería con un error.
+- La CI construye las dos.
+
+### Cabeceras (`dist/_headers`)
+
+`vite.config.ts` las escribe solo en el modo `cloudflare`, desde
+`csp.config.json`, y `scripts/check-dist.mjs cloudflare` las compara con lo
+esperado:
+
+- `Content-Security-Policy`: la misma política que la etiqueta `<meta>`, más
+  `frame-ancestors 'none'` (nadie puede incrustar la página en un marco), que
+  una `<meta>` no admite.
+- `Referrer-Policy: strict-origin`, como la `<meta>`.
+- `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` (lo mismo que
+  `frame-ancestors` para navegadores viejos), `Cross-Origin-Opener-Policy:
+  same-origin`, `Cross-Origin-Resource-Policy: same-origin` y una
+  `Permissions-Policy` que apaga cámara, micrófono, ubicación, pago, USB y
+  temas de publicidad.
+- Sin `Strict-Transport-Security`: todo `.dev` está precargado como solo
+  https en los navegadores.
+
+**La etiqueta `<meta>` se mantiene además.** El navegador aplica las dos, así
+que no afloja nada, y si `_headers` faltara o Cloudflare no lo leyera, la
+página seguiría con su política. También sirve a `npm run preview`, que no
+envía esas cabeceras.
+
+### Política de seguridad de contenido: motivo del cambio
+
+Cada contador con valor en `analytics.config.json` añade sus orígenes, que
+están en `csp.config.json`, bajo `analytics`; sin valores no se añade nada y
+la política es exactamente la de antes (test):
+
+| Contador | `script-src` | `connect-src` | `img-src` |
+|---|---|---|---|
+| Cloudflare | `https://static.cloudflareinsights.com` | `https://cloudflareinsights.com` | — |
+| Google | `https://www.googletagmanager.com` | `https://www.googletagmanager.com`, `https://www.google-analytics.com`, `https://region1.google-analytics.com`, `https://region1.analytics.google.com` | `https://www.googletagmanager.com`, `https://www.google-analytics.com` |
+
+- Google recomienda comodines (`*.google-analytics.com`, `*.google.com`). Aquí
+  van nombres exactos, porque los tests prohíben comodines. **Sin verificar
+  contra Google Analytics real** que esos basten: si Google usa otro
+  nombre, la política lo bloquea (falla cerrado) y se pierden visitas, no
+  datos. El arreglo sería añadir ese nombre, con su motivo aquí.
+- La política permite el origen de Google desde que hay identificador,
+  también antes de aceptar: lo que impide la carga es el código, que no pide
+  el script sin consentimiento (test). La política no puede depender de una
+  respuesta del visitante.
+- `form-action`, `base-uri` y `default-src` no cambian.
+
+### Qué se envía, cuándo y qué no
+
+- Todo el código de los contadores está en `src/analytics/` y lo arranca solo
+  `src/main.ts` (regla de ESLint). `src/boot.ts` solo ve una interfaz con
+  dos funciones, `start()` y `track(evento)`.
+- **Orden:** `boot` llama a `start()` solo después de resolver la vuelta del
+  login (`completeLogin` ya ha quitado `?code` y `?state` de la dirección),
+  salga bien o mal. Ningún script de los contadores corre con nada del
+  inicio de sesión en la dirección. Además, `start()` se niega si la
+  dirección aún lleva un parámetro del login. Test en `tests/boot.test.ts`,
+  visto fallar con el orden invertido (tres tests en rojo).
+- Eventos: la visita (`page_view`), `demo_open` y `login`, una lista cerrada
+  sin parámetros nuestros. Ningún identificador, ruta, cifra ni fragmento
+  puede ir en ellos.
+- A Google se le da la dirección como origen y ruta, sin consulta ni
+  fragmento (`page_location`), la página anterior solo como origen
+  (`page_referrer`), el título fijo «Ride Log», y `allow_google_signals` y
+  `allow_ad_personalization_signals` apagados.
+- Cloudflare: su script lee la dirección por su cuenta; cuando carga ya no
+  lleva nada del login, pero sí el fragmento `#demo` si lo hay (no es un
+  dato de nadie). `spa: false`: cambiar el fragmento no cuenta otra visita.
+  **Hay que usar el fragmento manual de Cloudflare, no la inyección
+  automática de su panel de Pages:** la automática mete el script en el HTML
+  en el borde, antes de que la página limpie la dirección, y sin pasar por
+  `analytics.config.json` ni por `check-dist`.
+- **Sin verificar:** qué envían de verdad los scripts de Cloudflare y de
+  Google, que el de Cloudflare lea `spa: false` cuando lo añade nuestro
+  código, y que Google no use otra fuente que no controlamos.
+- Google Analytics tiene «medición mejorada», que se configura en su panel,
+  no en el código, y puede recoger clics en enlaces externos, descargas,
+  formularios y búsquedas por parámetros de la dirección. Hay que apagarla
+  al crear la propiedad.
+
+### Aviso de cookies (`src/analytics/consentNotice.ts`)
+
+- Solo existe si hay identificador de Google: Cloudflare no necesita
+  consentimiento.
+- Abajo de la pantalla, sin bloquear la página. Título «Cookies», qué se
+  cuenta y qué no, y dos botones iguales, «Aceptar» y «Rechazar». No
+  responder es no aceptar para esa visita.
+- Al responder, el aviso se va y al final de la página queda «Google
+  Analytics: aceptado/rechazado. Cambiar las cookies», que lo vuelve a abrir.
+  El foco va a ese botón y, al abrir, a «Aceptar».
+- Si retira el consentimiento después de aceptar, Google Analytics se apaga
+  con su propio interruptor (`ga-disable-<id>`) y se borran sus cookies
+  (`_ga`, `_ga_<id>`). El script ya cargado no se puede descargar de la
+  página: deja de enviar, pero sigue en memoria hasta recargar.
+- La respuesta caduca al año y entonces se vuelve a preguntar.
+
+### Almacenamiento: tercera excepción
+
+**`src/storage/consent.ts` puede usar `localStorage`** (y de los
+almacenamientos, solo ese) para guardar la respuesta al aviso (`granted` o
+`denied`) y el día, bajo una clave, y **`document.cookie` solo para borrar
+las cookies de Google Analytics** al retirar el consentimiento. No escribe
+cookies propias. `sessionStorage` y el HTML siguen prohibidos en ese archivo,
+y solo `src/analytics/tracker.ts` puede importarlo. `document.cookie` pasa a
+estar prohibido en el resto del código (antes ESLint no lo veía). Lo
+comprueban `tests/lint-storage.test.ts` y `tests/analytics.test.ts`.
+
+### Origen propio
+
+En `pages.dev` la web tiene su propio origen: desaparece el riesgo del origen
+compartido de GitHub Pages (apartado 10) para quien entre por ahí. La copia
+de GitHub Pages lo sigue teniendo mientras exista.
+
+### Si algún día la contraseña se escribe en esta web
+
+Hoy la contraseña se escribe en la página del login del servicio, no en
+esta web, así que los contadores pueden estar en toda ella. Si la web
+tuviera algún día un formulario propio para la contraseña, un script de
+terceros en el mismo documento podría leerla, y los contadores no podrían
+estar ahí. No haría falta rehacer esto: los contadores se cargan solo desde `src/main.ts`
+(regla de ESLint), `boot` solo ve `start()` y `track()`, y nada se carga
+antes de `start()`. Habría que elegir entre:
+
+- contadores solo en la portada y la demo, con el login en otra entrada HTML
+  que no importe `src/analytics/`, y una regla de `_headers` por ruta sin
+  sus orígenes;
+- un aviso propio al entrar bien: otra implementación de `start()` y
+  `track()` que envíe el nombre del evento a una función del mismo origen
+  (`connect-src 'self'` ya lo permite);
+- Google Analytics en un marco aislado al que solo se le mande el nombre del
+  evento (sin comprobar que funcione así).
+
+### Qué se ha comprobado y dónde
+
+- Tests (Vitest, jsdom, local en Windows con Node 24): 707 en verde. Los de
+  los contadores prueban qué scripts pide la página y qué deja en la capa
+  de datos de Google, no lo que esos scripts envían después.
+- El orden «primero limpiar la dirección, después los contadores» se vio
+  fallar invirtiéndolo en `src/boot.ts` (tres tests en rojo).
+- 34 roturas a propósito del código, la política y ESLint, una cada vez
+  (con la suite en verde lanzada igual antes de empezar): todas detectadas.
+  La única que pareció sobrevivir cambiaba un comentario; repetida sobre el
+  código, se detectó.
+- `check-dist`: falla con `_headers` alterado, ausente en `cloudflare` o
+  presente en `production`.
+- Navegador (Chromium, `vite preview` del build `cloudflare` hecho con
+  identificadores inventados, sin commitearlos; 2026-11-11), a 320 y
+  1280 px:
+  - Sin responder al aviso: solo el script de Cloudflare y su envío a
+    `cloudflareinsights.com`; nada de Google, ni cookies ni almacenamiento.
+  - «Rechazar», y recargar con `#demo`: lo mismo; la respuesta queda
+    guardada y el aviso no vuelve a salir.
+  - «Cambiar las cookies» → «Aceptar»: se pide `gtag.js` y se envía la
+    visita a `region1.google-analytics.com/g/collect` con `dl` sin el
+    fragmento `#demo`; aparecen las cookies `_ga` y `_ga_<id>`. Cambiar de
+    escenario de la demo envía `demo_open`, también sin fragmento. Ninguna
+    infracción de la política.
+  - Retirar el consentimiento: las cookies desaparecen y no sale ningún
+    envío más.
+  - El aviso, abajo a la derecha en escritorio y a todo el ancho en móvil,
+    sin desplazamiento lateral; botones de 44 px, iguales.
+- Lo que también se vio: Google envía de serie el tamaño de pantalla, el
+  idioma y datos del navegador, y su identificador de cliente en la cookie.
+  En local, el envío de Cloudflare falla por CORS (responde para
+  `http://localhost` sin puerto): no dice nada de cómo irá en `pages.dev`.
+
+### Qué no se ha comprobado
+
+- Nada contra cuentas reales de Cloudflare ni de Google: los
+  identificadores son inventados. Ni que Cloudflare Pages lea `_headers`
+  como esperamos (`vite preview` no envía esas cabeceras, así que
+  `frame-ancestors` no se ha visto actuar), ni las visitas en sus paneles,
+  ni que Cloudflare respete `spa: false`.
+- El evento `login` en un navegador real: solo en tests (no hay login desde
+  `pages.dev`).
+- El login desde `pages.dev` (no está dado de alta en el servicio).
+- Safari, Firefox, un móvil físico, un lector de pantalla con el aviso.
+- Si el texto del aviso basta legalmente: no es asesoramiento jurídico.

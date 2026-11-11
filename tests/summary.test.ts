@@ -406,7 +406,9 @@ describe("Resumen, notes and empty account", () => {
     show();
     const privacy = [...view.querySelectorAll(".foot-privacy li")].map((item) => item.textContent);
     expect(privacy).toEqual([
-      "Los datos se leen y se calculan en tu navegador; esta web no tiene servidor propio ni analítica.",
+      "Tus datos se leen y se calculan en tu navegador y no salen de él: esta web no tiene servidor propio.",
+      // A build without counters (analytics.config.json empty) says so; the texts with counters are in tests/analytics.test.ts.
+      "Esta web no cuenta las visitas.",
       "Nunca se muestran la matrícula, el bastidor, el concesionario ni la posición actual de la moto.",
       "Los mapas ocultan los primeros y los últimos 400 m de cada ruta.",
       "Al salir, la web olvida tus datos. En este navegador solo quedan los dos números del mantenimiento, si los guardas.",

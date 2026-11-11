@@ -1,0 +1,7 @@
+{
+  "$comment": "Visit counters per Vite mode (docs/PLAN.md, section 17). Both values are public once they exist, but they do not exist yet: empty means off, and with both empty the page asks nothing of anyone but OpenStreetMap. cloudflareToken is the token of a Cloudflare Web Analytics site (32 hex characters, manual snippet, never the automatic injection); googleMeasurementId is a Google Analytics 4 measurement id (G-...), loaded only after the visitor accepts. Modes not listed have no counters.",
+  "cloudflare": {
+    "cloudflareToken": "",
+    "googleMeasurementId": ""
+  }
+}

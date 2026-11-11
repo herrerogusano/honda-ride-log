@@ -1,5 +1,5 @@
 {
-  "$comment": "Service settings per Vite mode (docs/PLAN.md, section 10). Empty mcpUrl, loginDomain and webClientId mean demo only. `production` holds the public values of the production service, written here by the owner's decision of 2026-11-10 (none is a secret). `development` stays empty in the repository: local values are not committed. Modes not listed (for example `test` or `demo`) are demo only.",
+  "$comment": "Service settings per Vite mode (docs/PLAN.md, section 10). Empty mcpUrl, loginDomain and webClientId mean demo only. `production` holds the public values of the production service, written here by the owner's decision of 2026-11-10 (none is a secret). `development` stays empty in the repository: local values are not committed. Modes not listed (for example `test` or `demo`) are demo only. `cloudflare` (the Cloudflare Pages build) is demo only until the service accepts the pages.dev address as a return address; then it gets the production values with that address as redirectUri and logoutUri.",
   "demo": null,
   "development": {
     "mcpUrl": "",
@@ -16,5 +16,6 @@
     "redirectUri": "https://herrerogusano.github.io/honda-ride-log/",
     "logoutUri": "https://herrerogusano.github.io/honda-ride-log/",
     "sendResourceIndicator": true
-  }
+  },
+  "cloudflare": null
 }

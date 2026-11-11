@@ -7,7 +7,9 @@ import { webcrypto } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AuthDeps } from "../src/auth/login";
 import type { StorageLike } from "../src/auth/pendingLogin";
-import { boot } from "../src/boot";
+import { createTracker } from "../src/analytics/tracker";
+import { boot, type BootAnalytics } from "../src/boot";
+import { writeConsent } from "../src/storage/consent";
 import { DEMO_ONLY, type ServiceConfig, type ServiceEnvironment } from "../src/service/environment";
 import type { App } from "../src/ui/app";
 import { createMapView } from "../src/ui/mapView";
@@ -63,6 +65,7 @@ async function start(environment: ServiceEnvironment, address = "/"): Promise<Ap
   mounted = await boot({
     root,
     environment,
+    ...(analyticsUnderTest === null ? {} : { analytics: analyticsUnderTest }),
     auth: deps,
     now: () => server.clock.now,
     demoDelayMs: 0,
@@ -85,6 +88,9 @@ async function start(environment: ServiceEnvironment, address = "/"): Promise<Ap
   });
   return mounted;
 }
+
+/** The visit counters handed to `boot`, or none. */
+let analyticsUnderTest: BootAnalytics | null = null;
 
 /** Holds an /mcp answer, by tool name, before it reaches the client. */
 let mcpGate: ((tool: string) => Promise<void>) | null = null;
@@ -145,6 +151,9 @@ afterEach(() => {
   mounted = null;
   afterMcpAnswer = null;
   mcpGate = null;
+  analyticsUnderTest = null;
+  document.head.replaceChildren();
+  delete (window as unknown as Record<string, unknown>)["dataLayer"];
 });
 
 describe("a build without a service", () => {
@@ -433,5 +442,64 @@ describe("signing out", () => {
     const out = new URL(navigations[1] ?? "");
     expect(out.origin + out.pathname).toBe(`${CONFIG.loginOrigin}/logout`);
     expect(out.searchParams.get("logout_uri")).toBe("http://localhost:3000/");
+  });
+});
+
+describe("visit counters (docs/PLAN.md, section 17)", () => {
+  /** What a fake counter saw: each call and the query string of the address at that moment. */
+  let seen: string[];
+  const recorder = (): BootAnalytics => ({
+    start: () => void seen.push(`start ${location.search}`),
+    track: (event) => void seen.push(`${event} ${location.search}`),
+  });
+  beforeEach(() => {
+    seen = [];
+  });
+
+  it("start only after the return from the login is out of the address, then count the sign-in", async () => {
+    const landing = await start(SERVICE);
+    button("Entrar").click();
+    await vi.waitFor(() => expect(navigations).toHaveLength(1));
+    const back = new URL(server.approve(navigations[0] ?? ""));
+    expect(back.searchParams.has("code")).toBe(true);
+    landing.dispose();
+    analyticsUnderTest = recorder();
+    await start(SERVICE, back.pathname + back.search);
+    expect(seen).toEqual(["start ", "login "]);
+  });
+
+  it("start after a failed return too, without counting a sign-in", async () => {
+    analyticsUnderTest = recorder();
+    await start(SERVICE, "/?code=synthetic-code&state=not-the-pending-one");
+    await alert();
+    expect(seen).toEqual(["start "]);
+  });
+
+  it("count the demo when it opens, in a build without a service", async () => {
+    analyticsUnderTest = recorder();
+    await start(DEMO_ONLY, "/#demo");
+    await loaded();
+    expect(seen).toEqual(["start ", "demo_open "]);
+  });
+
+  it("never hand Google Analytics the login code, even with consent given earlier", async () => {
+    const landing = await start(SERVICE);
+    button("Entrar").click();
+    await vi.waitFor(() => expect(navigations).toHaveLength(1));
+    const back = new URL(server.approve(navigations[0] ?? ""));
+    const code = back.searchParams.get("code") ?? "";
+    expect(code).not.toBe("");
+    landing.dispose();
+    writeConsent("granted", Date.now());
+    analyticsUnderTest = createTracker({ cloudflareToken: "0123456789abcdef0123456789abcdef", googleMeasurementId: "G-TEST1234" });
+    await start(SERVICE, back.pathname + back.search);
+    await loaded();
+    const scripts = [...document.head.querySelectorAll("script")].map((one) => one.src);
+    expect(scripts).toEqual(["https://static.cloudflareinsights.com/beacon.min.js", "https://www.googletagmanager.com/gtag/js?id=G-TEST1234"]);
+    const sent = JSON.stringify((window as unknown as { dataLayer: IArguments[] }).dataLayer.map((one) => [...one]));
+    expect(sent).toContain('"login"');
+    expect(sent).toContain('"page_location":"http://localhost:3000/"');
+    expect(sent).not.toContain(code);
+    expect(sent).not.toMatch(/code=|state=|#/);
   });
 });

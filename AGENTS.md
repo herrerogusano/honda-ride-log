@@ -18,17 +18,30 @@ technical facts.
 - Privacy rules in `docs/PLAN.md` are requirements, not suggestions. Data
   from the service goes through `src/domain/sanitize.ts` before anything else
   touches it.
-- No analytics, no third-party requests except OpenStreetMap tiles. The
-  Content Security Policy lives in `csp.config.json`; changing it needs a
-  written reason in `docs/PLAN.md` and a matching change in
-  `tests/csp.test.ts`.
+- No third-party requests except OpenStreetMap tiles and exactly two visit
+  counters (`docs/PLAN.md`, section 17): Cloudflare Web Analytics, and
+  Google Analytics 4 only after the visitor accepts in the cookie notice (if
+  not, its script is never requested). Both are off while
+  `analytics.config.json` is empty. They get the visit and the closed list
+  of events in `src/analytics/`, never a route, a figure, an identifier,
+  anything of the sign-in or the full address, and they start only after
+  the page has dealt with the return from the login. They are started from
+  `src/main.ts` only. Any other third party (another analytics or tag
+  service, fonts, a CDN, embeds) stays banned: `tests/csp.test.ts` pins the
+  full list of foreign origins. The Content Security Policy lives in
+  `csp.config.json`; changing it needs a written reason in `docs/PLAN.md`
+  and a matching change in `tests/csp.test.ts`.
 - No `innerHTML` or other HTML-string sinks, no inline scripts, styles or
-  handlers. No browser storage, with two one-file exceptions recorded in
-  `docs/PLAN.md`: `src/storage/maintenance.ts` may use `localStorage` (and
-  only `localStorage`) for the two service-interval numbers the user types,
-  and `src/auth/pendingLogin.ts` may use `sessionStorage` (and only
-  `sessionStorage`) for the PKCE verifier and the `state` while the browser
-  goes to the login page and back, imported only by `src/auth/login.ts`.
+  handlers. No browser storage and no cookies, with three one-file
+  exceptions recorded in `docs/PLAN.md`: `src/storage/maintenance.ts` may
+  use `localStorage` (and only `localStorage`) for the two service-interval
+  numbers the user types; `src/auth/pendingLogin.ts` may use
+  `sessionStorage` (and only `sessionStorage`) for the PKCE verifier and the
+  `state` while the browser goes to the login page and back, imported only
+  by `src/auth/login.ts`; and `src/storage/consent.ts` may use
+  `localStorage` for the answer to the cookie notice and `document.cookie`
+  only to delete Google Analytics' cookies, imported only by
+  `src/analytics/tracker.ts`.
   Never a token. A change that needs another exception opens it for a single
   file, records it there and in `tests/lint-storage.test.ts`.
   (ESLint and `scripts/check-dist.mjs` catch the common forms; they are a
