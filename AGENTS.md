@@ -57,6 +57,11 @@ npm run build   # typecheck + vite build + publication checks on dist/
   widths covers what it cannot see. Changes to privacy, data or sign-in code
   also get a reviewer agent that runs the tests and breaks the code on
   purpose. No direct pushes to `main`.
+- Pull request titles and descriptions, commit messages and PR comments are
+  public: say what changes and how it was checked. No costs, billing,
+  credits or account details, no owner's reasons or quotes, no local paths,
+  no names of agent threads or roles. That context belongs in the owner's
+  private notes, not here.
 - Every new test must be seen failing once with broken data before it counts.
 - A green test against a fake proves the contract as we read it, not that
   the real service behaves that way. Say which one you ran.
