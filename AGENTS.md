@@ -48,6 +48,11 @@ npm test
 npm run build   # typecheck + vite build + publication checks on dist/
 ```
 
+On Windows, stop any running `npm run dev` or `vite preview` before
+`npm ci`: they hold files in `node_modules` and the install fails. The
+preview server uses port 4173; if another process holds it, Vite picks the
+next free port, so read the address it prints instead of assuming 4173.
+
 ## Process
 
 - Small pull requests against `main`; CI (lint, tests, build) must be green
@@ -57,6 +62,12 @@ npm run build   # typecheck + vite build + publication checks on dist/
   widths covers what it cannot see. Changes to privacy, data or sign-in code
   also get a reviewer agent that runs the tests and breaks the code on
   purpose. No direct pushes to `main`.
+- If CI does not start on a pull request, close and reopen it to trigger
+  the run again. Wait for CI as its own step and read the result before
+  merging; never chain a watch command with the merge.
+- Fixes made after a review are listed in the pull request (a comment or the
+  description), so the reviewer can see what changed since their read; a
+  fix to privacy, data or sign-in code gets another review.
 - Pull request titles and descriptions, commit messages and PR comments are
   public: say what changes and how it was checked. No costs, billing,
   credits or account details, no owner's reasons or quotes, no local paths,
