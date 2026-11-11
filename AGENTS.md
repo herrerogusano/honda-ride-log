@@ -3,8 +3,8 @@
 Static web (Vite + TypeScript, no framework) that shows a rider their own
 route statistics. It is a browser client of a separate invitation-only
 service; it has no backend. **Read `docs/PLAN.md` first**: it holds the
-decisions, the privacy rules, the checked and unchecked technical facts and
-the phase split.
+decisions, the privacy rules, the design and the checked and unchecked
+technical facts.
 
 ## Hard rules
 

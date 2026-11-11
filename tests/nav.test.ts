@@ -8,7 +8,7 @@ import { sectionHeader } from "../src/ui/sectionHeader";
  * IntersectionObserver, ResizeObserver, frame queue and `scrollTo`. jsdom
  * lays nothing out, so every box is given by the test: this proves the
  * wiring (what is scrolled to, focused, marked, replayed and released), not
- * what a browser shows. The browser checks are in docs/PLAN.md, section 12.
+ * what a browser shows. The browser checks are in docs/PLAN.md, section 16.
  */
 class FakeObserver {
   static all: FakeObserver[] = [];
