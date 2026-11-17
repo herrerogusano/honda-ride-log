@@ -1543,9 +1543,13 @@ la política es exactamente la de antes (test):
 - Abajo de la pantalla, sin bloquear la página. Título «Cookies», qué se
   cuenta y qué no, y dos botones iguales, «Aceptar» y «Rechazar». No
   responder es no aceptar para esa visita.
-- Al responder, el aviso se va y al final de la página queda «Google
-  Analytics: aceptado/rechazado. Cambiar las cookies», que lo vuelve a abrir.
-  El foco va a ese botón y, al abrir, a «Aceptar».
+- Al responder, el aviso se va y al final de la página queda solo un
+  enlace discreto, «Cookies» (cambiado el 2026-11-17: antes también decía
+  «Google Analytics: aceptado/rechazado»), que lo vuelve a abrir con los
+  mismos dos botones: retirar el consentimiento cuesta lo mismo que darlo
+  («Cookies» y «Rechazar»). Su nombre accesible es «Cookies: cambiar tu
+  respuesta». El foco va a ese botón y, al abrir, a «Aceptar». Una
+  respuesta dada en otra pestaña cierra el aviso abierto en esta.
 - Si retira el consentimiento después de aceptar, Google Analytics se apaga
   con su propio interruptor (`ga-disable-<id>`) y se borran sus cookies
   (`_ga`, `_ga_<id>`). El script ya cargado no se puede descargar de la
@@ -1667,7 +1671,7 @@ antes de `start()`. Habría que elegir entre:
   los cuerpos alguna cifra de las que la demo enseña; y en los paneles,
   que no aparezca ningún texto de la página más allá del título.
 - Que al aceptar salga ahora un solo `page_view`. Cómo: en `pages.dev`,
-  pestaña de red, rechazar, recargar, «Cambiar las cookies» → «Aceptar»,
+  pestaña de red, rechazar, recargar, «Cookies» → «Aceptar»,
   y contar las peticiones a `region1.google-analytics.com/g/collect` con
   `en=page_view`: debe haber una. Si siguen saliendo dos, mirar en el panel
   de Google si la «medición mejorada» (cambios del historial) está
@@ -1713,15 +1717,16 @@ repo.
    no se ha podido comprobar. Todos ofrecen «Comprobar otra vez» y
    «Volver».
 3. El formulario es una sola vista corta, para que se note lo menos
-   posible: el correo (se escribe una vez; luego va en `login_hint`), dos
-   líneas de ayuda para los mensajes de la página de acceso que esta web no
-   controla (mismo correo; contraseña de MAPIT y 3 intentos por pase), una
-   línea que recuerda que la contraseña se escribe en el paso siguiente, la
+   posible: el correo (se escribe una vez; luego va en `login_hint`), una
+   línea de ayuda para los mensajes de la página de acceso que esta web no
+   controla (mismo correo, 3 intentos de contraseña, esta web no la ve), la
    casilla «Acepto el aviso de privacidad.» y debajo «Leer el aviso de
    privacidad», un desplegable (`<details>`, cerrado) con el texto
    completo (ver «Textos» abajo). El
    control de Turnstile no ocupa sitio salvo que Cloudflare pida
-   interacción. «Continuar al login» envía `POST /pase` con
+   interacción. «Continuar: escribe tu correo y contraseña de MAPIT»
+   (antes «Continuar al login»; en un móvil estrecho ocupa varias líneas)
+   envía `POST /pase` con
    `{"email", "turnstile"}` (el correo recortado y en minúsculas, como lo
    lee el servicio; uno que el servicio rechazaría no se envía). Si se
    pulsa antes de que el control termine, dice «Comprobando que no eres un
@@ -1787,7 +1792,7 @@ confirmado) y `src/ui/app.ts` (confirmación del borrado), y los fijan
 - Dos mensajes los pone la página de acceso de Cognito y esta web no los
   cambia: «contraseña incorrecta» con el usuario ya creado (texto de
   Cognito) y los del servicio con el prefijo de Cognito («PreAuthentication
-  failed with error …»). Las dos líneas de ayuda bajo el correo los
+  failed with error …»). La línea de ayuda bajo el correo y el texto del botón los
   anticipan.
 
 ### Turnstile

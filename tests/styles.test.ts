@@ -37,6 +37,23 @@ const declaration = (body: string, property: string): string | undefined =>
   new RegExp(`(?:^|;|\\s)${property}\\s*:\\s*([^;]+);`).exec(body)?.[1]?.trim();
 const px = (value: string | undefined): number => Number.parseFloat(value ?? "0");
 
+describe("the long «Continuar» button of the open service", () => {
+  it("may wrap and never grows wider than the form (320 px phones)", () => {
+    const body = rule(".button.pass-continue");
+    expect(declaration(body, "white-space")).toBe("normal");
+    expect(declaration(body, "max-width")).toBe("100%");
+    expect(declaration(body, "text-align")).toBe("center");
+  });
+});
+
+describe("the «Cookies» link at the end of the page", () => {
+  it("is discreet (a quiet text colour) and keeps a 44 px target", () => {
+    const body = rule(".consent-link");
+    expect(declaration(body, "color")).toBe("var(--fg-3)");
+    expect(px(declaration(body, "min-height"))).toBeGreaterThanOrEqual(44);
+  });
+});
+
 describe("motion tokens (D-027)", () => {
   it("declares exactly the agreed durations and curves", () => {
     const tokens = [...rootBlock.matchAll(/(--(?:dur|stagger|ease)[\w-]*)\s*:\s*([^;]+);/g)].map((match) => [match[1], match[2]?.trim()]);

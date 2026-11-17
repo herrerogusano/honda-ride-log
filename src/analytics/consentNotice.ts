@@ -7,14 +7,15 @@
  *   Google until "Aceptar" is pressed, and ignoring it is the same as not
  *   accepting for this visit.
  * - "Aceptar" and "Rechazar" look the same and sit side by side.
- * - After answering, a "Cambiar las cookies" button at the end of the page reopens it,
- *   so the visitor can change their mind at any time.
+ * - After answering, only a discreet "Cookies" button stays at the end of the
+ *   page (no line saying the answer). It reopens the notice with the same two
+ *   buttons, so withdrawing takes the same two clicks as accepting.
  */
 import { el, uniqueId } from "../ui/dom";
 import type { Tracker } from "./tracker";
 
 export interface ConsentNotice {
-  /** Shows the notice again (the "Cambiar las cookies" button does this). */
+  /** Shows the notice again (the "Cookies" button does this). */
   open(): void;
 }
 
@@ -29,12 +30,6 @@ function explanation(tracker: Tracker): string {
   return parts.join(" ");
 }
 
-function stateText(tracker: Tracker): string {
-  if (tracker.choice() === "granted") return "Google Analytics: aceptado.";
-  if (tracker.choice() === "denied") return "Google Analytics: rechazado.";
-  return "Google Analytics: sin responder; no se carga.";
-}
-
 export function mountConsentNotice(host: HTMLElement, tracker: Tracker): ConsentNotice {
   if (!tracker.needsConsent) {
     host.hidden = true;
@@ -43,9 +38,9 @@ export function mountConsentNotice(host: HTMLElement, tracker: Tracker): Consent
 
   const titleId = uniqueId("consent-title");
   const textId = uniqueId("consent-text");
-  const state = el("span", { class: "consent-state" });
-  const prefsButton = el("button", { class: "consent-link", attrs: { type: "button" } }, "Cambiar las cookies");
-  const prefs = el("p", { class: "consent-prefs" }, state, " ", prefsButton);
+  // The visible name stays in the accessible one (label in name).
+  const prefsButton = el("button", { class: "consent-link", attrs: { type: "button", "aria-label": "Cookies: cambiar tu respuesta" } }, "Cookies");
+  const prefs = el("p", { class: "consent-prefs" }, prefsButton);
 
   const accept = el("button", { class: "button consent-choice", attrs: { type: "button" } }, "Aceptar");
   const reject = el("button", { class: "button consent-choice", attrs: { type: "button" } }, "Rechazar");
@@ -60,7 +55,6 @@ export function mountConsentNotice(host: HTMLElement, tracker: Tracker): Consent
   function show(open: boolean): void {
     notice.hidden = !open;
     prefs.hidden = open;
-    state.textContent = stateText(tracker);
   }
 
   function answer(granted: boolean): void {
@@ -77,9 +71,13 @@ export function mountConsentNotice(host: HTMLElement, tracker: Tracker): Consent
     accept.focus();
   });
 
-  // An answer given in another tab: keep the line at the end of the page true.
+  // An answer given in another tab closes the notice here too; a focus that
+  // was inside it goes to «Cookies» instead of being lost.
   tracker.onChange(() => {
-    state.textContent = stateText(tracker);
+    if (notice.hidden || tracker.choice() === null) return;
+    const hadFocus = notice.contains(document.activeElement);
+    show(false);
+    if (hadFocus) prefsButton.focus();
   });
 
   host.hidden = false;
