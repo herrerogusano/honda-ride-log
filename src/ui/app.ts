@@ -261,7 +261,7 @@ export function startApp(options: AppOptions): App {
       el(
         "p",
         {},
-        "Se borran al momento tu sesión de MAPIT guardada, tu usuario de este servicio y el registro de tus entradas (la huella de tu correo, las fechas y el número de entradas). Tus datos en MAPIT no se modifican. Después se cierra la sesión.",
+        "Se borran al momento tu sesión de MAPIT guardada, tu usuario de este servicio y el registro de tus entradas (la huella de tu correo, las fechas y el número de entradas). Tus datos en MAPIT no se modifican. El recuento de intentos fallidos caduca a las 24 horas y se borra en los días siguientes. Después se cierra la sesión.",
       ),
       el(
         "div",
@@ -384,7 +384,7 @@ export function startApp(options: AppOptions): App {
               { class: "lead" },
               publicService === null
                 ? "Esta web enseña a cada persona invitada las estadísticas de sus propias rutas, a partir de su cuenta de MAPIT. Es un proyecto personal, sin relación con Honda ni con MAPIT."
-                : // Provisional text of the open service (docs/PLAN.md, section 18).
+                : // The open service (docs/PLAN.md, section 18).
                   "Esta web enseña a quien tenga una cuenta de MAPIT las estadísticas de sus propias rutas. Es un proyecto personal, sin relación con Honda ni con MAPIT.",
             ),
             account === undefined

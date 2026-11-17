@@ -5,13 +5,14 @@
  *
  * 1. `GET /estado`: `abierto` or `lleno` show the form, `cerrado` and
  *    `pausa` say so and offer nothing to send.
- * 2. The form: the consent text (provisional), a checkbox, the email and the
- *    Turnstile check. "Continuar" sends `POST /pase`.
+ * 2. The form: the email with two help lines, a checkbox for the privacy
+ *    notice (folded below it) and the Turnstile check. "Continuar" sends
+ *    `POST /pase`.
  * 3. With a pass, the login starts with the email as `login_hint`.
  *
  * The email lives in the field and in one request; it is never stored. A
  * Turnstile result is single use, so after any refusal the check starts over.
- * All texts are provisional.
+ * The texts are the final ones approved by the owner (docs/PLAN.md, section 18).
  */
 import { normalizeEmail, readStatus, requestPass, type AccessDeps, type AccessStatus, type PassOutcome } from "../access/publicAccess";
 import type { ChallengeRenderer, ChallengeWidget } from "../access/turnstile";
@@ -34,27 +35,41 @@ export interface PassScreenOptions {
 }
 
 /**
- * Provisional (docs/PLAN.md, section 18): the final text is still to be
- * written. Shown folded under the checkbox; the screen stays one short view.
+ * Version of the privacy notice below. It does not travel to the service:
+ * the service writes its own constant (`PUBLIC_CONSENT_VERSION` in
+ * `honda-mapit-mcp`) in the row of each new person, and the two must name
+ * the same text. Change both together whenever the notice changes.
  */
+export const PRIVACY_NOTICE_VERSION = "web-1";
+
+/** The privacy notice, folded under the checkbox; the screen stays one short view. */
 export const CONSENT_TEXT: readonly string[] = [
-  "Texto provisional.",
-  "Para enseñarte tus rutas, esta web te lleva al login del servicio, donde escribes la contraseña de tu cuenta de MAPIT. Esta web no la ve.",
-  "El servicio guarda tu sesión de MAPIT cifrada durante menos de una hora y la borra al salir. Para limitar el acceso guarda también una huella de tu correo (no el correo), las fechas y el número de veces que entras, hasta un año después de tu última entrada. Puedes borrarlo cuando quieras con «Borrar mis datos».",
-  "Tus datos en MAPIT no se modifican. Es un proyecto personal, sin relación con Honda ni con MAPIT.",
+  "Esta web no es de Honda ni de MAPIT. Usarla con tu cuenta es decisión tuya: MAPIT podría bloquear o cancelar cuentas según sus condiciones. Tu correo y tu contraseña se escriben en la página de acceso del servicio (en AWS, Irlanda). La primera vez se comprueban con MAPIT; mientras estás dentro, la página de acceso guarda tu contraseña protegida y la borra con tu usuario. Esta web no ve la contraseña.",
+  "Mientras estás dentro, el servicio guarda tu sesión de MAPIT cifrada y tu usuario de acceso. Se borran al salir y, si no sales, solos antes de una hora. Para contar plazas guarda una huella de tu correo (no el correo), con las fechas y el número de entradas. Caduca un año después de tu última entrada y se borra en los días siguientes, o al momento con «Borrar mis datos».",
+  "Si MAPIT rechaza tu contraseña, se cuentan los intentos con esa huella durante 24 horas. Para frenar abusos se cuentan también, durante unos minutos, los pases pedidos desde tu conexión, con una huella de esa conexión. Los dos recuentos caducan solos y se borran en los días siguientes; «Borrar mis datos» no los borra.",
+  "Solo se leen tus datos de MAPIT; nunca se cambian. Tu correo solo se guarda con tu usuario de acceso, mientras estás dentro. Las cifras de uso del servicio son totales, sin correos. Antes de entrar, Cloudflare comprueba que no eres un robot.",
+];
+
+/** Where requests about one's data go: the repository's public issues page. */
+export const PRIVACY_CONTACT_URL = "https://github.com/herrerogusano/honda-ride-log/issues";
+
+/** Under the email: the two messages of the login page that this web cannot change. */
+export const LOGIN_HELP: readonly string[] = [
+  "Escribe el mismo correo en la página de acceso; si cambias de correo, empieza otra vez aquí.",
+  "Si la página de acceso dice que la contraseña es incorrecta, es la de MAPIT. Tienes 3 intentos con este pase; después vuelve aquí.",
 ];
 
 const STATUS_TEXT: Readonly<Record<Exclude<AccessStatus, "abierto">, string>> = {
-  lleno: "No quedan plazas para personas nuevas. Si ya has entrado antes, puedes seguir entrando.",
-  cerrado: "Ahora mismo no se admiten entradas. Vuelve a probar más adelante.",
+  lleno: "No quedan plazas para personas nuevas. Si ya has entrado antes, puedes seguir haciéndolo. Si no, puedes ver la demo.",
+  cerrado: "Ahora mismo no se puede entrar. Prueba más adelante.",
   pausa: MAINTENANCE_TEXT,
   unavailable: "No se ha podido comprobar si se puede entrar. Revisa la conexión y prueba otra vez.",
 };
 
 const PASS_TEXT: Readonly<Record<Exclude<PassOutcome, "issued">, string>> = {
   bad_request: "El servicio no acepta este correo. Revísalo y vuelve a probar.",
-  rejected: "La comprobación anti-robots no es válida o ya se ha usado. Hazla otra vez.",
-  rate_limited: "Se han pedido demasiados accesos desde esta conexión. Espera unos minutos.",
+  rejected: "La comprobación anti-robots no es válida o ha caducado. Pulsa «Continuar» otra vez; si se repite, recarga la página.",
+  rate_limited: "Demasiados intentos desde esta conexión. Espera unos 10 minutos.",
   closed: STATUS_TEXT.cerrado,
   paused: MAINTENANCE_TEXT,
   unavailable: "El servicio no responde ahora mismo. Prueba de nuevo dentro de un rato.",
@@ -192,13 +207,21 @@ export function showPassScreen(options: PassScreenOptions): () => void {
         },
       },
       el("p", { class: "pass-field" }, el("label", { attrs: { for: emailId } }, "Correo de tu cuenta de MAPIT"), email),
-      el("p", { class: "pass-lead" }, "La contraseña la escribes después, en el login del servicio: esta web no la ve."),
+      ...LOGIN_HELP.map((line) => el("p", { class: "pass-lead" }, line)),
+      el("p", { class: "pass-lead" }, "La contraseña la escribes en el paso siguiente, en la página de acceso. Esta web no la ve."),
       el("p", { class: "pass-check" }, consent, el("label", { attrs: { for: consentId } }, " Acepto el aviso de privacidad.")),
       el(
         "details",
         { id: privacyId, class: "pass-privacy" },
         el("summary", {}, "Leer el aviso de privacidad"),
         ...CONSENT_TEXT.map((line) => el("p", {}, line)),
+        el(
+          "p",
+          {},
+          "Para cualquier petición sobre tus datos, abre una incidencia en ",
+          el("a", { attrs: { href: PRIVACY_CONTACT_URL, target: "_blank", rel: "noopener noreferrer" } }, "github.com/herrerogusano/honda-ride-log/issues"),
+          ". Es pública: no escribas en ella tu correo ni datos de tu cuenta.",
+        ),
       ),
       challengeHost,
       message,

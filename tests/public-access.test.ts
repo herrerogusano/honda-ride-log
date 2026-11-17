@@ -142,11 +142,17 @@ describe("POST /pase", () => {
 describe("error texts of the open service", () => {
   it("say maintenance for service_paused only in a build for the open service", () => {
     const paused = new LoadError("routes", "tool_error", "service_paused");
-    expect(errorText(paused, true)).toMatchObject({ explanation: "Estamos haciendo mantenimiento; vuelve más tarde.", action: "retry", code: "routes/tool_error (service_paused)" });
+    expect(errorText(paused, true)).toMatchObject({ explanation: "El servicio está en pausa. Vuelve más tarde.", action: "retry", code: "routes/tool_error (service_paused)" });
     expect(errorText(paused, false).explanation).toBe("El servicio ha respondido con un error.");
     expect(errorText(paused).explanation).toBe("El servicio ha respondido con un error.");
-    expect(errorText(new LoadError("status", "tool_error", "session_expired"), true).action).toBe("sign_in");
-    expect(errorText(new LoadError("status", "tool_error", "session_limit_reached"), true).action).toBe("sign_in");
+    expect(errorText(new LoadError("status", "tool_error", "session_expired"), true)).toMatchObject({
+      explanation: "Tu sesión ha terminado: dura menos de una hora y después se borra sola. Vuelve a entrar.",
+      action: "sign_in",
+    });
+    expect(errorText(new LoadError("status", "tool_error", "session_limit_reached"), true)).toMatchObject({
+      explanation: "Has llegado al máximo de consultas de esta sesión. Vuelve a entrar.",
+      action: "sign_in",
+    });
     // A code that happens to name an object property is not a text.
     expect(errorText(new LoadError("status", "tool_error", "constructor"), true).explanation).toBe("El servicio ha respondido con un error.");
   });

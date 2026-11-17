@@ -17,6 +17,7 @@ import { writeConsent } from "../src/storage/consent";
 import type { ServiceConfig, ServiceEnvironment } from "../src/service/environment";
 import type { App } from "../src/ui/app";
 import { createMapView } from "../src/ui/mapView";
+import { PRIVACY_NOTICE_VERSION } from "../src/ui/passScreen";
 import { createFakeServer, PUBLIC_CONFIG, TEST_CONFIG, type FakeServer } from "./fakeServer";
 
 class MemoryStorage implements StorageLike {
@@ -193,7 +194,6 @@ describe("the screen before the login", () => {
     expect(text()).toContain("Comprobando si se puede entrar…");
     await vi.waitFor(() => expect(form()).not.toBeNull());
     expect(server.requests.map((one) => one.url)).toEqual(["https://api.example.test/estado"]);
-    expect(text()).toContain("Texto provisional.");
     expect(text()).toContain("Correo de tu cuenta de MAPIT");
     expect(emailField().getAttribute("autocomplete")).toBe("email");
     await vi.waitFor(() => expect(widgets).toHaveLength(1));
@@ -202,8 +202,8 @@ describe("the screen before the login", () => {
   });
 
   it.each([
-    ["cerrado", "Ahora mismo no se admiten entradas."],
-    ["pausa", "Estamos haciendo mantenimiento; vuelve más tarde."],
+    ["cerrado", "Ahora mismo no se puede entrar. Prueba más adelante."],
+    ["pausa", "El servicio está en pausa. Vuelve más tarde."],
     ["network", "No se ha podido comprobar si se puede entrar."],
   ] as const)("with /estado %s says so, offers no form and no check", async (status, message) => {
     server.status = status;
@@ -223,7 +223,7 @@ describe("the screen before the login", () => {
     await start(PUBLIC);
     button("Entrar").click();
     await vi.waitFor(() => expect(form()).not.toBeNull());
-    expect(text()).toContain("No quedan plazas para personas nuevas");
+    expect(text()).toContain("No quedan plazas para personas nuevas. Si ya has entrado antes, puedes seguir haciéndolo. Si no, puedes ver la demo.");
   });
 
   it("asks for nothing until the consent is given, the email is valid and the check passed", async () => {
@@ -259,12 +259,12 @@ describe("the screen before the login", () => {
   });
 
   it.each([
-    [403, '{"error": "control_no_valido"}', "La comprobación anti-robots no es válida o ya se ha usado."],
-    [429, '{"error": "demasiados_pases"}', "demasiados accesos desde esta conexión"],
+    [403, '{"error": "control_no_valido"}', "La comprobación anti-robots no es válida o ha caducado. Pulsa «Continuar» otra vez; si se repite, recarga la página."],
+    [429, '{"error": "demasiados_pases"}', "Demasiados intentos desde esta conexión. Espera unos 10 minutos."],
     [400, '{"error": "peticion_invalida"}', "El servicio no acepta este correo."],
     [503, '{"error": "no_disponible"}', "El servicio no responde ahora mismo."],
-    [503, '{"estado": "pausa"}', "Estamos haciendo mantenimiento; vuelve más tarde."],
-    [503, '{"estado": "cerrado"}', "Ahora mismo no se admiten entradas."],
+    [503, '{"estado": "pausa"}', "El servicio está en pausa. Vuelve más tarde."],
+    [503, '{"estado": "cerrado"}', "Ahora mismo no se puede entrar. Prueba más adelante."],
   ])("refused with HTTP %i %s: says why, does not leave and starts a fresh check", async (status, body, message) => {
     await openForm();
     server.passOverride = { status, body };
@@ -289,9 +289,34 @@ describe("the screen before the login", () => {
     expect(privacy).not.toBeNull();
     expect(privacy?.open).toBe(false);
     expect(privacy?.querySelector("summary")?.textContent).toBe("Leer el aviso de privacidad");
-    // The provisional mark goes with the full text.
-    expect(privacy?.textContent).toContain("Texto provisional.");
-    expect(privacy?.textContent).toContain("huella de tu correo");
+    // The approved notice, whole and in order, then the contact line with its link.
+    const paragraphs = [...(privacy?.querySelectorAll("p") ?? [])].map((one) => one.textContent);
+    expect(paragraphs).toEqual([
+      // Written out here, not imported: every period and promise is pinned by the test.
+      "Esta web no es de Honda ni de MAPIT. Usarla con tu cuenta es decisión tuya: MAPIT podría bloquear o cancelar cuentas según sus condiciones. Tu correo y tu contraseña se escriben en la página de acceso del servicio (en AWS, Irlanda). La primera vez se comprueban con MAPIT; mientras estás dentro, la página de acceso guarda tu contraseña protegida y la borra con tu usuario. Esta web no ve la contraseña.",
+      "Mientras estás dentro, el servicio guarda tu sesión de MAPIT cifrada y tu usuario de acceso. Se borran al salir y, si no sales, solos antes de una hora. Para contar plazas guarda una huella de tu correo (no el correo), con las fechas y el número de entradas. Caduca un año después de tu última entrada y se borra en los días siguientes, o al momento con «Borrar mis datos».",
+      "Si MAPIT rechaza tu contraseña, se cuentan los intentos con esa huella durante 24 horas. Para frenar abusos se cuentan también, durante unos minutos, los pases pedidos desde tu conexión, con una huella de esa conexión. Los dos recuentos caducan solos y se borran en los días siguientes; «Borrar mis datos» no los borra.",
+      "Solo se leen tus datos de MAPIT; nunca se cambian. Tu correo solo se guarda con tu usuario de acceso, mientras estás dentro. Las cifras de uso del servicio son totales, sin correos. Antes de entrar, Cloudflare comprueba que no eres un robot.",
+      "Para cualquier petición sobre tus datos, abre una incidencia en github.com/herrerogusano/honda-ride-log/issues. Es pública: no escribas en ella tu correo ni datos de tu cuenta.",
+    ]);
+    const link = privacy?.querySelector("a");
+    expect(link?.getAttribute("href")).toBe("https://github.com/herrerogusano/honda-ride-log/issues");
+    expect(link?.getAttribute("target")).toBe("_blank");
+    expect(link?.getAttribute("rel")).toBe("noopener noreferrer");
+    expect(PRIVACY_NOTICE_VERSION).toBe("web-1");
+    // Nothing on the screen says provisional any more.
+    expect(text().toLowerCase()).not.toContain("provisional");
+  });
+
+  it("right under the email, says how to read the two messages of the login page this web cannot change", async () => {
+    await openForm();
+    const leads = [...root.querySelectorAll(".pass-field ~ .pass-lead")].map((one) => one.textContent);
+    expect(leads).toEqual([
+      "Escribe el mismo correo en la página de acceso; si cambias de correo, empieza otra vez aquí.",
+      "Si la página de acceso dice que la contraseña es incorrecta, es la de MAPIT. Tienes 3 intentos con este pase; después vuelve aquí.",
+      "La contraseña la escribes en el paso siguiente, en la página de acceso. Esta web no la ve.",
+    ]);
+    expect(root.querySelector(".pass-field")?.nextElementSibling?.textContent).toBe(leads[0]);
   });
 
   it("pressed before the check finishes, says it is checking and sends the pass by itself when the result arrives, once", async () => {
@@ -313,7 +338,7 @@ describe("the screen before the login", () => {
     emailField().value = "rider@example.test";
     submit();
     widgets[0]?.callbacks.onResult("synthetic-result-0005");
-    await vi.waitFor(() => expect(text()).toContain("La comprobación anti-robots no es válida"));
+    await vi.waitFor(() => expect(text()).toContain("La comprobación anti-robots no es válida o ha caducado."));
     widgets[0]?.callbacks.onResult("synthetic-result-0006");
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(passRequests()).toBe(1);
@@ -558,6 +583,8 @@ describe("leaving the account", () => {
     await vi.waitFor(() => expect(visibleButtons()).toContain("Borrar mis datos"));
     button("Borrar mis datos").click();
     expect(text()).toContain("¿Borrar tus datos de este servicio?");
+    // What stays: the failed-attempts count, which deletes itself.
+    expect(text()).toContain("Tus datos en MAPIT no se modifican. El recuento de intentos fallidos caduca a las 24 horas y se borra en los días siguientes. Después se cierra la sesión.");
     button("Cancelar").click();
     expect(text()).not.toContain("¿Borrar tus datos de este servicio?");
     expect(server.accountCalls).toEqual([]);
@@ -583,6 +610,7 @@ describe("leaving the account", () => {
     mounted?.dispose();
     await start(PUBLIC);
     expect(text()).toContain(DELETE_UNCONFIRMED);
+    expect(DELETE_UNCONFIRMED).toBe("No hemos podido confirmar que tus datos se hayan borrado. Tu sesión está cerrada. Entra otra vez y repite «Borrar mis datos».");
     expect(root.querySelector('[role="alert"]')?.textContent).toBe(DELETE_UNCONFIRMED);
     expect(visibleButtons()).toContain("Entrar");
     // Said once: a reload does not repeat it.
@@ -625,7 +653,7 @@ describe("leaving the account", () => {
       body: JSON.stringify({ jsonrpc: "2.0", id: (JSON.parse(request.body) as { id: number }).id, result: { content: [{ type: "text", text: "service_paused: x" }], isError: true } }),
     });
     await signedIn();
-    await vi.waitFor(() => expect(text()).toContain("Estamos haciendo mantenimiento; vuelve más tarde."));
+    await vi.waitFor(() => expect(text()).toContain("El servicio está en pausa. Vuelve más tarde."));
     expect(visibleButtons()).toContain("Reintentar");
   });
 
