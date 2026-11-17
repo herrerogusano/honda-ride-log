@@ -259,7 +259,7 @@ export function startApp(options: AppOptions): App {
       el(
         "p",
         {},
-        "Se borran al momento tu sesión de MAPIT guardada, tu usuario de este servicio y el registro de tus entradas (la huella de tu correo, las fechas y el número de entradas). Tus datos en MAPIT no se modifican. El recuento de intentos fallidos se borra solo en 24 horas. Después se cierra la sesión.",
+        "Se borran al momento tu sesión de MAPIT guardada, tu usuario de este servicio y el registro de tus entradas (la huella de tu correo, las fechas y el número de entradas). Tus datos en MAPIT no se modifican. El recuento de intentos fallidos caduca a las 24 horas y se borra en los días siguientes. Después se cierra la sesión.",
       ),
       el(
         "div",

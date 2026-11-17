@@ -15,7 +15,7 @@ import { boot, DELETE_UNCONFIRMED } from "../src/boot";
 import type { ServiceConfig, ServiceEnvironment } from "../src/service/environment";
 import type { App } from "../src/ui/app";
 import { createMapView } from "../src/ui/mapView";
-import { CONSENT_TEXT, PRIVACY_NOTICE_VERSION } from "../src/ui/passScreen";
+import { PRIVACY_NOTICE_VERSION } from "../src/ui/passScreen";
 import { createFakeServer, PUBLIC_CONFIG, TEST_CONFIG, type FakeServer } from "./fakeServer";
 
 class MemoryStorage implements StorageLike {
@@ -239,7 +239,7 @@ describe("the screen before the login", () => {
   });
 
   it.each([
-    [403, '{"error": "control_no_valido"}', "La comprobación anti-robots ha caducado. Pulsa «Continuar» otra vez."],
+    [403, '{"error": "control_no_valido"}', "La comprobación anti-robots no es válida o ha caducado. Pulsa «Continuar» otra vez; si se repite, recarga la página."],
     [429, '{"error": "demasiados_pases"}', "Demasiados intentos desde esta conexión. Espera unos 10 minutos."],
     [400, '{"error": "peticion_invalida"}', "El servicio no acepta este correo."],
     [503, '{"error": "no_disponible"}', "El servicio no responde ahora mismo."],
@@ -272,11 +272,13 @@ describe("the screen before the login", () => {
     // The approved notice, whole and in order, then the contact line with its link.
     const paragraphs = [...(privacy?.querySelectorAll("p") ?? [])].map((one) => one.textContent);
     expect(paragraphs).toEqual([
-      ...CONSENT_TEXT,
+      // Written out here, not imported: every period and promise is pinned by the test.
+      "Esta web no es de Honda ni de MAPIT. Usarla con tu cuenta es decisión tuya: MAPIT podría bloquear o cancelar cuentas según sus condiciones. Tu correo y tu contraseña se escriben en la página de acceso del servicio (en AWS, Irlanda). La primera vez se comprueban con MAPIT; mientras estás dentro, la página de acceso guarda tu contraseña protegida y la borra con tu usuario. Esta web no ve la contraseña.",
+      "Mientras estás dentro, el servicio guarda tu sesión de MAPIT cifrada y tu usuario de acceso. Se borran al salir y, si no sales, solos antes de una hora. Para contar plazas guarda una huella de tu correo (no el correo), con las fechas y el número de entradas. Caduca un año después de tu última entrada y se borra en los días siguientes, o al momento con «Borrar mis datos».",
+      "Si MAPIT rechaza tu contraseña, se cuentan los intentos con esa huella durante 24 horas. Para frenar abusos se cuentan también, durante unos minutos, los pases pedidos desde tu conexión, con una huella de esa conexión. Los dos recuentos caducan solos y se borran en los días siguientes; «Borrar mis datos» no los borra.",
+      "Solo se leen tus datos de MAPIT; nunca se cambian. Tu correo solo se guarda con tu usuario de acceso, mientras estás dentro. Las cifras de uso del servicio son totales, sin correos. Antes de entrar, Cloudflare comprueba que no eres un robot.",
       "Para cualquier petición sobre tus datos, abre una incidencia en github.com/herrerogusano/honda-ride-log/issues. Es pública: no escribas en ella tu correo ni datos de tu cuenta.",
     ]);
-    expect(CONSENT_TEXT[0]).toMatch(/^Esta web no es de Honda ni de MAPIT\./);
-    expect(CONSENT_TEXT.join(" ")).toContain("«Borrar mis datos» no borra estos dos recuentos: se borran solos.");
     const link = privacy?.querySelector("a");
     expect(link?.getAttribute("href")).toBe("https://github.com/herrerogusano/honda-ride-log/issues");
     expect(link?.getAttribute("target")).toBe("_blank");
@@ -316,7 +318,7 @@ describe("the screen before the login", () => {
     emailField().value = "rider@example.test";
     submit();
     widgets[0]?.callbacks.onResult("synthetic-result-0005");
-    await vi.waitFor(() => expect(text()).toContain("La comprobación anti-robots ha caducado."));
+    await vi.waitFor(() => expect(text()).toContain("La comprobación anti-robots no es válida o ha caducado."));
     widgets[0]?.callbacks.onResult("synthetic-result-0006");
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(passRequests()).toBe(1);
@@ -562,7 +564,7 @@ describe("leaving the account", () => {
     button("Borrar mis datos").click();
     expect(text()).toContain("¿Borrar tus datos de este servicio?");
     // What stays: the failed-attempts count, which deletes itself.
-    expect(text()).toContain("Tus datos en MAPIT no se modifican. El recuento de intentos fallidos se borra solo en 24 horas. Después se cierra la sesión.");
+    expect(text()).toContain("Tus datos en MAPIT no se modifican. El recuento de intentos fallidos caduca a las 24 horas y se borra en los días siguientes. Después se cierra la sesión.");
     button("Cancelar").click();
     expect(text()).not.toContain("¿Borrar tus datos de este servicio?");
     expect(server.accountCalls).toEqual([]);

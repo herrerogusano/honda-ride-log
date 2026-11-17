@@ -44,10 +44,10 @@ export const PRIVACY_NOTICE_VERSION = "web-1";
 
 /** The privacy notice, folded under the checkbox; the screen stays one short view. */
 export const CONSENT_TEXT: readonly string[] = [
-  "Esta web no es de Honda ni de MAPIT. Usarla con tu cuenta es decisión tuya: MAPIT podría bloquear o cancelar cuentas según sus condiciones. Tu correo y tu contraseña se escriben en la página de acceso del servicio (en AWS, Irlanda) y se comprueban con MAPIT. Esta web no ve la contraseña.",
-  "Mientras estás dentro, el servicio guarda tu sesión de MAPIT cifrada y tu usuario de acceso. Se borran al salir y, si no sales, solos antes de una hora. Para contar plazas guarda una huella de tu correo (no el correo), con las fechas y el número de entradas. Se borra sola pasado un año desde tu última entrada, o al momento con «Borrar mis datos».",
-  "Si fallas la contraseña, se cuentan los intentos con esa huella durante 24 horas. Para frenar abusos se cuentan también, durante unos minutos, los pases pedidos desde tu conexión, con una huella de esa conexión. «Borrar mis datos» no borra estos dos recuentos: se borran solos.",
-  "Solo se leen tus datos de MAPIT; nunca se cambian. Nadie ve tu correo: el servicio solo guarda cifras totales. Antes de entrar, Cloudflare comprueba que no eres un robot.",
+  "Esta web no es de Honda ni de MAPIT. Usarla con tu cuenta es decisión tuya: MAPIT podría bloquear o cancelar cuentas según sus condiciones. Tu correo y tu contraseña se escriben en la página de acceso del servicio (en AWS, Irlanda). La primera vez se comprueban con MAPIT; mientras estás dentro, la página de acceso guarda tu contraseña protegida y la borra con tu usuario. Esta web no ve la contraseña.",
+  "Mientras estás dentro, el servicio guarda tu sesión de MAPIT cifrada y tu usuario de acceso. Se borran al salir y, si no sales, solos antes de una hora. Para contar plazas guarda una huella de tu correo (no el correo), con las fechas y el número de entradas. Caduca un año después de tu última entrada y se borra en los días siguientes, o al momento con «Borrar mis datos».",
+  "Si MAPIT rechaza tu contraseña, se cuentan los intentos con esa huella durante 24 horas. Para frenar abusos se cuentan también, durante unos minutos, los pases pedidos desde tu conexión, con una huella de esa conexión. Los dos recuentos caducan solos y se borran en los días siguientes; «Borrar mis datos» no los borra.",
+  "Solo se leen tus datos de MAPIT; nunca se cambian. Tu correo solo se guarda con tu usuario de acceso, mientras estás dentro. Las cifras de uso del servicio son totales, sin correos. Antes de entrar, Cloudflare comprueba que no eres un robot.",
 ];
 
 /** Where requests about one's data go: the repository's public issues page. */
@@ -68,7 +68,7 @@ const STATUS_TEXT: Readonly<Record<Exclude<AccessStatus, "abierto">, string>> = 
 
 const PASS_TEXT: Readonly<Record<Exclude<PassOutcome, "issued">, string>> = {
   bad_request: "El servicio no acepta este correo. Revísalo y vuelve a probar.",
-  rejected: "La comprobación anti-robots ha caducado. Pulsa «Continuar» otra vez.",
+  rejected: "La comprobación anti-robots no es válida o ha caducado. Pulsa «Continuar» otra vez; si se repite, recarga la página.",
   rate_limited: "Demasiados intentos desde esta conexión. Espera unos 10 minutos.",
   closed: STATUS_TEXT.cerrado,
   paused: MAINTENANCE_TEXT,
