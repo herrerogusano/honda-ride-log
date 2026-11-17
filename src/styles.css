@@ -1415,6 +1415,9 @@ select:focus-visible {
 }
 
 .content > .account-notice {
+  display: grid;
+  gap: var(--s3);
+  justify-items: start;
   margin-bottom: 0;
 }
 

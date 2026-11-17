@@ -32,10 +32,10 @@ export interface AccountActions {
   signIn(): Promise<void>;
   /**
    * Forgets the token and any half-done login; may leave for the login's
-   * sign-out page. The open service first ends the session on the service and
-   * resolves a text for the landing if that failed (null if it did not).
+   * sign-out page. The open service first ends the session on the service
+   * (asynchronously) and then leaves.
    */
-  signOut(): Promise<string | null> | null | undefined;
+  signOut(): Promise<AccountNotice | null> | null | undefined;
   /** The open service only (docs/PLAN.md, section 18). Without it, the page is the invitation one. */
   readonly publicService?: PublicServiceActions;
 }
@@ -47,8 +47,15 @@ export interface PublicServiceActions {
    * that takes it down.
    */
   showAccess(view: { readonly host: HTMLElement; back(): void; fail(error: unknown): void }): () => void;
-  /** `borrar_mis_datos`, then sign out. Resolves a text for the landing if it failed (null if it did not). */
-  deleteMyData(): Promise<string | null>;
+  /** `borrar_mis_datos`, then sign out. Resolves what to tell on the landing if it failed (null if it did not). */
+  deleteMyData(): Promise<AccountNotice | null>;
+}
+
+/** What the landing says after leaving an account went wrong on the service. */
+export interface AccountNotice {
+  readonly text: string;
+  /** Finishes leaving (the login's sign-out page), offered as a button; null if there is none. */
+  readonly finish: (() => void) | null;
 }
 
 export interface AppOptions {
@@ -197,13 +204,16 @@ export function startApp(options: AppOptions): App {
   }
 
   /** A line above the landing, after leaving an account: what happened on the service. */
-  function landingNotice(text: string, role: "status" | "alert"): void {
+  function landingNotice(text: string, role: "status" | "alert", finish: (() => void) | null = null): void {
     content.querySelector(".account-notice")?.remove();
-    content.prepend(el("p", { class: "notice account-notice", attrs: { role } }, text));
+    const button =
+      finish === null ? null : el("button", { class: "button button-primary", attrs: { type: "button" }, on: { click: finish } }, "Terminar de salir");
+    content.prepend(el("div", { class: "notice account-notice", attrs: { role } }, el("p", {}, text), button));
+    button?.focus();
   }
 
   /** Leaves the account: the landing first, then the token goes (and, in the open service, the session on the service). */
-  function leaveAccount(run: () => Promise<string | null> | null | undefined, pending: string): void {
+  function leaveAccount(run: () => Promise<AccountNotice | null> | null | undefined, pending: string): void {
     // The load stops asking and its data leaves the page before anything is sent.
     showLanding();
     const mine = generation;
@@ -211,10 +221,10 @@ export function startApp(options: AppOptions): App {
     content.querySelector("button")?.focus();
     if (outcome === null || outcome === undefined) return;
     landingNotice(pending, "status");
-    void outcome.then((text) => {
+    void outcome.then((notice) => {
       if (mine !== generation) return;
-      if (text === null) content.querySelector(".account-notice")?.remove();
-      else landingNotice(text, "alert");
+      if (notice === null) content.querySelector(".account-notice")?.remove();
+      else landingNotice(notice.text, "alert", notice.finish);
     });
   }
   const signInButton = (label: string, primary: boolean): HTMLElement =>

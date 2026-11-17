@@ -26,7 +26,7 @@ import { createMcpClient, ServiceError, type McpClient, type McpClientOptions } 
 import { renderTurnstile, type ChallengeRenderer } from "./access/turnstile";
 import { clear, el } from "./ui/dom";
 import { showPassScreen } from "./ui/passScreen";
-import { startApp, type App, type AppOptions } from "./ui/app";
+import { startApp, type AccountNotice, type App, type AppOptions } from "./ui/app";
 import type { Counter } from "./analytics/config";
 
 /** What `boot` needs of the visit counters (`createTracker` in the page, a fake in tests). */
@@ -94,7 +94,7 @@ export async function boot(options: BootOptions): Promise<App> {
           }
         : {
             signIn: () => startLogin(config, deps),
-            signOut: () => leave((open) => open.endSession(), signOutProblem),
+            signOut: () => leave((open) => open.endSession(), null),
             publicService: {
               showAccess: (view) =>
                 showPassScreen({
@@ -112,29 +112,37 @@ export async function boot(options: BootOptions): Promise<App> {
   });
 
   /**
-   * The open service: one account tool with the token, then the token goes.
-   * Done, the browser also leaves for the login's sign-out page (if the build
-   * knows one). Failed, the token is forgotten here all the same and the
-   * landing says what happened; the service deletes every session by itself
-   * in less than one hour.
+   * The open service: one account tool with the token, then the token goes
+   * and the browser leaves for the login's sign-out page, so the login's own
+   * session never outlives a sign-out (on a shared device the next person
+   * would be let in as the previous one). If the tool failed (or the session
+   * had already ended) and `problem` gives a text, the page stays to show it,
+   * with a button that finishes leaving: deleting data that did not get
+   * deleted must not pass in silence. Signing out has no such text: the
+   * service deletes every session by itself in less than one hour.
    */
-  async function leave(run: (open: McpClient) => Promise<void>, problem: (error: unknown) => string): Promise<string | null> {
+  async function leave(run: (open: McpClient) => Promise<void>, problem: ((error: unknown) => string) | null): Promise<AccountNotice | null> {
     const ending = session;
     const open = client;
     session = null;
     client = null;
-    let text: string | null = null;
+    let failed: { error: unknown } | null = null;
     if (ending === null || open === null || ending.endReason !== null) {
-      text = problem(null);
+      failed = { error: null };
     } else {
       try {
         await run(open);
       } catch (error) {
-        text = problem(error);
+        failed = { error };
       }
     }
-    logout(text === null ? config : { ...config, logoutUri: null }, ending, deps);
-    return text;
+    if (failed === null || problem === null) {
+      logout(config, ending, deps);
+      return null;
+    }
+    // Forget the token now; the login's sign-out page comes with the button.
+    logout({ ...config, logoutUri: null }, ending, deps);
+    return { text: problem(failed.error), finish: config.logoutUri === null ? null : () => logout(config, null, deps) };
   }
 
   if (failure !== null) {
@@ -154,12 +162,7 @@ function failureCode(error: unknown): string {
   return "unknown";
 }
 
-/** Provisional texts (docs/PLAN.md, section 18). `null`: the session had already ended. */
-function signOutProblem(error: unknown): string {
-  if (error === null) return "Tu sesión ya había terminado. En el servicio se borra sola en menos de una hora.";
-  return `No se ha podido cerrar la sesión del todo en el servicio (código: ${failureCode(error)}). Se borrará sola en menos de una hora.`;
-}
-
+/** Provisional text (docs/PLAN.md, section 18). `null`: the session had already ended. */
 function deleteProblem(error: unknown): string {
   const again = "Entra de nuevo y repite «Borrar mis datos».";
   if (error === null) return `No se han podido borrar tus datos porque tu sesión ya había terminado. ${again}`;

@@ -41,6 +41,8 @@ interface TurnstileApi {
 }
 
 let loading: Promise<TurnstileApi> | null = null;
+/** How long the script may take to arrive before the page says the check could not load. */
+export const SCRIPT_TIMEOUT_MS = 15_000;
 
 function turnstileApi(): TurnstileApi | null {
   const api = (globalThis as { turnstile?: unknown }).turnstile;
@@ -53,12 +55,19 @@ function loadTurnstile(): Promise<TurnstileApi> {
     const script = document.createElement("script");
     script.src = TURNSTILE_SCRIPT;
     script.async = true;
+    // A stalled request must not leave the form waiting for ever.
+    const deadline = setTimeout(() => {
+      script.remove();
+      reject(new Error("turnstile_unavailable"));
+    }, SCRIPT_TIMEOUT_MS);
     script.addEventListener("load", () => {
+      clearTimeout(deadline);
       const api = turnstileApi();
       if (api === null) reject(new Error("turnstile_missing"));
       else resolve(api);
     });
     script.addEventListener("error", () => {
+      clearTimeout(deadline);
       script.remove();
       reject(new Error("turnstile_unavailable"));
     });

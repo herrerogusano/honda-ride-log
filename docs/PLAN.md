@@ -1692,12 +1692,19 @@ sitio. Ni `/estado` ni `/pase` llevan token, cookies ni referente.
   por `endSession` (`cerrar_sesion`) y `deleteMyData` (`borrar_mis_datos`
   con `confirmar: true`), y un cliente por invitación las rechaza.
 - **«Salir»** quita primero los datos de la pantalla, después llama a
-  `cerrar_sesion` con el token y, si sale bien, olvida el token y va al
-  `/logout` del login. Si falla, olvida el token igualmente, no sale de la
-  página y dice (con el código) que el servicio borra la sesión solo en
-  menos de una hora.
-- **«Borrar mis datos»**, al lado de «Salir», pide confirmación y después
-  hace lo mismo con `borrar_mis_datos`.
+  `cerrar_sesion` con el token, olvida el token y va al `/logout` del
+  login. **Va siempre**, también si la herramienta falla o la sesión ya
+  había terminado: si no, la sesión propia del login seguiría abierta y,
+  en un dispositivo compartido, el siguiente «Entrar» podría entrar como
+  la persona anterior. Un fallo de `cerrar_sesion` no se enseña: el
+  servicio borra la sesión solo en menos de una hora.
+- **«Borrar mis datos»**, al lado de «Salir», pide confirmación y llama a
+  `borrar_mis_datos`. Si sale bien, lo mismo que «Salir». Si falla, olvida
+  el token, se queda en la portada para que se lea el fallo (con su
+  código) y ofrece «Terminar de salir», que va al `/logout` del login: que
+  no se borraran los datos no puede pasar en silencio.
+- El script de Turnstile tiene 15 s para llegar; si no, el formulario dice
+  que no se ha podido hacer la comprobación.
 - Errores por código de herramienta, solo en este modo: `service_paused`
   da «Estamos haciendo mantenimiento; vuelve más tarde.» (provisional) con
   «Reintentar»; `session_expired` y `session_limit_reached`, «Volver a

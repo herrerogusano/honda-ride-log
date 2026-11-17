@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AuthDeps } from "../src/auth/login";
 import type { StorageLike } from "../src/auth/pendingLogin";
 import type { ChallengeCallbacks, ChallengeRenderer } from "../src/access/turnstile";
-import { renderTurnstile, TURNSTILE_ACTION, TURNSTILE_SCRIPT } from "../src/access/turnstile";
+import { renderTurnstile, SCRIPT_TIMEOUT_MS, TURNSTILE_ACTION, TURNSTILE_SCRIPT } from "../src/access/turnstile";
 import { boot } from "../src/boot";
 import type { ServiceConfig, ServiceEnvironment } from "../src/service/environment";
 import type { App } from "../src/ui/app";
@@ -307,15 +307,27 @@ describe("leaving the account", () => {
     expect(new URL(navigations[0] ?? "").pathname).toBe("/logout");
   });
 
-  it("if cerrar_sesion fails, forgets the token here, stays on the page and says the session ends by itself", async () => {
+  it("even if cerrar_sesion fails, or the session had already ended, goes to the login's sign-out page", async () => {
     await signedIn();
     await vi.waitFor(() => expect(visibleButtons()).toContain("Salir"));
     server.accountFailure = "logout_failed";
     button("Salir").click();
-    await vi.waitFor(() => expect(text()).toContain("Se borrará sola en menos de una hora."));
-    expect(text()).toContain("logout_failed");
-    expect(navigations).toEqual([]);
-    expect(visibleButtons()).toContain("Entrar");
+    // The login's own session must not outlive a sign-out (a shared device).
+    await vi.waitFor(() => expect(navigations).toHaveLength(1));
+    expect(new URL(navigations[0] ?? "").pathname).toBe("/logout");
+    expect(server.accountCalls).toEqual([{ name: "cerrar_sesion", arguments: {} }]);
+  });
+
+  it("with the session already over, «Salir» sends nothing and still goes to the login's sign-out page", async () => {
+    server.mcpOverride = (request) => ({
+      body: JSON.stringify({ jsonrpc: "2.0", id: (JSON.parse(request.body) as { id: number }).id, result: { content: [{ type: "text", text: "session_expired: x" }], isError: true } }),
+    });
+    await signedIn();
+    await vi.waitFor(() => expect(visibleButtons()).toContain("Volver a entrar"));
+    button("Salir").click();
+    await vi.waitFor(() => expect(navigations).toHaveLength(1));
+    expect(new URL(navigations[0] ?? "").pathname).toBe("/logout");
+    expect(server.accountCalls).toEqual([]);
   });
 
   it("«Borrar mis datos» asks first; «Cancelar» keeps everything; confirming sends confirmar=true and signs out", async () => {
@@ -334,14 +346,22 @@ describe("leaving the account", () => {
     expect(new URL(navigations[0] ?? "").pathname).toBe("/logout");
   });
 
-  it("if borrar_mis_datos fails, says so with its code and asks to sign in and repeat", async () => {
+  it("if borrar_mis_datos fails, says so with its code, forgets the token and offers to finish leaving", async () => {
     await signedIn();
     await vi.waitFor(() => expect(visibleButtons()).toContain("Borrar mis datos"));
     server.accountFailure = "delete_failed";
     button("Borrar mis datos").click();
     [...root.querySelectorAll<HTMLButtonElement>(".delete-confirm button")].find((one) => one.textContent === "Borrar mis datos")?.click();
     await vi.waitFor(() => expect(text()).toContain("No se han podido borrar tus datos (código: delete_failed)."));
+    // It does not leave by itself, so the failure is read; the button finishes at the login's sign-out page.
     expect(navigations).toEqual([]);
+    expect(document.activeElement?.textContent).toBe("Terminar de salir");
+    button("Terminar de salir").click();
+    expect(navigations).toHaveLength(1);
+    expect(new URL(navigations[0] ?? "").pathname).toBe("/logout");
+    // The token went: «Salir» is gone and nothing more is sent.
+    expect(visibleButtons()).not.toContain("Salir");
+    expect(server.accountCalls).toHaveLength(1);
   });
 
   it("a paused service mid-session shows the maintenance text with «Reintentar»", async () => {
@@ -380,6 +400,30 @@ describe("the invitation build stays as it was", () => {
 });
 
 describe("the real Turnstile loader", () => {
+  it("gives up on a script that never arrives, so the form can say so, and tries again next time", async () => {
+    // First in this file to use the real loader: nothing is cached yet.
+    document.head.replaceChildren();
+    vi.useFakeTimers();
+    try {
+      const callbacks = { onResult: () => undefined, onExpired: () => undefined, onError: () => undefined };
+      const pending = renderTurnstile(document.createElement("div"), "0x4AAAAAAASyntheticKey", callbacks).then(
+        () => "rendered",
+        (error: unknown) => (error as Error).message,
+      );
+      expect(document.head.querySelectorAll("script")).toHaveLength(1);
+      vi.advanceTimersByTime(SCRIPT_TIMEOUT_MS);
+      expect(await pending).toBe("turnstile_unavailable");
+      expect(document.head.querySelectorAll("script")).toHaveLength(0);
+      const retry = renderTurnstile(document.createElement("div"), "0x4AAAAAAASyntheticKey", callbacks).catch(() => undefined);
+      expect(document.head.querySelectorAll("script")).toHaveLength(1);
+      // Let the retry time out too, so the next test starts with nothing cached.
+      vi.advanceTimersByTime(SCRIPT_TIMEOUT_MS);
+      await retry;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("loads Cloudflare's script once, with explicit rendering, and renders with the action the service checks", async () => {
     document.head.replaceChildren();
     const rendered: Record<string, unknown>[] = [];
