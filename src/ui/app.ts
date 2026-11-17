@@ -78,6 +78,8 @@ export interface App {
   showLanding(problem?: LoadError): void;
   /** A fixed line above the landing (for example, a delete that was not confirmed). */
   showNotice(text: string): void;
+  /** The open service's screen before the login, as «Entrar» shows it; the landing in any other build. */
+  showAccess(): void;
   /** Stops listening to the address and abandons any load in progress. The page keeps what it shows. */
   dispose(): void;
 }
@@ -665,6 +667,10 @@ export function startApp(options: AppOptions): App {
     showNotice(text) {
       showLanding();
       landingNotice(text, "alert");
+    },
+    showAccess() {
+      if (publicService === null) showLanding();
+      else showAccess(publicService);
     },
     dispose() {
       generation += 1;

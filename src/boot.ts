@@ -16,6 +16,12 @@
  * The visit counters (docs/PLAN.md, section 17) start only after that
  * return has been dealt with, so neither ever runs with `?code` in the
  * address; then "signed in" is counted once the code became a session.
+ *
+ * In a build for the open service no counter shares a document with the
+ * screen before the login, where the email is typed (docs/PLAN.md, section
+ * 18). «Entrar» seals the counters first; if one was already in the page
+ * (a script cannot be unloaded), the page reloads at `#entrar` instead, and
+ * that load seals them before they start and opens the screen at once.
  */
 import { completeLogin, logout, startLogin, takeLogoutNotice, type AuthDeps, type LoginReturn } from "./auth/login";
 import type { LeaveNotice } from "./auth/login";
@@ -42,10 +48,22 @@ export interface BootOptions extends Omit<AppOptions, "account" | "initialView" 
   readonly analytics?: BootAnalytics;
   /** Only for tests: the anti-robot check of the open service (Cloudflare Turnstile in the page). */
   readonly challenge?: ChallengeRenderer;
+  /** Only for tests: reloads the page (`location.reload()` in the page). */
+  readonly reload?: () => void;
+}
+
+/** The fragment of a page load that opens the open service's screen before the login, with no counter in it. */
+export const ENTER_FRAGMENT = "#entrar";
+
+/** The current address without its fragment. */
+function withoutFragment(href: string): string {
+  const url = new URL(href);
+  url.hash = "";
+  return url.href;
 }
 
 export async function boot(options: BootOptions): Promise<App> {
-  const { environment, auth, mcp, analytics, challenge, ...rest } = options;
+  const { environment, auth, mcp, analytics, challenge, reload, ...rest } = options;
   const appOptions: Omit<AppOptions, "account" | "initialView"> = { ...rest, onDemo: () => analytics?.track("demo_open") };
   if (environment.kind === "demo") {
     // No login in this build, so the address never carries a code.
@@ -71,6 +89,11 @@ export async function boot(options: BootOptions): Promise<App> {
   } catch (error) {
     failure = signInError(error);
   }
+  // The open service, reloaded at `#entrar` to type the email in a page with
+  // no counter: sealed before they can start. The screen opens below, and the
+  // landing under it takes the fragment out of the address.
+  const enterNow = access !== null && back.status === "none" && failure === null && new URL(deps.currentUrl()).hash === ENTER_FRAGMENT;
+  if (enterNow) analytics?.seal();
   // Only now: `completeLogin` has taken the login parameters out of the address.
   analytics?.start();
   if (back.status === "signed_in") analytics?.track("login");
@@ -79,7 +102,7 @@ export async function boot(options: BootOptions): Promise<App> {
     ...appOptions,
     // A return from the login (good or bad) decides the first view; the
     // fragment does not, so `#demo` cannot replace the account.
-    initialView: back.status === "signed_in" || failure !== null ? "none" : "address",
+    initialView: back.status === "signed_in" || failure !== null || enterNow ? "none" : "address",
     account:
       access === null
         ? {
@@ -96,8 +119,16 @@ export async function boot(options: BootOptions): Promise<App> {
             signIn: () => startLogin(config, deps),
             signOut: () => leave((open) => open.endSession(), null),
             publicService: {
-              showAccess: (view) =>
-                showPassScreen({
+              showAccess: (view) => {
+                // A counter already in this page could read the email: start over in a page without one.
+                if (analytics?.seal() === true) {
+                  clear(view.host);
+                  view.host.append(el("p", { class: "loading", attrs: { role: "status" } }, "Abriendo la entrada…"));
+                  deps.replaceUrl(withoutFragment(deps.currentUrl()) + ENTER_FRAGMENT);
+                  (reload ?? (() => window.location.reload()))();
+                  return () => undefined;
+                }
+                return showPassScreen({
                   host: view.host,
                   access,
                   deps: { fetch: deps.fetch },
@@ -105,7 +136,8 @@ export async function boot(options: BootOptions): Promise<App> {
                   startLogin: (email) => startLogin(config, deps, email),
                   onBack: view.back,
                   onFailure: view.fail,
-                }),
+                });
+              },
               deleteMyData: () => leave((open) => open.deleteMyData(), "delete_unconfirmed"),
             },
           },
@@ -149,6 +181,8 @@ export async function boot(options: BootOptions): Promise<App> {
     void app.load(client, { demo: false });
   } else if (leftNotice === "delete_unconfirmed") {
     app.showNotice(DELETE_UNCONFIRMED);
+  } else if (enterNow) {
+    app.showAccess();
   }
   return app;
 }

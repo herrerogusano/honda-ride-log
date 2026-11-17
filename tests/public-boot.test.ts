@@ -11,7 +11,9 @@ import type { AuthDeps } from "../src/auth/login";
 import type { StorageLike } from "../src/auth/pendingLogin";
 import type { ChallengeCallbacks, ChallengeRenderer } from "../src/access/turnstile";
 import { renderTurnstile, SCRIPT_TIMEOUT_MS, TURNSTILE_ACTION, TURNSTILE_SCRIPT } from "../src/access/turnstile";
-import { boot, DELETE_UNCONFIRMED } from "../src/boot";
+import { createTracker, type Tracker } from "../src/analytics/tracker";
+import { boot, DELETE_UNCONFIRMED, ENTER_FRAGMENT } from "../src/boot";
+import { writeConsent } from "../src/storage/consent";
 import type { ServiceConfig, ServiceEnvironment } from "../src/service/environment";
 import type { App } from "../src/ui/app";
 import { createMapView } from "../src/ui/mapView";
@@ -90,9 +92,20 @@ async function start(environment: ServiceEnvironment, address = "/"): Promise<Ap
     demoDelayMs: 0,
     createMap: (data, caller, options) => createMapView(data, caller, options, () => surface),
     mcp: { fetch: server.fetch, now: () => server.clock.now, sleep: async () => undefined, minIntervalMs: 0 },
+    ...(counters === null ? {} : { analytics: counters }),
+    reload: () => void reloads.push(location.href),
   });
   return mounted;
 }
+
+/** The visit counters of the page under test, if any (synthetic identifiers), and the reloads it asked for. */
+let counters: Tracker | null = null;
+let reloads: string[] = [];
+let listening = new AbortController();
+const SYNTHETIC_COUNTERS = { cloudflareToken: "0123456789abcdef0123456789abcdef", googleMeasurementId: "G-TEST1234" } as const;
+const GOOGLE_ONLY = { cloudflareToken: null, googleMeasurementId: "G-TEST1234" } as const;
+const counterScripts = (): string[] => [...document.head.querySelectorAll("script")].map((one) => one.src);
+const dataLayer = (): unknown => (window as unknown as { dataLayer?: unknown }).dataLayer;
 
 const text = (): string => document.body.textContent ?? "";
 function button(label: string): HTMLButtonElement {
@@ -162,6 +175,13 @@ beforeEach(() => {
 afterEach(() => {
   mounted?.dispose();
   mounted = null;
+  counters = null;
+  reloads = [];
+  listening.abort();
+  listening = new AbortController();
+  document.head.replaceChildren();
+  delete (window as unknown as { dataLayer?: unknown }).dataLayer;
+  Reflect.deleteProperty(window, "ga-disable-G-TEST1234");
 });
 
 describe("the screen before the login", () => {
@@ -619,6 +639,73 @@ describe("leaving the account", () => {
     button("Volver a entrar").click();
     await vi.waitFor(() => expect(form()).not.toBeNull());
     expect(navigations).toEqual([]);
+  });
+});
+
+describe("no visit counter shares a page with the email (docs/PLAN.md, section 18)", () => {
+  it("with a counter already in the page, «Entrar» reloads into the screen instead of drawing the form there", async () => {
+    writeConsent("granted", server.clock.now);
+    counters = createTracker(SYNTHETIC_COUNTERS, { arrival: () => null, signal: listening.signal, now: () => server.clock.now });
+    await start(PUBLIC);
+    expect(counterScripts()).toHaveLength(2);
+    button("Entrar").click();
+    expect(reloads).toEqual([`http://localhost:3000/${ENTER_FRAGMENT}`]);
+    expect(emailField()).toBeNull();
+    expect(text()).toContain("Abriendo la entrada…");
+    expect(server.requests).toHaveLength(0);
+    expect(widgets).toHaveLength(0);
+    // Google, already in memory, stops sending.
+    expect((window as unknown as Record<string, unknown>)["ga-disable-G-TEST1234"]).toBe(true);
+  });
+
+  it("the page loaded at #entrar opens the screen with no counter in it, whatever the answer to the cookies, through to the login", async () => {
+    writeConsent("granted", server.clock.now);
+    counters = createTracker(SYNTHETIC_COUNTERS, { arrival: () => `http://localhost:3000/${ENTER_FRAGMENT}`, signal: listening.signal, now: () => server.clock.now });
+    await start(PUBLIC, `/${ENTER_FRAGMENT}`);
+    await vi.waitFor(() => expect(form()).not.toBeNull());
+    expect(location.hash).toBe("");
+    counters.grant();
+    fill("rider@example.test");
+    submit();
+    await vi.waitFor(() => expect(navigations).toHaveLength(1));
+    expect(new URL(navigations[0] ?? "").searchParams.get("login_hint")).toBe("rider@example.test");
+    expect(counterScripts().filter((src) => !src.startsWith("https://challenges.cloudflare.com"))).toEqual([]);
+    expect(dataLayer()).toBeUndefined();
+    expect(reloads).toEqual([]);
+  });
+
+  it("with no counter loaded yet, draws the form in place and keeps Google out even if the cookies are accepted meanwhile", async () => {
+    counters = createTracker(GOOGLE_ONLY, { arrival: () => null, signal: listening.signal, now: () => server.clock.now });
+    await start(PUBLIC);
+    button("Entrar").click();
+    await vi.waitFor(() => expect(form()).not.toBeNull());
+    expect(reloads).toEqual([]);
+    counters.grant();
+    fill();
+    submit();
+    await vi.waitFor(() => expect(navigations).toHaveLength(1));
+    expect(counterScripts()).toEqual([]);
+    expect(dataLayer()).toBeUndefined();
+  });
+
+  it("«Volver» from the screen leaves the counters off for the rest of that page", async () => {
+    counters = createTracker(GOOGLE_ONLY, { arrival: () => null, signal: listening.signal, now: () => server.clock.now });
+    await start(PUBLIC);
+    button("Entrar").click();
+    await vi.waitFor(() => expect(form()).not.toBeNull());
+    button("Volver").click();
+    counters.grant();
+    button("Ver la demo").click();
+    expect(counterScripts()).toEqual([]);
+    expect(dataLayer()).toBeUndefined();
+  });
+
+  it("an invitation build ignores #entrar: its counters start as always", async () => {
+    writeConsent("granted", server.clock.now);
+    counters = createTracker(GOOGLE_ONLY, { arrival: () => null, signal: listening.signal, now: () => server.clock.now });
+    await start(INVITATION, `/${ENTER_FRAGMENT}`);
+    expect(counterScripts()).toEqual(["https://www.googletagmanager.com/gtag/js?id=G-TEST1234"]);
+    expect(emailField()).toBeNull();
   });
 });
 

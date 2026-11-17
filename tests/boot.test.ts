@@ -451,6 +451,10 @@ describe("visit counters (docs/PLAN.md, section 17)", () => {
   const recorder = (): BootAnalytics => ({
     start: () => void seen.push(`start ${location.search}`),
     track: (event) => void seen.push(`${event} ${location.search}`),
+    seal: () => {
+      seen.push(`seal ${location.search}`);
+      return false;
+    },
   });
   beforeEach(() => {
     seen = [];

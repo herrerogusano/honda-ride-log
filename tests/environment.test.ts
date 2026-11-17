@@ -41,6 +41,48 @@ describe("environment file", () => {
     expect([environments.development.mcpUrl, environments.development.loginDomain, environments.development.webClientId]).toEqual(["", "", ""]);
   });
 
+  it("keeps the Cloudflare Pages build prepared for the open service but demo only until its four values are filled", () => {
+    expect(environmentFor("cloudflare").environment).toEqual({ kind: "demo" });
+    expect(environments.cloudflare).toEqual({
+      access: "public",
+      mcpUrl: "",
+      loginDomain: "",
+      webClientId: "",
+      turnstileSiteKey: "",
+      redirectUri: "https://my-ride-log.pages.dev/",
+      logoutUri: "https://my-ride-log.pages.dev/",
+      sendResourceIndicator: true,
+    });
+  });
+
+  it("opens the Cloudflare Pages build once the four values are filled (synthetic here), and only then", () => {
+    const filled = {
+      ...environments.cloudflare,
+      mcpUrl: "https://api.example.test/mcp",
+      loginDomain: "https://login.example.test",
+      webClientId: "synthetic-client-id",
+      turnstileSiteKey: "0x4AAAAAAASyntheticKey",
+    };
+    const open = parseEnvironment(filled);
+    if (open.kind !== "service") throw new Error("not opened");
+    expect(open.config.redirectUri).toBe("https://my-ride-log.pages.dev/");
+    expect(open.config.logoutUri).toBe("https://my-ride-log.pages.dev/");
+    expect(open.config.publicAccess).toEqual({
+      statusUrl: "https://api.example.test/estado",
+      passUrl: "https://api.example.test/pase",
+      turnstileSiteKey: "0x4AAAAAAASyntheticKey",
+    });
+    // The API and the login are added to connect-src (the token is fetched from the login), Turnstile to script-src and frame-src.
+    const directives = directivesFor(open);
+    expect(directives["connect-src"]).toEqual(["'self'", "https://api.example.test", "https://login.example.test"]);
+    expect(directives["script-src"]).toEqual(["'self'", "https://challenges.cloudflare.com"]);
+    expect(directives["frame-src"]).toEqual(["https://challenges.cloudflare.com"]);
+    // Half filled never builds: no service without its site key, no site key without the service.
+    rejects({ ...filled, turnstileSiteKey: "" }, /turnstileSiteKey/);
+    rejects({ ...environments.cloudflare, turnstileSiteKey: "0x4AAAAAAASyntheticKey" }, /turnstileSiteKey/);
+    rejects({ ...filled, webClientId: "" }, /all filled or all empty/);
+  });
+
   it("keeps the two return addresses the login will expect", () => {
     expect(environments.development.redirectUri).toBe("http://localhost:5173/");
     expect(environments.production.redirectUri).toBe("https://herrerogusano.github.io/honda-ride-log/");

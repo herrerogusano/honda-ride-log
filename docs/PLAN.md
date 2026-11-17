@@ -1389,16 +1389,18 @@ apartado 4:
 | Modo de Vite | Dónde | Orden | Ruta base | Servicio | Contadores | `dist/_headers` |
 |---|---|---|---|---|---|---|
 | `production` | GitHub Pages (`pages.yml`), como hasta ahora | `npm run build` | `/honda-ride-log/` | el de producción | ninguno | no |
-| `cloudflare` | Cloudflare Pages, proyecto `my-ride-log` (`cloudflare-pages.yml`) | `npm run build:cloudflare` | `/` | ninguno, de momento (solo demo) | los de `analytics.config.json`: hoy Google Analytics (identificador público `G-JVB68585NG`); el token de Cloudflare, vacío | sí |
+| `cloudflare` | Cloudflare Pages, proyecto `my-ride-log` (`cloudflare-pages.yml`) | `npm run build:cloudflare` | `/` | el servicio abierto de producción, preparado pero sin valores: de momento solo demo (apartado 18, «Abrir producción») | los de `analytics.config.json`: hoy Google Analytics (identificador público `G-JVB68585NG`); el token de Cloudflare, vacío | sí |
 
 - `pages.yml` sigue publicando en GitHub Pages: mientras exista, hay dos
   copias publicadas, y la de GitHub Pages no tiene contadores.
 - `cloudflare` es solo demo en `environments.config.json` porque la
   dirección de retorno del login tiene que estar dada de alta en el
-  servicio, carácter a carácter, y la de `pages.dev` no lo está (es un
-  cambio en producción del servicio). Cuando lo esté, su entrada es la de
-  `production` con esa dirección en `redirectUri` y `logoutUri`. Con un
-  botón «Entrar» antes de eso, el login respondería con un error.
+  servicio, carácter a carácter, y la de `pages.dev` solo lo estará en el
+  despliegue abierto de producción, que aún no existe. Su entrada ya lleva
+  `access: "public"` y esa dirección en `redirectUri` y `logoutUri`, con
+  los cuatro valores del servicio vacíos: así sigue siendo solo demo
+  (test). Qué falta para abrirla, en el apartado 18, «Abrir producción».
+  Con un botón «Entrar» antes de eso, el login respondería con un error.
 - La CI construye las dos.
 - `.github/workflows/cloudflare-pages.yml` publica en Cloudflare Pages al
   cambiar `main` (o a mano): las mismas comprobaciones que la CI,
@@ -1468,8 +1470,28 @@ la política es exactamente la de antes (test):
   de navegación del navegador (`performance.getEntriesByType("navigation")`),
   que conserva la dirección de llegada y que un script de terceros puede
   leer. Por eso `start()` mira la dirección actual **y** la de llegada, y si
-  cualquiera lleva un parámetro del login (`code`, `state`, `error`...), no
-  carga nada en esa carga de página, ni después al aceptar. Toda sesión con
+  cualquiera lleva un parámetro del login (`code`, `state`, `error`...,
+  y también `login_hint`, que lleva un correo: esta web nunca lo pone en su
+  propia dirección, pero cualquiera puede abrirla con él), no carga nada en
+  esa carga de página, ni después al aceptar.
+  **Cualquier rechazo sella el resto de la carga** (cambiado el
+  2026-11-17), en `start()` o después: limpiar la dirección y volver a
+  llamar a `start()` ya no carga nada. Antes un `start()` rechazado podía
+  repetirse; sin dirección de llegada (Navigation Timing ausente o con
+  fallo), eso dejaba cargar los contadores en una página que había llevado
+  un parámetro del login. En ese caso solo la dirección actual puede
+  decirlo, y si la lleva se trata como llegada sensible: se pierde alguna
+  visita, no se arriesga el parámetro. Después de `start()` la dirección
+  actual se vuelve a mirar antes de inyectar el script de Cloudflare, de
+  cargar Google, de reactivarlo al aceptar otra vez y de cada envío, y al
+  navegar dentro de la página (`popstate`, `hashchange`).
+  `history.replaceState` no avisa: un cambio así se ve en la siguiente de
+  esas comprobaciones. Al sellar, Google ya cargado se apaga con su
+  interruptor, y el script de Cloudflare que aún no se ha ejecutado pierde
+  su token y sale del documento. **Un script que ya se ha ejecutado no se
+  puede parar** (Cloudflare no tiene interruptor), y no está comprobado
+  que quitar uno pendiente impida que el navegador lo ejecute; hoy el
+  token de Cloudflare está vacío. Toda sesión con
   cuenta empieza así, y el token solo vive en esa carga, de modo que
   **ningún contador comparte página con los datos de una cuenta**: solo con
   la portada y la demo.
@@ -1482,6 +1504,19 @@ la política es exactamente la de antes (test):
   fragmento (`page_location`), la página anterior solo como origen
   (`page_referrer`), el título fijo «Ride Log», y `allow_google_signals` y
   `allow_ad_personalization_signals` apagados.
+- **Una visita por carga de página** (cambiado el 2026-11-17). La visita es
+  el `page_view` que envía la propia orden `config` de Google, con esos
+  valores, y `config` se ejecuta una sola vez por carga. Antes era
+  `send_page_view: false` más un evento `page_view` nuestro, y al aceptar
+  en `pages.dev` se vieron dos (prueba en navegador del 2026-11-11). La causa exacta no se
+  ha comprobado: puede que Google enviara su propia visita además de la
+  nuestra. Con una sola orden que cuenta la visita, el código no puede
+  pedir dos. Aceptar otra vez tras retirar el consentimiento en la misma
+  página tampoco cuenta otra visita (antes sí). Tests en
+  `tests/analytics.test.ts`. **Sin comprobar en un navegador real** que
+  Google envíe ahora una sola: ver «Qué no se ha comprobado».
+- **Ningún contador en la página donde se escribe el correo** (servicio
+  abierto, apartado 18, «Analíticas y pantalla previa»).
 - Cloudflare: su script lee por su cuenta la dirección y, según se cree,
   datos de rendimiento de la página. Comprobado: no se carga en una carga
   que llegó con parámetros del login (tests), así que no puede leer ni la
@@ -1631,6 +1666,12 @@ antes de `start()`. Habría que elegir entre:
   que son inventadas. Cómo comprobarlo: en la prueba anterior, buscar en
   los cuerpos alguna cifra de las que la demo enseña; y en los paneles,
   que no aparezca ningún texto de la página más allá del título.
+- Que al aceptar salga ahora un solo `page_view`. Cómo: en `pages.dev`,
+  pestaña de red, rechazar, recargar, «Cambiar las cookies» → «Aceptar»,
+  y contar las peticiones a `region1.google-analytics.com/g/collect` con
+  `en=page_view`: debe haber una. Si siguen saliendo dos, mirar en el panel
+  de Google si la «medición mejorada» (cambios del historial) está
+  encendida.
 - Que el evento `login` no se envía nunca en un navegador real: solo en
   tests (no hay login desde `pages.dev`). Que la entrada de navegación
   conserva la consulta tras `history.replaceState` se vio en Chromium.
@@ -1784,6 +1825,71 @@ sitio. Ni `/estado` ni `/pase` llevan token, cookies ni referente.
   los paneles de error del mapa y del atlas (al leer el recorrido de una
   ruta), que reciben el modo de la página.
 
+### Analíticas y pantalla previa
+
+Escrito el 2026-11-17. Un script de terceros en el mismo documento puede
+leer cualquier campo de la página, también el correo de la pantalla
+previa mientras se escribe. Qué leen de verdad esos scripts no se puede
+comprobar desde aquí, así que la regla es de estructura: **ningún contador
+comparte documento con la pantalla previa.**
+
+1. «Entrar» llama primero a `seal()` del contador
+   (`src/analytics/tracker.ts`): desde ese momento, en esa carga de
+   página no se carga ni se envía nada más, responda lo que responda el
+   visitante en el aviso de cookies (aquí o en otra pestaña), y un Google
+   ya cargado se apaga con su interruptor.
+2. Si ningún contador había llegado a cargarse en la página (no aceptó las
+   cookies y no hay token de Cloudflare), la pantalla previa se pinta ahí
+   mismo.
+3. Si alguno se había cargado, no se puede descargar: la página dice
+   «Abriendo la entrada…», pone `#entrar` en la dirección y se recarga.
+   Esa carga nueva, en un build abierto y sin vuelta del login, sella los
+   contadores **antes** de `start()` (no llega a pedirse ningún script) y
+   abre la pantalla previa; la portada que hay debajo quita `#entrar` de
+   la dirección. Un build por invitación ignora `#entrar`.
+4. Si el visitante vuelve con «Volver», esa página sigue sin contadores
+   hasta que se recargue: se pierde alguna visita, no se arriesga el
+   correo.
+
+Del login no llega nada a los contadores: el correo sale solo en el cuerpo
+de `/pase` y en el `login_hint` de la dirección de Cognito, a la que se va
+con `location.assign` (no es un enlace) desde una página sellada; la vuelta con
+`?code` y `?state` ya no cargaba contadores (apartado 17); y la página
+anterior llega a Google solo como origen. Tests en
+`tests/analytics.test.ts` y `tests/public-boot.test.ts`, contra el
+contador real (`createTracker`) en jsdom, con identificadores inventados:
+prueban qué scripts pide la página y qué deja en la capa de datos de
+Google, no lo que esos scripts harían.
+
+### Abrir producción
+
+La entrada `cloudflare` de `environments.config.json` ya está preparada:
+`access: "public"`, `redirectUri` y `logoutUri` en
+`https://my-ride-log.pages.dev/` (la misma dirección para las dos, como
+espera la plantilla del despliegue abierto de producción) y
+`sendResourceIndicator: true`. Con los cuatro valores siguientes vacíos es
+solo demo y su política es la de hoy (tests). Para abrirla, una PR con
+estas cuatro líneas, todas del despliegue abierto de **producción** (los
+del de pruebas no sirven: su origen de CORS es `http://localhost:5173`):
+
+| Campo | Qué es | De dónde sale |
+|---|---|---|
+| `mcpUrl` | Dirección de `/mcp` de la API del despliegue abierto, terminada en `/mcp`, sin barra final | Salida del stack de producción del servicio abierto |
+| `loginDomain` | Origen del login gestionado de ese despliegue (`https://<dominio>.auth.<región>.amazoncognito.com`), sin ruta | Igual |
+| `webClientId` | Identificador público del cliente web de ese despliegue | Igual |
+| `turnstileSiteKey` | Clave de sitio pública de Turnstile de producción (`0x…`), con `my-ride-log.pages.dev` entre sus dominios | Panel de Cloudflare (la clave secreta va al servicio, nunca aquí) |
+
+Con ellos, el build añade a la política el origen de la API y el del login
+a `connect-src` (el token se pide al login), y
+`https://challenges.cloudflare.com` a `script-src` y `frame-src`; nada más
+(test con valores inventados en `tests/environment.test.ts`;
+`scripts/check-dist.mjs cloudflare` hace la misma cuenta sobre `dist/`). A
+medio rellenar el build falla. Esa PR, al fusionarse, publica la web
+abierta en Cloudflare Pages (`cloudflare-pages.yml`): fusionarla es abrir.
+El servicio, por su parte, tiene que admitir exactamente
+`https://my-ride-log.pages.dev/` como retorno y salida, y su CORS ese
+origen. La entrada `production` (GitHub Pages, por invitación) no cambia.
+
 ### Política de seguridad de contenido: motivo del cambio
 
 Turnstile es un script de Cloudflare que pinta su control en un marco de
@@ -1816,6 +1922,14 @@ hace la misma cuenta.
   tamaño compacto y no hay desplazamiento lateral. El build `production`
   (por invitación) tiene la misma política que antes, el mismo texto y
   ningún botón nuevo.
+- 2026-11-17, analíticas y pantalla previa, una visita por carga y la
+  entrada `cloudflare` preparada: tests (Vitest, jsdom, local en Windows
+  con Node 24) contra el contador real y el servidor falso. Cada test nuevo
+  se vio fallar: 12 roturas a propósito del contador y de `src/boot.ts`,
+  una cada vez, todas detectadas (una decimotercera, quitar `#entrar` de
+  la dirección en `boot`, sobrevivió porque la portada ya lo quita: se
+  quitó esa línea); y 2 roturas de la entrada `cloudflare` (`access`,
+  `logoutUri`), detectadas. Sin navegador.
 
 ### Qué no se ha comprobado
 
