@@ -1389,7 +1389,7 @@ apartado 4:
 | Modo de Vite | Dónde | Orden | Ruta base | Servicio | Contadores | `dist/_headers` |
 |---|---|---|---|---|---|---|
 | `production` | GitHub Pages (`pages.yml`), como hasta ahora | `npm run build` | `/honda-ride-log/` | el de producción | ninguno | no |
-| `cloudflare` | Cloudflare Pages, proyecto `my-ride-log` (`cloudflare-pages.yml`) | `npm run build:cloudflare` | `/` | el servicio abierto de producción, preparado pero sin valores: de momento solo demo (apartado 18, «Abrir producción») | los de `analytics.config.json`: hoy Google Analytics (identificador público `G-JVB68585NG`); el token de Cloudflare, vacío | sí |
+| `cloudflare` | Cloudflare Pages, proyecto `my-ride-log` (`cloudflare-pages.yml`) | `npm run build:cloudflare` | `/` | el servicio abierto de producción (apartado 18, «Abrir producción») | los de `analytics.config.json`: Cloudflare Web Analytics (token público del sitio `my-ride-log.pages.dev`) y Google Analytics (identificador público `G-JVB68585NG`) | sí |
 
 - `pages.yml` sigue publicando en GitHub Pages: mientras exista, hay dos
   copias publicadas, y la de GitHub Pages no tiene contadores.
@@ -1490,8 +1490,8 @@ la política es exactamente la de antes (test):
   interruptor, y el script de Cloudflare que aún no se ha ejecutado pierde
   su token y sale del documento. **Un script que ya se ha ejecutado no se
   puede parar** (Cloudflare no tiene interruptor), y no está comprobado
-  que quitar uno pendiente impida que el navegador lo ejecute; hoy el
-  token de Cloudflare está vacío. Toda sesión con
+  que quitar uno pendiente impida que el navegador lo ejecute; desde el
+  2026-11-17 el token de Cloudflare está puesto. Toda sesión con
   cuenta empieza así, y el token solo vive en esa carga, de modo que
   **ningún contador comparte página con los datos de una cuenta**: solo con
   la portada y la demo.

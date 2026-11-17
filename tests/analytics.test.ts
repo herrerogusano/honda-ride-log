@@ -319,8 +319,12 @@ describe("consent across tabs and over time", () => {
 });
 
 describe("analytics.config.json", () => {
-  it("gives counters to the Cloudflare Pages build only: Google's public id, no Cloudflare token yet", () => {
-    expect(analyticsFor("cloudflare").analytics).toEqual({ cloudflareToken: null, googleMeasurementId: "G-JVB68585NG" });
+  it("gives counters to the Cloudflare Pages build only: Cloudflare's site token and Google's public id", () => {
+    // Changed on purpose on 2026-11-17: the Cloudflare Web Analytics site for my-ride-log.pages.dev exists.
+    expect(analyticsFor("cloudflare").analytics).toEqual({
+      cloudflareToken: "7c2d474d270d48a3ae8fcf5d6b73c24b",
+      googleMeasurementId: "G-JVB68585NG",
+    });
     for (const mode of ["production", "development", "demo", "test", "$comment"]) {
       expect(analyticsFor(mode).analytics).toEqual(NO_ANALYTICS);
     }

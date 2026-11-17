@@ -203,15 +203,17 @@ describe("content security policy", () => {
     for (const source of Object.values(open).flat()) expect(source).not.toMatch(/unsafe|\*|^http:|^data:|^blob:|^https:$/);
   });
 
-  it("writes exactly these headers for the Cloudflare Pages build as configured (open service, Turnstile, Google's id, no Cloudflare token)", () => {
-    // Changed on purpose on 2026-11-17: the build opens on the open service (docs/PLAN.md, section 18, "Abrir producción").
+  it("writes exactly these headers for the Cloudflare Pages build as configured (open service, Turnstile, both counters)", () => {
+    // Changed on purpose on 2026-11-17: the build opens on the open service (docs/PLAN.md, section 18, "Abrir producción"),
+    // and the Cloudflare counter gets its token (section 17).
     const directives = directivesFor(environmentFor("cloudflare").environment, analyticsFor("cloudflare").analytics);
     expect(headersFile(directives)).toBe(
       "/*\n" +
-        "  Content-Security-Policy: default-src 'none'; script-src 'self' https://challenges.cloudflare.com https://www.googletagmanager.com; style-src 'self'; " +
+        "  Content-Security-Policy: default-src 'none'; script-src 'self' https://challenges.cloudflare.com https://static.cloudflareinsights.com " +
+        "https://www.googletagmanager.com; style-src 'self'; " +
         "img-src 'self' https://tile.openstreetmap.org https://www.googletagmanager.com https://www.google-analytics.com; " +
         "connect-src 'self' https://7pr506t5wk.execute-api.eu-west-1.amazonaws.com https://my-ride-log.auth.eu-west-1.amazoncognito.com " +
-        "https://www.googletagmanager.com https://www.google-analytics.com https://region1.google-analytics.com " +
+        "https://cloudflareinsights.com https://www.googletagmanager.com https://www.google-analytics.com https://region1.google-analytics.com " +
         "https://region1.analytics.google.com; font-src 'self'; base-uri 'none'; form-action 'none'; " +
         "frame-src https://challenges.cloudflare.com; frame-ancestors 'none'\n" +
         "  Referrer-Policy: strict-origin\n" +
