@@ -2150,6 +2150,32 @@ h4 {
   height: 100%;
 }
 
+/*
+ * The fold (narrow screens only): the button «Ver las N rutas» and the panel
+ * it opens. src/ui/routesView.ts shows and hides both with `hidden` below
+ * 1024 px (NARROW_LIST), the width under which the list is part of the
+ * page. The panel adds no box of its own, so on wide screens the list keeps
+ * its layout. Nothing animates when it opens or closes.
+ */
+.route-list-panel {
+  display: contents;
+}
+
+.route-list > .routes-toggle {
+  align-self: stretch;
+}
+
+/* On paper the list is never folded ("only print": the first «@media print» block stays the general one). */
+@media only print {
+  .route-list > .routes-toggle {
+    display: none !important;
+  }
+
+  .route-list-panel[hidden] {
+    display: contents !important;
+  }
+}
+
 .list-tools {
   flex: none;
 }

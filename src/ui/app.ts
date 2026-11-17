@@ -487,7 +487,7 @@ export function startApp(options: AppOptions): App {
         map.open(route);
         fromList = false;
       },
-      { visibleTop },
+      { visibleTop, signal: motion.signal },
     );
     // One read per route detail, shared by the map and the atlas.
     const traces = createTraceStore(caller);
