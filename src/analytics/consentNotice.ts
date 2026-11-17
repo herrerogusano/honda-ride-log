@@ -71,9 +71,13 @@ export function mountConsentNotice(host: HTMLElement, tracker: Tracker): Consent
     accept.focus();
   });
 
-  // An answer given in another tab closes the notice here too.
+  // An answer given in another tab closes the notice here too; a focus that
+  // was inside it goes to «Cookies» instead of being lost.
   tracker.onChange(() => {
-    if (!notice.hidden && tracker.choice() !== null) show(false);
+    if (notice.hidden || tracker.choice() === null) return;
+    const hadFocus = notice.contains(document.activeElement);
+    show(false);
+    if (hadFocus) prefsButton.focus();
   });
 
   host.hidden = false;

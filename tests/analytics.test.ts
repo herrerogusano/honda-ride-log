@@ -282,6 +282,30 @@ describe("consent across tabs and over time", () => {
     expect(scripts()).toHaveLength(1);
   });
 
+  it("closed by an answer in another tab while the focus was in it, moves the focus to «Cookies»", () => {
+    const tracker = newTracker(GOOGLE_ONLY, { arrival: () => null });
+    const host = document.createElement("div");
+    document.body.append(host);
+    mountConsentNotice(host, tracker);
+    tracker.start();
+    host.querySelector<HTMLButtonElement>(".consent-choice")?.focus();
+    answerInAnotherTab("denied");
+    expect(document.activeElement).toBe(host.querySelector(".consent-link"));
+  });
+
+  it("closed by an answer in another tab while the focus was elsewhere, leaves the focus where it was", () => {
+    const tracker = newTracker(GOOGLE_ONLY, { arrival: () => null });
+    const host = document.createElement("div");
+    const elsewhere = document.createElement("button");
+    document.body.append(elsewhere, host);
+    mountConsentNotice(host, tracker);
+    tracker.start();
+    elsewhere.focus();
+    answerInAnotherTab("denied");
+    expect(host.querySelector<HTMLElement>(".consent")?.hidden).toBe(true);
+    expect(document.activeElement).toBe(elsewhere);
+  });
+
   it("ignores changes to other storage keys", () => {
     const tracker = newTracker(GOOGLE_ONLY, { arrival: () => null });
     tracker.start();
