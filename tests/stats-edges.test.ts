@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { csvCell, routesToCsv, rowsToCsv } from "../src/domain/csv";
 import { fold, formatDuration, formatNumber, formatPercent, matchesSearch } from "../src/domain/format";
-import { monthVsLastYear, records, totals } from "../src/domain/stats";
+import { monthComparison, records, totals } from "../src/domain/stats";
 import { ride, rides } from "./helpers";
 
 /** Cases an independent review found without a test. The tests run in Los Angeles. */
@@ -22,7 +22,7 @@ describe("statistics, edge cases", () => {
   });
 
   it("compares this month only with the same month one year earlier, not with later or older years", () => {
-    const result = monthVsLastYear(
+    const result = monthComparison(
       rides([
         { start: "2026-11-02T08:00:00-08:00", km: 10 },
         { start: "2027-11-02T08:00:00-08:00", km: 500 },
@@ -30,8 +30,9 @@ describe("statistics, edge cases", () => {
         { start: "2024-11-02T08:00:00-08:00", km: 70 },
       ]),
       Date.parse("2026-11-09T12:00:00-08:00"),
+      2026,
     );
-    expect([result.km, result.previousKm, result.differenceKm]).toEqual([10, 3, 7]);
+    expect([result.km, result.baseline?.km, result.differenceKm]).toEqual([10, 3, 7]);
   });
 
   it("adds up durations of a day or more", () => {

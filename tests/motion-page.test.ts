@@ -216,7 +216,7 @@ describe("a period change", () => {
     mount("#demo");
     await view();
     showAll();
-    const fixed = ["Km por mes", "Mes frente a mes", "Rachas", "Mantenimiento", "Estado"].map(block);
+    const fixed = ["Rachas", "Mantenimiento", "Estado"].map(block);
     const header = root.querySelector('section[data-section="resumen"] .sec-head') as HTMLElement;
     // The records and the weekday chart are on screen; the calendar, «En números» and the card are not.
     for (const observer of live()) {
@@ -245,7 +245,7 @@ describe("a period change", () => {
     // The title of section 01 plays its entrance again, without the rule.
     expect([header.classList.contains("replay"), header.classList.contains("sweep")]).toEqual([true, false]);
     // The blocks that do not follow the period are the very same nodes, untouched.
-    expect(["Km por mes", "Mes frente a mes", "Rachas", "Mantenimiento", "Estado"].map(block)).toEqual(fixed);
+    expect(["Rachas", "Mantenimiento", "Estado"].map(block)).toEqual(fixed);
     expect(fixed.some((one) => one.classList.contains("swap"))).toBe(false);
   });
 

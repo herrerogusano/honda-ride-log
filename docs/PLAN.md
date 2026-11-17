@@ -62,11 +62,10 @@ inicio en la zona horaria del navegador. La semana empieza en lunes.
 
 Concretado en `src/domain/stats.ts`:
 
-- Siguen al selector de periodo las cuatro cifras, los hábitos, los récords,
-  los trayectos cortos y la tarjeta. No lo siguen el estado, la comparación
-  del mes, los km por mes (tres últimos años con rutas), las rachas (todo el
-  historial) ni el mantenimiento. Cada bloque dice en pantalla qué periodo
-  enseña.
+- Siguen al selector de periodo las cuatro cifras (la comparación del mes
+  también), los km por mes, los hábitos, los récords, los trayectos cortos
+  y la tarjeta. No lo siguen el estado, las rachas (todo el historial) ni el
+  mantenimiento. Cada bloque dice en pantalla qué periodo enseña.
 - Rachas: hoy no ha terminado, así que una racha de días saliendo que llegó
   hasta ayer sigue viva, y hoy no cuenta como día parado hasta que acabe.
   «Días parada» son días completos sin ninguna salida.
@@ -86,11 +85,22 @@ Concretado en `src/domain/stats.ts`:
    falta, el kilometraje de los datos del vehículo). Sin posición.
 2. **Cuatro cifras** del año elegido (por defecto el actual, con selector de
    año y «Todo»): km, salidas, horas en marcha (suma de duraciones conocidas)
-   y «este mes frente al mismo mes del año anterior» (km de los dos y la
-   diferencia). La cuarta cifra no depende del selector.
+   y la comparación del mes en curso (el mes del reloj de hoy; km de los dos
+   y la diferencia). Con un año Y, ese mes de Y frente al mismo mes de Y − 1.
+   Con «Todo», ese mes del año en curso frente a la media del mismo mes en
+   los años anteriores que el historial cubre: un mes está en el historial
+   desde el mes de la primera ruta (incluido), y un mes cubierto sin salidas
+   cuenta 0 km. Un mes anterior a la primera ruta no se compara como 0: la
+   cifra lo dice («Tu historial empieza en noviembre de 2025: no hay
+   noviembre de 2024 con que comparar.»). `monthComparison` en
+   `src/domain/stats.ts`.
 3. **Km por mes comparando años**: barras agrupadas, 12 meses, una serie por
-   año (los tres últimos con datos). Un mes sin rutas es una barra vacía, no
-   un hueco en el eje.
+   año: el año elegido (con «Todo», el año en curso), aunque no tenga rutas,
+   y los dos últimos años anteriores a él con rutas. El elegido va en rojo
+   (`--red-hi`), el anterior más cercano en marfil (`--bar-prev`) y el más
+   antiguo en azul acero (`--bar-old`); los tres pasan de 3:1 sobre el fondo
+   (`tests/contrast.test.ts`). Un mes sin rutas es una barra vacía, no un
+   hueco en el eje.
 4. **Hábitos**: salidas por día de la semana y salidas por hora de salida
    (0 a 23).
 5. **Tres récords**: la ruta más larga, el día con más km y el mes con más km,
@@ -123,8 +133,10 @@ Vistas de estas mismas cifras (ninguna definición nueva):
 - **En números** (sustituye al bloque «Trayectos cortos»): salida media
   (km del periodo entre sus salidas, las dos cifras de 01 Resumen) y las dos
   partes de los trayectos cortos, en cifras grandes.
-- **Mes frente a mes** enseña la diferencia en km con signo en grande; sigue
-  siendo este mes frente al mismo mes del año anterior, en km.
+- **Mes frente a mes** enseña la diferencia en km con signo en grande y las
+  dos barras: la misma comparación que la cuarta cifra, con el mismo periodo.
+  Sin nada con que comparar, una raya, la frase de la cifra y una sola
+  barra.
 
 Nota al pie fija: unidades sin confirmar, cuántas rutas de menos de 300 m no
 se cuentan y cuántas se han descartado por venir sin fecha o sin km.
@@ -1064,7 +1076,7 @@ saneador, el recorte, el login o el servicio.
 
 | Parte | Qué cambia |
 |---|---|
-| 02 Ritmo | Récords con la unidad pequeña y roja. «Mes frente a mes»: la diferencia en km con signo, enorme, y las dos barras. Km por mes: cada mes es una columna que responde al ratón, al dedo y al teclado (una parada de tabulador, ← → Inicio Fin; nombre accesible con las cifras) y escribe sus cifras en una línea bajo el gráfico; los años fuera del periodo elegido quedan apagados. |
+| 02 Ritmo | Récords con la unidad pequeña y roja. «Mes frente a mes»: la diferencia en km con signo, enorme, y las dos barras. Km por mes: cada mes es una columna que responde al ratón, al dedo y al teclado (una parada de tabulador, ← → Inicio Fin; nombre accesible con las cifras) y escribe sus cifras en una línea bajo el gráfico; el año elegido va en rojo y los dos anteriores con rutas en marfil y azul acero. |
 | 03 Hábitos | Calendario de actividad (apartado 3) con su leyenda, su pie y su tabla por mes; cada celda tiene nombre accesible (fecha, km, salidas) y se recorre con flechas (↑ ↓ un día, ← → una semana; una parada por año). En móviles se desplaza dentro de su caja, con el borde difuminado y «Desliza para ver el año entero →»; nunca la página. Las celdas aparecen columna a columna (el retraso se reparte para que un año entero no pase de `--dur-hero`). Días y horas: columnas como las de Ritmo, el pico en rojo vivo y el resto en `--red-mid` (3,09:1 sobre el fondo; antes `--red-dim`, 2,2:1) y la frase bajo cada uno. «En números» en lugar de «Trayectos cortos». |
 | 06 Taller | El mantenimiento dice su respuesta además en una cifra grande («Te faltan / Te has pasado» y los km) con una barra de la parte del intervalo recorrida, que se llena al aparecer y al guardar. La frase de siempre sigue siendo la línea `role="status"`; la cifra lleva `aria-hidden`. Mismos dos números, mismo almacenamiento. |
 | Tarjeta | Con el aspecto de la web: fondo casi negro, cuña roja inclinada, etiquetas numeradas en rojo, Barlow Condensed para título y cifras, Manrope para las etiquetas, unidades en rojo; 2160 × 2160 px (dibujada al doble). Espera a `document.fonts.load` de sus cuatro caras; si fallan o tardan más de 3 s, dibuja con las de reserva. Si la vista cambia antes, no dibuja. El botón de descarga se activa al terminar de dibujar. La vista previa escala con el ancho y aparece con un fundido. |

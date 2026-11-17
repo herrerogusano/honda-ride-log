@@ -77,8 +77,9 @@
   --on-red: oklch(100% 0 0);
   --amber: oklch(78% 0.13 75);
   --amber-bg: oklch(24% 0.04 75);
-  --bar-prev: oklch(64% 0.008 25);
-  --bar-old: oklch(48% 0.008 25);
+  /* Km per month: the chosen year is --red-hi; the nearer earlier year ivory, the older one steel blue (tests/contrast.test.ts). */
+  --bar-prev: oklch(93% 0.03 85);
+  --bar-old: oklch(74% 0.08 235);
 
   /* Type. */
   --display: "Barlow Condensed", "Arial Narrow", sans-serif;
@@ -1749,6 +1750,24 @@ h4 {
   gap: var(--s1);
 }
 
+/*
+ * Streaks: each tile spans two rows of the grid and shares them with the
+ * tiles beside it, so a title on two lines pushes every figure of its row
+ * down alike and the figures stay on one line.
+ */
+.tiles-4 {
+  row-gap: 0;
+}
+
+.tiles-4 .tile {
+  display: grid;
+  grid-row: span 2;
+  grid-template-rows: subgrid;
+  row-gap: var(--s2);
+  align-content: start;
+  padding-bottom: var(--s5);
+}
+
 .tile-value {
   font: var(--w-figure) clamp(34px, 4.2vw, 52px) / 1 var(--display);
   white-space: nowrap;
@@ -2807,16 +2826,6 @@ h4 {
 
 .chart-svg.hot .chart-bar:not(.on) {
   opacity: 0.4;
-}
-
-/* Years outside the chosen period stay drawn, quieter but still readable: comparing years is the chart's point. */
-.chart-bar.dim,
-.chart-legend li.dim {
-  opacity: 0.58;
-}
-
-.chart-legend li {
-  transition: opacity var(--dur-ui) var(--ease-out);
 }
 
 .chart-readout {

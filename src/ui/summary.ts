@@ -5,10 +5,11 @@
  * computed here, in the browser.
  *
  * One period selector (built here, shown in the top bar) drives the blocks
- * that follow the period: the four figures, the records, the habits, the
- * short trips and the card. The others (state, km per month, the month
- * comparison, streaks, maintenance) never change with it, and each block
- * says which period it shows.
+ * that follow the period: the four figures (the month comparison too), km
+ * per month, the records, the month comparison drawn, the calendar, the
+ * habits, the short trips and the card. The others (state, streaks,
+ * maintenance) never change with it, and each block says which period it
+ * shows.
  */
 import { SUMMARY_DEFAULT_PERIOD } from "../config";
 import {
@@ -35,7 +36,7 @@ import {
   inPeriod,
   kmByMonth,
   lastUseMs,
-  monthVsLastYear,
+  monthComparison,
   records,
   ridesByHour,
   ridesByWeekday,
@@ -44,13 +45,14 @@ import {
   streaks,
   totals,
   yearsWithRoutes,
+  type MonthComparison,
   type Period,
   type Streak,
 } from "../domain/stats";
 import { clearMaintenance, readMaintenance, writeMaintenance, type StorageScope } from "../storage/maintenance";
 import { calendarCaption, calendarView } from "./calendar";
 import { cardContent, cardText, paintCard, splitUnit } from "./card";
-import { barChart, dimSeries } from "./charts";
+import { barChart } from "./charts";
 import type { RiderData } from "./data";
 import { clear, el, uniqueId } from "./dom";
 import { downloadBlob } from "./download";
@@ -192,10 +194,51 @@ function figure(
   );
 }
 
+/** «2024», «2024 y 2025», «2023, 2024 y 2025». */
+function yearList(years: readonly number[]): string {
+  const names = years.map(String);
+  return names.length < 2 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} y ${names[names.length - 1]}`;
+}
+
+/** The words of the fourth figure and of «Mes frente a mes», from one comparison. */
+interface MonthWords {
+  /** «noviembre de 2025 frente a noviembre de 2024», «noviembre de 2026 frente a la media de tus noviembres anteriores». */
+  readonly versus: string;
+  /** The note of the figure: what it is compared with and the difference, or why there is no comparison. */
+  readonly note: string;
+  /** Label of the bar of the baseline, or null without one. */
+  readonly baselineLabel: string | null;
+}
+
+function monthWords(month: MonthComparison): MonthWords {
+  const name = MONTHS_LONG[month.month] as string;
+  const many = `${name}s`;
+  const { baseline } = month;
+  const difference = signedKm(month.differenceKm ?? 0);
+  // Without a baseline the history begins after the month it would be compared with.
+  const since = month.historyStart === null ? "" : `Tu historial empieza en ${formatMonth(month.historyStart.year, month.historyStart.month)}: `;
+  if (month.against === "year") {
+    const versus = `${name} de ${month.year} frente a ${name} de ${month.year - 1}`;
+    return baseline === null
+      ? { versus, note: `${since}no hay ${name} de ${month.year - 1} con que comparar.`, baselineLabel: null }
+      : { versus, note: `${formatWholeKm(baseline.km)} en ${name} de ${month.year - 1} · ${difference}`, baselineLabel: `${name} de ${month.year - 1}` };
+  }
+  const versus = `${name} de ${month.year} frente a la media de tus ${many} anteriores`;
+  if (baseline === null || baseline.kind !== "average") {
+    return { versus, note: `${since}no hay ${many} anteriores con que comparar.`, baselineLabel: null };
+  }
+  return {
+    versus,
+    note: `Media de ${formatWholeKm(baseline.km)} en ${plural(baseline.years.length, name, many)} (${yearList(baseline.years)}) · ${difference}`,
+    baselineLabel: `Media de tus ${many}`,
+  };
+}
+
 /** The four figures of the period (docs/PLAN.md, "Resumen", item 2). */
 function figures(data: RiderData, period: Period, count: (element: HTMLElement, value: number) => void): HTMLElement[] {
   const sum = totals(inPeriod(data.figures, period));
-  const month = monthVsLastYear(data.figures, data.nowMs);
+  const month = monthComparison(data.figures, data.nowMs, period);
+  const words = monthWords(month);
   return [
     figure("Kilómetros", sum.km, "km", null, "Según el servicio; unidad sin confirmar", count),
     figure("Salidas", sum.rides, null, null, "Rutas que cuentan en las cifras", count),
@@ -207,38 +250,34 @@ function figures(data: RiderData, period: Period, count: (element: HTMLElement, 
       "Suma de las duraciones conocidas",
       count,
     ),
-    figure(
-      `${MONTHS_LONG[month.month]} frente a ${MONTHS_LONG[month.month]} de ${month.year - 1}`,
-      month.km,
-      "km",
-      `${formatWholeKm(month.previousKm)} hace un año · ${signedKm(month.differenceKm)}. No depende del periodo elegido.`,
-      "",
-      count,
-    ),
+    figure(words.versus, month.km, "km", words.note, "", count),
   ];
-}
-
-/** This year in red, last year in light grey, older years in dark grey. */
-function yearTone(year: number, currentYear: number): string {
-  if (year === currentYear) return "tone-now";
-  return year === currentYear - 1 ? "tone-prev" : "tone-old";
 }
 
 /** Month initials for the phone drawing of the 12-month chart. */
 const MONTH_INITIALS = ["E", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"] as const;
 
-function monthsBlock(data: RiderData): HTMLElement {
-  const currentYear = new Date(data.nowMs).getFullYear();
-  const series = kmByMonth(data.figures);
+/**
+ * Km per month of the chosen year (with the whole history, the current one)
+ * and the two latest years before it with routes. The chosen year is red;
+ * the nearer of the others ivory, the older one steel blue.
+ */
+function monthsBlock(data: RiderData, period: Period): HTMLElement {
+  const anchor = period === "all" ? new Date(data.nowMs).getFullYear() : period;
+  const series = kmByMonth(data.figures, anchor);
+  const others = series.filter((one) => one.year !== anchor).map((one) => one.year);
+  const tones = new Map<number, string>([[anchor, "tone-now"]]);
+  [...others].reverse().forEach((year, index) => tones.set(year, index === 0 ? "tone-prev" : "tone-old"));
+  const years = series.map((one) => one.year);
   return block(
     "Km por mes",
-    "Últimos años con rutas",
+    yearList(years),
     barChart({
-      title: "Kilómetros por mes, comparando años",
+      title: others.length === 0 ? `Kilómetros por mes de ${anchor}` : `Kilómetros por mes de ${anchor}, frente a ${yearList([...others].reverse())}`,
       categories: MONTHS_SHORT,
       categoryNames: MONTHS_LONG,
       categoryHeader: "Mes",
-      series: series.map((one) => ({ label: String(one.year), values: one.km, tone: yearTone(one.year, currentYear) })),
+      series: series.map((one) => ({ label: String(one.year), values: one.km, tone: tones.get(one.year) as string })),
       formatValue: formatWholeKm,
       narrow: { categories: MONTH_INITIALS, formatTick: (value) => formatNumber(value) },
     }),
@@ -253,14 +292,18 @@ function signedNumber(km: number): string {
 }
 
 /**
- * The fourth figure, drawn: this month against the same month a year ago,
- * as a big signed difference in km and two bars (same definition as the
- * figure of section 01: km of each month and their difference).
+ * The fourth figure, drawn: the same comparison as section 01 (the current
+ * month of the chosen year against that of the year before, or against the
+ * mean of the earlier ones with the whole history), as a big signed
+ * difference in km and two bars. Without anything to compare with, a dash,
+ * the reason and the one bar.
  */
-function monthDetailBlock(data: RiderData): HTMLElement {
-  const month = monthVsLastYear(data.figures, data.nowMs);
-  const peak = Math.max(month.km, month.previousKm);
-  const delta = el("span", { class: "delta-num" }, signedNumber(month.differenceKm));
+function monthDetailBlock(data: RiderData, period: Period, periodLabel: string): HTMLElement {
+  const month = monthComparison(data.figures, data.nowMs, period);
+  const words = monthWords(month);
+  const baselineKm = month.baseline?.km ?? 0;
+  const peak = Math.max(month.km, baselineKm);
+  const delta = el("span", { class: "delta-num" }, month.differenceKm === null ? "—" : signedNumber(month.differenceKm));
   const bar = (label: string, km: number, now: boolean): HTMLElement => {
     const fill = el("span", { class: now ? "mbar-fill now" : "mbar-fill" });
     fill.style.setProperty("--v", peak > 0 ? (km / peak).toFixed(4) : "0");
@@ -273,26 +316,36 @@ function monthDetailBlock(data: RiderData): HTMLElement {
     );
   };
   const name = MONTHS_LONG[month.month] as string;
+  const versus = `${words.versus[0]?.toUpperCase()}${words.versus.slice(1)}`;
+  const caption =
+    month.differenceKm === null
+      ? words.note
+      : `${versus}, en km.${month.inProgress ? " El mes en curso aún no ha terminado." : ""}`;
   return block(
     "Mes frente a mes",
-    "No depende del periodo",
+    periodLabel,
     el(
       "div",
       { class: "delta-wrap" },
       el(
         "div",
         { class: "delta" },
-        el("p", { class: "delta-figure", attrs: { "aria-label": `${signedKm(month.differenceKm)} en ${name} frente al mismo mes del año pasado` } }, delta, NBSP, el("small", { class: "unit" }, "km")),
         el(
           "p",
-          { class: "mbar-diff" },
-          `${name[0]?.toUpperCase()}${name.slice(1)} de ${month.year} frente a ${name} de ${month.year - 1}, en km. El mes en curso aún no ha terminado.`,
+          {
+            class: "delta-figure",
+            attrs: { "aria-label": month.differenceKm === null ? words.note : `${signedKm(month.differenceKm)}: ${words.versus}` },
+          },
+          delta,
+          month.differenceKm === null ? null : NBSP,
+          month.differenceKm === null ? null : el("small", { class: "unit" }, "km"),
         ),
+        el("p", { class: "mbar-diff" }, caption),
       ),
       el(
         "ul",
         { class: "mbars" },
-        bar(`${name} de ${month.year - 1}`, month.previousKm, false),
+        words.baselineLabel === null ? null : bar(words.baselineLabel, baselineKm, false),
         bar(`${name} de ${month.year}`, month.km, true),
       ),
     ),
@@ -806,7 +859,7 @@ export function renderRiderPage(data: RiderData, scope: StorageScope, options: R
 
   // Blocks that follow the period live in slots, refilled on each change.
   const slot = (): HTMLElement => el("div", { class: "slot" });
-  const slots = { records: slot(), calendar: slot(), habits: slot(), numbers: slot(), card: slot() };
+  const slots = { months: slot(), records: slot(), month: slot(), calendar: slot(), habits: slot(), numbers: slot(), card: slot() };
   const periodScope = el("span", { class: "scope" });
   const readout = el("dl", { class: "readout rv" });
 
@@ -817,14 +870,13 @@ export function renderRiderPage(data: RiderData, scope: StorageScope, options: R
     empty ? emptyState() : el("div", { class: "sec-top" }, periodScope, el("span", { class: "sec-hint" }, "El periodo se elige arriba, en la barra")),
     empty ? null : readout,
   );
-  const months = empty ? null : monthsBlock(data);
   if (!empty) {
     section(
       "ritmo",
       "Ritmo",
       ["El pulso", "de los meses"],
-      months,
-      el("div", { class: "grid-2" }, slots.records, monthDetailBlock(data)),
+      slots.months,
+      el("div", { class: "grid-2" }, slots.records, slots.month),
       streaksBlock(data),
     );
     section("habitos", "Hábitos", ["Cada salida", "cuenta"], slots.calendar, slots.habits, slots.numbers);
@@ -861,13 +913,10 @@ export function renderRiderPage(data: RiderData, scope: StorageScope, options: R
         countUp(element, value, (shown) => formatNumber(shown), { signal: motion.signal, durationMs });
       }),
     );
-    // The 12 months stay drawn; the years outside the period are quieter.
-    if (months !== null) {
-      const shown = period === "all" ? null : String(period);
-      dimSeries(months, shown !== null && months.querySelector(`[data-series="${shown}"]`) !== null ? shown : null);
-    }
     const blocks: [HTMLElement, HTMLElement][] = [
+      [slots.months, monthsBlock(data, period)],
       [slots.records, recordsBlock(data, period, label)],
+      [slots.month, monthDetailBlock(data, period, label)],
       [slots.calendar, calendarBlock(data, period, label)],
       [slots.habits, habitsBlock(data, period, label)],
       [slots.numbers, numbersBlock(data, period, label)],

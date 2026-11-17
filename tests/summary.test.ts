@@ -131,11 +131,11 @@ describe("Resumen, block by block", () => {
       ["Kilómetros", "84\u00A0km", ""],
       ["Salidas", "5", ""],
       ["Horas en marcha", "2\u00A0h", "1 salida sin duración conocida no suman"],
-      ["noviembre frente a noviembre de 2025", "10\u00A0km", "30\u00A0km hace un año · −20\u00A0km. No depende del periodo elegido."],
+      ["noviembre de 2026 frente a noviembre de 2025", "10\u00A0km", "30\u00A0km en noviembre de 2025 · −20\u00A0km"],
     ]);
   });
 
-  it("follows the period selector, except for the month comparison", () => {
+  it("follows the period selector, the month comparison too", () => {
     show();
     const options = periodOptions();
     expect(options).toEqual(["2026", "2025", "Todo"]);
@@ -146,13 +146,79 @@ describe("Resumen, block by block", () => {
       ["Kilómetros", "42\u00A0km"],
       ["Salidas", "2"],
       ["Horas en marcha", "2\u00A0h"],
-      ["noviembre frente a noviembre de 2025", "10\u00A0km"],
+      ["noviembre de 2025 frente a noviembre de 2024", "30\u00A0km"],
     ]);
     expect(tiles("Cifras")[2]?.[2]).toBe("");
+    // November 2024 came before the first route: no comparison with 0 km.
+    expect(tiles("Cifras")[3]?.[2]).toBe("Tu historial empieza en noviembre de 2025: no hay noviembre de 2024 con que comparar.");
     choose("all");
     expect(figuresTitle()).toBe("Todo en cifras");
     expect(scope("Cifras")).toBe("Todo el historial");
     expect(tiles("Cifras").map((tile) => tile[1])).toEqual(["126\u00A0km", "7", "4\u00A0h", "10\u00A0km"]);
+    expect(tiles("Cifras")[3]).toEqual([
+      "noviembre de 2026 frente a la media de tus noviembres anteriores",
+      "10\u00A0km",
+      "Media de 30\u00A0km en 1 noviembre (2025) · −20\u00A0km",
+    ]);
+    choose("2026");
+    expect(tiles("Cifras")[3]?.[0]).toBe("noviembre de 2026 frente a noviembre de 2025");
+  });
+
+  it("with the whole history, averages the same month of every earlier year the history covers, 0 km included", () => {
+    const longer = rides([
+      { start: "2023-10-02T08:00:00-07:00", km: 5 }, // the history starts in October 2023
+      { start: "2024-11-02T08:00:00-07:00", km: 40 },
+      { start: "2026-11-02T08:00:00-08:00", km: 30 },
+    ]);
+    show({ routes: longer, figures: longer });
+    choose("all");
+    // November 2023 (0 km), 2024 (40 km) and 2025 (0 km): a mean of 13 km.
+    expect(tiles("Cifras")[3]?.[2]).toBe("Media de 13\u00A0km en 3 noviembres (2023, 2024 y 2025) · +17\u00A0km");
+    const fresh = rides([{ start: "2026-02-02T08:00:00-08:00", km: 4 }]);
+    show({ routes: fresh, figures: fresh });
+    choose("all");
+    expect(tiles("Cifras")[3]?.[2]).toBe("Tu historial empieza en febrero de 2026: no hay noviembres anteriores con que comparar.");
+  });
+
+  it("draws the month comparison of the chosen period, or says why there is none", () => {
+    show();
+    const drawn = (): [string, string, string, string[][]] => {
+      const one = block("Mes frente a mes");
+      return [
+        scope("Mes frente a mes"),
+        one.querySelector(".delta-figure")?.getAttribute("aria-label") ?? "",
+        one.querySelector(".mbar-diff")?.textContent ?? "",
+        [...one.querySelectorAll(".mbar")].map((bar) => [bar.querySelector(".mbar-label")?.textContent ?? "", bar.querySelector(".mbar-value")?.textContent ?? ""]),
+      ];
+    };
+    expect(block("Mes frente a mes").querySelector(".delta-num")?.textContent).toBe("−20");
+    expect(drawn()).toEqual([
+      "Año 2026",
+      "−20\u00A0km: noviembre de 2026 frente a noviembre de 2025",
+      "Noviembre de 2026 frente a noviembre de 2025, en km. El mes en curso aún no ha terminado.",
+      [
+        ["noviembre de 2025", "30\u00A0km"],
+        ["noviembre de 2026", "10\u00A0km"],
+      ],
+    ]);
+    choose("2025");
+    expect(block("Mes frente a mes").querySelector(".delta-num")?.textContent).toBe("—");
+    expect(drawn()).toEqual([
+      "Año 2025",
+      "Tu historial empieza en noviembre de 2025: no hay noviembre de 2024 con que comparar.",
+      "Tu historial empieza en noviembre de 2025: no hay noviembre de 2024 con que comparar.",
+      [["noviembre de 2025", "30\u00A0km"]],
+    ]);
+    choose("all");
+    expect(drawn()).toEqual([
+      "Todo el historial",
+      "−20\u00A0km: noviembre de 2026 frente a la media de tus noviembres anteriores",
+      "Noviembre de 2026 frente a la media de tus noviembres anteriores, en km. El mes en curso aún no ha terminado.",
+      [
+        ["Media de tus noviembres", "30\u00A0km"],
+        ["noviembre de 2026", "10\u00A0km"],
+      ],
+    ]);
   });
 
   it("writes the month difference with its sign, or says it is the same", () => {
@@ -161,16 +227,16 @@ describe("Resumen, block by block", () => {
       { start: "2025-11-02T08:00:00-08:00", km: 15 },
     ]);
     show({ routes: more, figures: more });
-    expect(tiles("Cifras")[3]?.[2]).toBe("15\u00A0km hace un año · +25\u00A0km. No depende del periodo elegido.");
+    expect(tiles("Cifras")[3]?.[2]).toBe("15\u00A0km en noviembre de 2025 · +25\u00A0km");
     const same = rides([
       { start: "2026-11-02T08:00:00-08:00", km: 15.2 },
       { start: "2025-11-02T08:00:00-08:00", km: 15 },
     ]);
     show({ routes: same, figures: same });
-    expect(tiles("Cifras")[3]?.[2]).toBe("15\u00A0km hace un año · igual. No depende del periodo elegido.");
+    expect(tiles("Cifras")[3]?.[2]).toBe("15\u00A0km en noviembre de 2025 · igual");
   });
 
-  it("draws km per month for every year with rides, whatever the period", () => {
+  it("draws km per month for the chosen year and the two before it with rides", () => {
     show();
     const figure = block("Km por mes").querySelector("figure") as HTMLElement;
     expect([...figure.querySelectorAll("thead th")].map((cell) => cell.textContent)).toEqual(["Mes", "2025", "2026"]);
@@ -179,20 +245,33 @@ describe("Resumen, block by block", () => {
       ["noviembre", "30\u00A0km", "10\u00A0km"],
       ["diciembre", "12\u00A0km", "0\u00A0km"],
     ]);
-    // This year in red, last year in light grey (the legend keeps the names, so colour is not the only cue).
+    expect(scope("Km por mes")).toBe("2025 y 2026");
+    expect(figure.querySelector("svg title")?.textContent).toBe("Kilómetros por mes de 2026, frente a 2025");
+    // The chosen year in red, the year before ivory (the legend keeps the names, so colour is not the only cue).
     expect([...figure.querySelectorAll(".chart-legend li")].map((item) => [item.textContent, item.querySelector(".chart-key")?.classList.contains("tone-now")])).toEqual([
       ["2025", false],
       ["2026", true],
     ]);
     expect(figure.querySelector(".chart-key.tone-prev")?.parentElement?.textContent).toBe("2025");
+    // A chosen year leaves out the later ones and wears the red.
     choose("2025");
-    expect(chartRows(block("Km por mes").querySelector("figure") as HTMLElement).length).toBe(3);
+    const earlier = block("Km por mes").querySelector("figure") as HTMLElement;
+    expect([...earlier.querySelectorAll("thead th")].map((cell) => cell.textContent)).toEqual(["Mes", "2025"]);
+    // One year alone: no legend, its title names it and its bars are red.
+    expect(earlier.querySelector(".chart-legend")).toBeNull();
+    expect(earlier.querySelector("svg title")?.textContent).toBe("Kilómetros por mes de 2025");
+    expect(new Set([...earlier.querySelectorAll(".chart-bar")].map((bar) => bar.classList.contains("tone-now")))).toEqual(new Set([true]));
+    expect(scope("Km por mes")).toBe("2025");
+    // The whole history: the current year in red.
+    choose("all");
+    expect(block("Km por mes").querySelector(".chart-key.tone-now")?.parentElement?.textContent).toBe("2026");
   });
 
-  it("gives older years the dark grey", () => {
+  it("gives the older earlier year the steel blue", () => {
     show({ nowMs: Date.parse("2027-06-01T12:00:00-07:00") });
     const keys = [...block("Km por mes").querySelectorAll(".chart-legend .chart-key")].map((key) => [...key.classList].find((name) => name.startsWith("tone-")));
-    expect(keys).toEqual(["tone-old", "tone-prev"]);
+    expect(keys).toEqual(["tone-old", "tone-prev", "tone-now"]);
+    expect(scope("Km por mes")).toBe("2025, 2026 y 2027");
   });
 
   it("counts rides per weekday and per hour of the chosen period", () => {
@@ -296,7 +375,7 @@ describe("Resumen, block by block", () => {
     show({ nowMs: Date.parse("2027-01-05T12:00:00-08:00") });
     expect(periodOptions()).toEqual(["2027", "2026", "2025", "Todo"]);
     expect(tiles("Cifras").map((tile) => tile[1])).toEqual(["0\u00A0km", "0", "0\u00A0h", "0\u00A0km"]);
-    expect(tiles("Cifras")[3]?.[0]).toBe("enero frente a enero de 2026");
+    expect([tiles("Cifras")[3]?.[0], tiles("Cifras")[3]?.[2]]).toEqual(["enero de 2027 frente a enero de 2026", "0\u00A0km en enero de 2026 · igual"]);
   });
 
   it("uses the routes that count for the figures, not the listed ones", () => {
@@ -349,15 +428,15 @@ describe("Resumen, block by block", () => {
 
   it("changes only the blocks that follow the period and leaves the others as they are", () => {
     show();
-    const fixed = ["Km por mes", "Mes frente a mes", "Rachas", "Mantenimiento", "Estado"].map((title) => block(title));
-    const following = ["Récords", "Calendario de actividad", "Días y horas", "En números", "Tarjeta para compartir"].map((title) => block(title));
+    const fixed = ["Rachas", "Mantenimiento", "Estado"].map((title) => block(title));
+    const following = ["Km por mes", "Récords", "Mes frente a mes", "Calendario de actividad", "Días y horas", "En números", "Tarjeta para compartir"].map((title) => block(title));
     const readout = block(FIGURES).querySelector(".readout");
     const figures = [...(readout?.children ?? [])];
     choose("2025");
     // The same nodes for the blocks that do not follow the period: nothing of them is redrawn.
-    expect(["Km por mes", "Mes frente a mes", "Rachas", "Mantenimiento", "Estado"].map((title) => block(title))).toEqual(fixed);
+    expect(["Rachas", "Mantenimiento", "Estado"].map((title) => block(title))).toEqual(fixed);
     // New nodes for those that do, in the same places, and new figures in the same readout.
-    const redrawn = ["Récords", "Calendario de actividad", "Días y horas", "En números", "Tarjeta para compartir"].map((title) => block(title));
+    const redrawn = ["Km por mes", "Récords", "Mes frente a mes", "Calendario de actividad", "Días y horas", "En números", "Tarjeta para compartir"].map((title) => block(title));
     redrawn.forEach((one, index) => {
       expect(one).not.toBe(following[index]);
       expect(following[index]?.isConnected).toBe(false);

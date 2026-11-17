@@ -5,7 +5,7 @@ import {
   kmByMonth,
   lastUseMs,
   localDay,
-  monthVsLastYear,
+  monthComparison,
   records,
   ridesByHour,
   ridesByWeekday,
@@ -81,30 +81,78 @@ describe("totals", () => {
   });
 });
 
-describe("monthVsLastYear", () => {
-  it("compares this month with the same month a year earlier, in local time", () => {
-    const list = rides([
-      { start: "2026-11-02T08:00:00-08:00", km: 10 },
-      { start: "2026-11-09T07:00:00-08:00", km: 5.5 },
-      // 02:00 UTC on 1 December is still 30 November for the rider.
-      { start: "2026-12-01T02:00:00Z", km: 7 },
-      { start: "2026-10-31T09:00:00-07:00", km: 99 },
-      { start: "2025-11-20T08:00:00-08:00", km: 20 },
-      { start: "2024-11-20T08:00:00-08:00", km: 50 },
-      { start: "2025-12-01T08:00:00-08:00", km: 70 },
-    ]);
-    const result = monthVsLastYear(list, at("2026-11-09T12:00:00-08:00"));
-    expect(result.year).toBe(2026);
-    expect(result.month).toBe(10);
+describe("monthComparison", () => {
+  const NOW = "2026-11-09T12:00:00-08:00";
+  const list = rides([
+    { start: "2026-11-02T08:00:00-08:00", km: 10 },
+    { start: "2026-11-09T07:00:00-08:00", km: 5.5 },
+    // 02:00 UTC on 1 December is still 30 November for the rider.
+    { start: "2026-12-01T02:00:00Z", km: 7 },
+    { start: "2026-10-31T09:00:00-07:00", km: 99 },
+    { start: "2025-11-20T08:00:00-08:00", km: 20 },
+    { start: "2024-11-20T08:00:00-08:00", km: 50 },
+    { start: "2025-12-01T08:00:00-08:00", km: 70 },
+    // The history starts in March 2023: November 2023 is covered, without rides.
+    { start: "2023-03-15T08:00:00-07:00", km: 1 },
+  ]);
+
+  it("compares this month of the current year with the same month a year earlier, in local time", () => {
+    const result = monthComparison(list, at(NOW), 2026);
+    expect([result.year, result.month, result.against, result.inProgress]).toEqual([2026, 10, "year", true]);
     expect(result.km).toBeCloseTo(22.5, 9);
-    expect(result.previousKm).toBeCloseTo(20, 9);
+    expect(result.baseline).toEqual({ kind: "year", year: 2025, km: 20 });
     expect(result.differenceKm).toBeCloseTo(2.5, 9);
+    expect(result.historyStart).toEqual({ year: 2023, month: 2 });
+  });
+
+  it("follows a chosen year: its month against that of the year before it", () => {
+    const result = monthComparison(list, at(NOW), 2025);
+    expect([result.year, result.km, result.differenceKm, result.inProgress]).toEqual([2025, 20, -30, false]);
+    expect(result.baseline).toEqual({ kind: "year", year: 2024, km: 50 });
+    // November 2023 is inside the history: it compares as 0 km.
+    expect(monthComparison(list, at(NOW), 2024).baseline).toEqual({ kind: "year", year: 2023, km: 0 });
+  });
+
+  it("has no baseline when the year before is outside the history, instead of comparing with 0", () => {
+    const result = monthComparison(list, at(NOW), 2023);
+    expect([result.km, result.baseline, result.differenceKm]).toEqual([0, null, null]);
+  });
+
+  it("with the whole history, compares with the mean of the same month of the earlier covered years", () => {
+    const result = monthComparison(list, at(NOW), "all");
+    expect([result.year, result.against, result.inProgress]).toEqual([2026, "average", true]);
+    // November 2023 (0 km, covered), 2024 (50) and 2025 (20): a mean of 70 / 3.
+    expect(result.baseline?.kind).toBe("average");
+    expect(result.baseline?.kind === "average" ? result.baseline.years : []).toEqual([2023, 2024, 2025]);
+    expect(result.baseline?.km).toBeCloseTo(70 / 3, 9);
+    expect(result.differenceKm).toBeCloseTo(22.5 - 70 / 3, 9);
+  });
+
+  it("leaves out of the mean the years whose month came before the first route", () => {
+    // The history starts in December 2023: November 2023 is not in it.
+    const late = rides([
+      { start: "2023-12-02T08:00:00-08:00", km: 4 },
+      { start: "2024-11-20T08:00:00-08:00", km: 30 },
+      { start: "2026-11-02T08:00:00-08:00", km: 12 },
+    ]);
+    const result = monthComparison(late, at(NOW), "all");
+    expect(result.baseline).toEqual({ kind: "average", years: [2024, 2025], km: 15 });
+    expect(result.differenceKm).toBe(-3);
+    // The month of the first route counts as covered.
+    const sameMonth = rides([{ start: "2025-11-25T08:00:00-08:00", km: 8 }, { start: "2026-11-02T08:00:00-08:00", km: 2 }]);
+    expect(monthComparison(sameMonth, at(NOW), "all").baseline).toEqual({ kind: "average", years: [2025], km: 8 });
+  });
+
+  it("has no mean when no earlier year covers the month", () => {
+    const fresh = rides([{ start: "2026-02-02T08:00:00-08:00", km: 4 }]);
+    const result = monthComparison(fresh, at(NOW), "all");
+    expect([result.baseline, result.differenceKm, result.historyStart]).toEqual([null, null, { year: 2026, month: 1 }]);
   });
 
   it("takes the month from the local clock, not from UTC", () => {
     // 05:00 UTC on 1 December is 21:00 on 30 November in Los Angeles.
-    const result = monthVsLastYear([], at("2026-12-01T05:00:00Z"));
-    expect([result.year, result.month, result.km, result.previousKm, result.differenceKm]).toEqual([2026, 10, 0, 0, 0]);
+    const result = monthComparison([], at("2026-12-01T05:00:00Z"), 2026);
+    expect([result.year, result.month, result.km, result.baseline, result.differenceKm, result.historyStart]).toEqual([2026, 10, 0, null, null, null]);
   });
 });
 
@@ -119,12 +167,19 @@ describe("kmByMonth", () => {
     { start: "2026-11-09T10:00:00-08:00", km: 8 },
   ]);
 
-  it("gives twelve months for each of the last three years with rides, oldest first", () => {
-    const series = kmByMonth(list);
+  it("gives twelve months for the chosen year and the two latest earlier years with rides, oldest first", () => {
+    const series = kmByMonth(list, 2026);
     expect(series.map((s) => s.year)).toEqual([2024, 2025, 2026]);
     expect(series[0]?.km).toEqual([2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3]);
     expect(series[1]?.km).toEqual([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4]);
     expect(series[2]?.km).toEqual([0, 0, 11.5, 0, 0, 0, 0, 0, 0, 0, 8, 0]);
+  });
+
+  it("follows the chosen year and leaves out the later ones", () => {
+    expect(kmByMonth(list, 2025).map((s) => s.year)).toEqual([2023, 2024, 2025]);
+    expect(kmByMonth(list, 2024).map((s) => s.year)).toEqual([2023, 2024]);
+    // The chosen year is drawn even without rides.
+    expect(kmByMonth(list, 2027).map((s) => s.year)).toEqual([2025, 2026, 2027]);
   });
 
   it("skips years without rides and accepts another number of years", () => {
@@ -132,9 +187,9 @@ describe("kmByMonth", () => {
       { start: "2020-02-02T10:00:00-08:00", km: 1 },
       { start: "2026-02-02T10:00:00-08:00", km: 2 },
     ]);
-    expect(kmByMonth(sparse).map((s) => s.year)).toEqual([2020, 2026]);
-    expect(kmByMonth(list, 1).map((s) => s.year)).toEqual([2026]);
-    expect(kmByMonth([])).toEqual([]);
+    expect(kmByMonth(sparse, 2026).map((s) => s.year)).toEqual([2020, 2026]);
+    expect(kmByMonth(list, 2026, 1).map((s) => s.year)).toEqual([2026]);
+    expect(kmByMonth([], 2026)).toEqual([{ year: 2026, km: new Array(12).fill(0) }]);
   });
 });
 

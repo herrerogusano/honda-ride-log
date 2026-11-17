@@ -68,29 +68,76 @@ export function totals(routes: readonly Route[]): Totals {
   return { km, rides: routes.length, hours: seconds / 3600, ridesWithoutDuration };
 }
 
+/** What the month is compared with: the same month of the year before, or the mean of the same month of earlier years. */
+export type MonthBaseline =
+  | { readonly kind: "year"; readonly year: number; readonly km: number }
+  | { readonly kind: "average"; readonly years: readonly number[]; readonly km: number };
+
 export interface MonthComparison {
+  /** The year of the month shown: the chosen one, or the current one with the whole history. */
   readonly year: number;
-  /** 0 (January) to 11. */
+  /** 0 (January) to 11: always the current month of the local clock. */
   readonly month: number;
+  /** "year" with a chosen year, "average" with the whole history (even when `baseline` is null). */
+  readonly against: "year" | "average";
   readonly km: number;
-  readonly previousKm: number;
-  readonly differenceKm: number;
+  /** What `km` is compared with, or null when the history does not reach back to any such month. */
+  readonly baseline: MonthBaseline | null;
+  /** `km` minus the baseline, or null without one. */
+  readonly differenceKm: number | null;
+  /** True when the month shown is the current one, not yet over. */
+  readonly inProgress: boolean;
+  /** Year and month of the first route of the history, or null without routes. */
+  readonly historyStart: { readonly year: number; readonly month: number } | null;
 }
 
-/** Km of the current month against the same month a year earlier. */
-export function monthVsLastYear(routes: readonly Route[], nowMs: number): MonthComparison {
+/**
+ * The fourth figure of section 01. The month is always the current month of
+ * the local clock. With a year Y it is that month of Y against the same month
+ * of Y − 1. With the whole history it is that month of the current year
+ * against the mean of the same month in every earlier year that the history
+ * covers (a month counts from the month of the first route on; a covered
+ * month without rides counts as 0 km). A month before the first route is not
+ * in the history: it is never compared as 0, the baseline is null instead.
+ */
+export function monthComparison(routes: readonly Route[], nowMs: number, period: Period): MonthComparison {
   const now = new Date(nowMs);
-  const year = now.getFullYear();
   const month = now.getMonth();
-  let km = 0;
-  let previousKm = 0;
+  const year = period === "all" ? now.getFullYear() : period;
+  const kmOf = new Map<number, number>();
+  let firstMs = Infinity;
   for (const route of routes) {
+    firstMs = Math.min(firstMs, route.startMs);
     const start = new Date(route.startMs);
     if (start.getMonth() !== month) continue;
-    if (start.getFullYear() === year) km += route.distanceKm;
-    else if (start.getFullYear() === year - 1) previousKm += route.distanceKm;
+    kmOf.set(start.getFullYear(), (kmOf.get(start.getFullYear()) ?? 0) + route.distanceKm);
   }
-  return { year, month, km, previousKm, differenceKm: km - previousKm };
+  const first = Number.isFinite(firstMs) ? new Date(firstMs) : null;
+  const historyStart = first === null ? null : { year: first.getFullYear(), month: first.getMonth() };
+  const covered = (y: number): boolean =>
+    historyStart !== null && y * 12 + month >= historyStart.year * 12 + historyStart.month;
+  const km = kmOf.get(year) ?? 0;
+  let baseline: MonthBaseline | null = null;
+  if (period !== "all") {
+    if (covered(year - 1)) baseline = { kind: "year", year: year - 1, km: kmOf.get(year - 1) ?? 0 };
+  } else if (historyStart !== null) {
+    const years: number[] = [];
+    for (let y = historyStart.year; y < year; y += 1) if (covered(y)) years.push(y);
+    if (years.length > 0) {
+      const sum = years.reduce((total, y) => total + (kmOf.get(y) ?? 0), 0);
+      baseline = { kind: "average", years, km: sum / years.length };
+    }
+  }
+  return {
+    year,
+    month,
+    against: period === "all" ? "average" : "year",
+    km,
+    baseline,
+    differenceKm: baseline === null ? null : km - baseline.km,
+    inProgress: year === now.getFullYear(),
+    historyStart,
+  };
 }
 
 export interface MonthlySeries {
@@ -99,9 +146,14 @@ export interface MonthlySeries {
   readonly km: readonly number[];
 }
 
-/** Km per month for the last `maxYears` years that have routes, oldest year first. */
-export function kmByMonth(routes: readonly Route[], maxYears = 3): MonthlySeries[] {
-  const years = yearsWithRoutes(routes).slice(0, maxYears).reverse();
+/**
+ * Km per month for the chart of section «Ritmo», oldest year first: `year`
+ * (always, even without routes) and the `maxYears − 1` latest years before
+ * it that have routes. Years after `year` are left out.
+ */
+export function kmByMonth(routes: readonly Route[], year: number, maxYears = 3): MonthlySeries[] {
+  const earlier = yearsWithRoutes(routes).filter((one) => one < year);
+  const years = [year, ...earlier].slice(0, Math.max(1, maxYears)).reverse();
   const series = new Map(years.map((year) => [year, new Array<number>(12).fill(0)]));
   for (const route of routes) {
     const start = new Date(route.startMs);

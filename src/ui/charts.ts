@@ -316,14 +316,3 @@ export function barChart(options: BarChartOptions): HTMLElement {
   );
   return figure;
 }
-
-/**
- * Dims every series of a chart but `keep` (bars and legend), or none when
- * `keep` is null. The km-per-month chart does it for the years outside the
- * chosen period: they stay drawn, quieter.
- */
-export function dimSeries(chart: Element, keep: string | null): void {
-  for (const part of chart.querySelectorAll("[data-series]")) {
-    part.classList.toggle("dim", keep !== null && part.getAttribute("data-series") !== keep);
-  }
-}
