@@ -1501,6 +1501,15 @@ select:focus-visible {
 }
 
 /* Cloudflare's widget: normally invisible (interaction-only); when it asks for a click it sets its own size. */
+/* The long label may wrap: on a narrow phone it takes two or three lines, never wider than the form. */
+.button.pass-continue {
+  max-width: 100%;
+  padding-block: 10px;
+  white-space: normal;
+  text-align: center;
+  line-height: 1.35;
+}
+
 .pass-challenge {
   max-width: 100%;
 }
@@ -4549,7 +4558,7 @@ input[type="range"]:focus-visible {
   padding: 0 var(--s1);
   background: none;
   border: 0;
-  color: var(--red-hi);
+  color: var(--fg-3);
   text-decoration: underline;
   text-underline-offset: 3px;
   cursor: pointer;

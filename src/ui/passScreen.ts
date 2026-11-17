@@ -55,9 +55,11 @@ export const PRIVACY_CONTACT_URL = "https://github.com/herrerogusano/honda-ride-
 
 /** Under the email: the two messages of the login page that this web cannot change. */
 export const LOGIN_HELP: readonly string[] = [
-  "Escribe el mismo correo en la página de acceso; si cambias de correo, empieza otra vez aquí.",
-  "Si la página de acceso dice que la contraseña es incorrecta, es la de MAPIT. Tienes 3 intentos con este pase; después vuelve aquí.",
+  "En la página de acceso usa este mismo correo (si lo cambias, empieza otra vez aquí). Tienes 3 intentos de contraseña; después vuelve aquí. Esta web no ve tu contraseña.",
 ];
+
+/** The button that leaves for the login page: it says what is typed there. */
+export const CONTINUE_LABEL = "Continuar: escribe tu correo y contraseña de MAPIT";
 
 const STATUS_TEXT: Readonly<Record<Exclude<AccessStatus, "abierto">, string>> = {
   lleno: "No quedan plazas para personas nuevas. Si ya has entrado antes, puedes seguir haciéndolo. Si no, puedes ver la demo.",
@@ -142,7 +144,7 @@ export function showPassScreen(options: PassScreenOptions): () => void {
     });
     const challengeHost = el("div", { class: "pass-challenge" });
     const message = el("p", { class: "pass-message", attrs: { role: "status", "aria-live": "polite" } });
-    const submit = el("button", { class: "button button-primary", attrs: { type: "submit" } }, "Continuar al login");
+    const submit = el("button", { class: "button button-primary pass-continue", attrs: { type: "submit" } }, CONTINUE_LABEL);
 
     const say = (text: string): void => {
       message.textContent = text;
@@ -208,7 +210,6 @@ export function showPassScreen(options: PassScreenOptions): () => void {
       },
       el("p", { class: "pass-field" }, el("label", { attrs: { for: emailId } }, "Correo de tu cuenta de MAPIT"), email),
       ...LOGIN_HELP.map((line) => el("p", { class: "pass-lead" }, line)),
-      el("p", { class: "pass-lead" }, "La contraseña la escribes en el paso siguiente, en la página de acceso. Esta web no la ve."),
       el("p", { class: "pass-check" }, consent, el("label", { attrs: { for: consentId } }, " Acepto el aviso de privacidad.")),
       el(
         "details",

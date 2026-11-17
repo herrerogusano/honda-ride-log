@@ -308,15 +308,18 @@ describe("the screen before the login", () => {
     expect(text().toLowerCase()).not.toContain("provisional");
   });
 
-  it("right under the email, says how to read the two messages of the login page this web cannot change", async () => {
+  it("right under the email, one help line (same email, 3 attempts); the button says what is typed on the login page", async () => {
     await openForm();
     const leads = [...root.querySelectorAll(".pass-field ~ .pass-lead")].map((one) => one.textContent);
     expect(leads).toEqual([
-      "Escribe el mismo correo en la página de acceso; si cambias de correo, empieza otra vez aquí.",
-      "Si la página de acceso dice que la contraseña es incorrecta, es la de MAPIT. Tienes 3 intentos con este pase; después vuelve aquí.",
-      "La contraseña la escribes en el paso siguiente, en la página de acceso. Esta web no la ve.",
+      "En la página de acceso usa este mismo correo (si lo cambias, empieza otra vez aquí). Tienes 3 intentos de contraseña; después vuelve aquí. Esta web no ve tu contraseña.",
     ]);
     expect(root.querySelector(".pass-field")?.nextElementSibling?.textContent).toBe(leads[0]);
+    const go = root.querySelector<HTMLButtonElement>('form button[type="submit"]');
+    expect(go?.textContent).toBe("Continuar: escribe tu correo y contraseña de MAPIT");
+    expect(go?.classList.contains("pass-continue")).toBe(true);
+    // The button already says "contraseña de MAPIT": the help line does not repeat it.
+    expect(leads.join(" ")).not.toMatch(/es la de MAPIT|en el paso siguiente/);
   });
 
   it("pressed before the check finishes, says it is checking and sends the pass by itself when the result arrives, once", async () => {
