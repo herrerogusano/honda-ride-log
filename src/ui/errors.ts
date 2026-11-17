@@ -58,18 +58,18 @@ export interface ErrorText {
   readonly action: ErrorAction;
 }
 
-/** Provisional text of a pause of the open service, on the pass screen and after a call. */
-export const MAINTENANCE_TEXT = "Estamos haciendo mantenimiento; vuelve más tarde.";
+/** A pause of the open service (maintenance or its daily ceiling), on the pass screen and after a call. */
+export const MAINTENANCE_TEXT = "El servicio está en pausa. Vuelve más tarde.";
 
 /**
  * Tool error codes of the open service (docs/PLAN.md, section 18), read only
  * in a build for it: an invitation build keeps the general text of
- * `tool_error`. Texts are provisional.
+ * `tool_error`.
  */
 const PUBLIC_TOOL_CODES: Readonly<Record<string, { readonly text: string; readonly action: ErrorAction }>> = {
   service_paused: { text: MAINTENANCE_TEXT, action: "retry" },
   session_expired: { text: "Tu sesión ha terminado: dura menos de una hora y después se borra sola. Vuelve a entrar.", action: "sign_in" },
-  session_limit_reached: { text: "Has llegado al máximo de consultas de esta sesión. Sal y vuelve a entrar.", action: "sign_in" },
+  session_limit_reached: { text: "Has llegado al máximo de consultas de esta sesión. Vuelve a entrar.", action: "sign_in" },
   rate_limited: { text: "Demasiadas consultas seguidas. Espera un minuto y reintenta.", action: "retry" },
   service_unavailable: { text: "El servicio no está disponible ahora mismo. Prueba de nuevo dentro de un rato.", action: "retry" },
 };

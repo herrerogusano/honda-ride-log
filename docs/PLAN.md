@@ -1672,11 +1672,13 @@ repo.
    no se ha podido comprobar. Todos ofrecen «Comprobar otra vez» y
    «Volver».
 3. El formulario es una sola vista corta, para que se note lo menos
-   posible: el correo (se escribe una vez; luego va en `login_hint`), una
-   línea que recuerda que la contraseña se escribe en el login, la casilla
-   «Acepto el aviso de privacidad.» y debajo «Leer el aviso de
+   posible: el correo (se escribe una vez; luego va en `login_hint`), dos
+   líneas de ayuda para los mensajes de la página de acceso que esta web no
+   controla (mismo correo; contraseña de MAPIT y 3 intentos por pase), una
+   línea que recuerda que la contraseña se escribe en el paso siguiente, la
+   casilla «Acepto el aviso de privacidad.» y debajo «Leer el aviso de
    privacidad», un desplegable (`<details>`, cerrado) con el texto
-   completo (**provisional**, marcado así dentro y en el código). El
+   completo (ver «Textos» abajo). El
    control de Turnstile no ocupa sitio salvo que Cloudflare pida
    interacción. «Continuar al login» envía `POST /pase` con
    `{"email", "turnstile"}` (el correo recortado y en minúsculas, como lo
@@ -1708,6 +1710,33 @@ repo.
 
 El correo vive en el campo y en esa petición; no se guarda en ningún
 sitio. Ni `/estado` ni `/pase` llevan token, cookies ni referente.
+
+### Textos
+
+Aprobados por el propietario el 2026-11-17; ya no son provisionales. Están
+en `src/ui/passScreen.ts` (pantalla previa y aviso de privacidad),
+`src/ui/errors.ts` (pausa y errores por código), `src/boot.ts` (borrado no
+confirmado) y `src/ui/app.ts` (confirmación del borrado), y los fijan
+`tests/public-boot.test.ts` y `tests/public-access.test.ts`.
+
+- Cada afirmación del aviso se contrastó con el código del servicio (qué
+  se guarda, cuánto vive, qué borra «Borrar mis datos»): la sesión de
+  MAPIT y el usuario de acceso, menos de una hora; la huella del correo con
+  fechas y número de entradas, un año desde la última entrada; el recuento
+  de intentos fallidos, 24 horas; el de pases por conexión, unos minutos.
+  «Borrar mis datos» no borra esos dos recuentos, y el aviso lo dice.
+- Contacto: la página de incidencias del repositorio, que es pública; el
+  aviso pide no escribir en ella el correo ni datos de la cuenta.
+- **Versión del aviso: `web-1`** (`PRIVACY_NOTICE_VERSION`). No viaja al
+  servicio: el servicio escribe su propia constante en la fila de cada
+  persona nueva, así que las dos tienen que cambiar a la vez. El servicio
+  no la compara con ninguna lista y no la reescribe a quien ya había
+  entrado.
+- Dos mensajes los pone la página de acceso de Cognito y esta web no los
+  cambia: «contraseña incorrecta» con el usuario ya creado (texto de
+  Cognito) y los del servicio con el prefijo de Cognito («PreAuthentication
+  failed with error …»). Las dos líneas de ayuda bajo el correo los
+  anticipan.
 
 ### Turnstile
 
@@ -1745,9 +1774,9 @@ sitio. Ni `/estado` ni `/pase` llevan token, cookies ni referente.
 - **«Borrar mis datos»**, al lado de «Salir», pide confirmación y llama a
   `borrar_mis_datos`; después, lo mismo que «Salir», también si falla. Si
   falla (o la sesión ya había terminado), antes de irse deja una marca
-  fija, y al volver del `/logout` la portada dice «No se ha podido
-  confirmar el borrado de tus datos. Tu sesión se ha cerrado. Entra de
-  nuevo y repite «Borrar mis datos».» (provisional), una sola vez: que no
+  fija, y al volver del `/logout` la portada dice «No hemos podido
+  confirmar que tus datos se hayan borrado. Tu sesión está cerrada. Entra
+  otra vez y repite «Borrar mis datos».», una sola vez: que no
   se borraran los datos no puede pasar en silencio. El código del fallo no
   cruza la ida y vuelta.
 - La marca va en `sessionStorage`, dentro de la excepción que ya existía
@@ -1775,7 +1804,7 @@ sitio. Ni `/estado` ni `/pase` llevan token, cookies ni referente.
   mismo, y si el script llega tarde se usa sin pedirlo otra vez. Solo uno
   que falla se sustituye.
 - Errores por código de herramienta, solo en este modo: `service_paused`
-  da «Estamos haciendo mantenimiento; vuelve más tarde.» (provisional) con
+  da «El servicio está en pausa. Vuelve más tarde.» con
   «Reintentar»; `session_expired` y `session_limit_reached`, «Volver a
   entrar» (que abre la pantalla previa); `rate_limited` y
   `service_unavailable`, «Reintentar». Con `session_expired` el cliente

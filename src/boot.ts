@@ -153,6 +153,6 @@ export async function boot(options: BootOptions): Promise<App> {
   return app;
 }
 
-/** Provisional (docs/PLAN.md, section 18). Fixed: the code of the failure does not cross the sign-out page. */
+/** docs/PLAN.md, section 18. Fixed: the code of the failure does not cross the sign-out page. */
 export const DELETE_UNCONFIRMED =
-  "No se ha podido confirmar el borrado de tus datos. Tu sesión se ha cerrado. Entra de nuevo y repite «Borrar mis datos».";
+  "No hemos podido confirmar que tus datos se hayan borrado. Tu sesión está cerrada. Entra otra vez y repite «Borrar mis datos».";
