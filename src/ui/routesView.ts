@@ -66,6 +66,22 @@ export interface RouteListOptions {
    * the pinned map). Used to keep the chosen row in view.
    */
   readonly visibleTop?: (() => number) | undefined;
+  /** Aborting it stops watching the screen width (the page aborts it when it replaces the view). */
+  readonly signal?: AbortSignal | undefined;
+}
+
+/**
+ * Below this width the list is part of the page, under the pinned map
+ * (docs/PLAN.md, section 13), and starts folded behind a button. It must
+ * match the `@media (min-width: 1024px)` layout of `.archive` in
+ * `src/styles.css`; `tests/routes-fold.test.ts` checks both.
+ */
+export const NARROW_LIST = "(max-width: 1023px)";
+
+/** The text of the button that folds and unfolds the list. */
+export function toggleLabel(total: number, open: boolean): string {
+  if (open) return total === 1 ? "Ocultar la ruta" : "Ocultar las rutas";
+  return total === 1 ? "Ver la ruta" : `Ver las ${formatNumber(total)} rutas`;
 }
 
 export interface RouteList {
@@ -76,6 +92,8 @@ export interface RouteList {
    * Marks `route` as the chosen one. With `reveal`, its row is brought into
    * view: inside the list's own box when the list is one (wide screens), or
    * the page, only as far as needed, when the list is part of the page.
+   * A folded list stays folded and nothing moves: the map shows the route,
+   * and the row is marked for when the list opens.
    */
   mark(route: Route, reveal: boolean): void;
 }
@@ -110,6 +128,11 @@ export function createRouteList(data: RiderData, onOpen: (route: Route) => void,
   const body = el("tbody", { attrs: { role: "rowgroup" } });
   const more = el("button", { class: "button", attrs: { type: "button" } }, "Mostrar más rutas");
   const exportButton = el("button", { class: "button", attrs: { type: "button" } }, "Exportar CSV");
+  const panelId = uniqueId("routes");
+  const toggle = el("button", { class: "button routes-toggle", attrs: { type: "button", "aria-controls": panelId } });
+  const narrow = typeof window.matchMedia === "function" ? window.matchMedia(NARROW_LIST) : null;
+  /** Only matters on narrow screens; wide ones always show the list and hide the button. */
+  let open = false;
 
   // Each cell names its figure for the row layout of the stylesheet (`data-label`, `data-unit`);
   // the table header stays the one screen readers announce.
@@ -220,7 +243,7 @@ export function createRouteList(data: RiderData, onOpen: (route: Route) => void,
     }
     tr.classList.add("is-chosen");
     tr.querySelector(".row-button")?.setAttribute("aria-current", "true");
-    if (revealRow) bringRow(tr);
+    if (revealRow && !folded()) bringRow(tr);
   }
 
   // ↑ and ↓ on a row move to the route above or below and open it.
@@ -256,9 +279,9 @@ export function createRouteList(data: RiderData, onOpen: (route: Route) => void,
   });
   draw();
 
-  const element = el(
+  const panel = el(
     "div",
-    { class: "route-list" },
+    { id: panelId, class: "route-list-panel" },
     el(
       "div",
       { class: "toolbar list-tools" },
@@ -269,6 +292,47 @@ export function createRouteList(data: RiderData, onOpen: (route: Route) => void,
     count,
     scroller,
   );
+  const element = el("div", { class: "route-list" }, toggle, panel);
+
+  /** Whether the list is hidden behind its button now. */
+  function folded(): boolean {
+    return !open && narrow?.matches === true;
+  }
+
+  /**
+   * Shows or hides the button and the panel. The code does it, not a media
+   * query in the stylesheet, so that on a change of width it decides where
+   * the focus goes before anything disappears.
+   */
+  function render(): void {
+    element.classList.toggle("is-folded", !open);
+    toggle.hidden = narrow?.matches !== true;
+    panel.hidden = folded();
+    toggle.setAttribute("aria-expanded", String(open));
+    toggle.textContent = toggleLabel(data.routes.length, open);
+    // Folding never leaves the focus on something hidden.
+    if (folded() && panel.contains(document.activeElement)) toggle.focus();
+  }
+
+  toggle.addEventListener("click", () => {
+    open = !open;
+    render();
+  });
+  if (narrow !== null && typeof narrow.addEventListener === "function") {
+    narrow.addEventListener(
+      "change",
+      () => {
+        // Narrowing the window (or turning the phone) while the user is in the list keeps it open;
+        // widening it while on the button moves the focus to the list, which is now always shown.
+        if (narrow.matches && !open && panel.contains(document.activeElement)) open = true;
+        const onButton = document.activeElement === toggle;
+        render();
+        if (!narrow.matches && onButton) search.focus();
+      },
+      options.signal === undefined ? {} : { signal: options.signal },
+    );
+  }
+  render();
   return { element, note, mark };
 }
 

@@ -979,7 +979,32 @@ cifra, ni el recorte, ni el saneador, ni los sellos de ESLint, ni el login.
 | Ancho | Cómo se ve |
 |---|---|
 | 1024 px o más | Mapa a la izquierda, lista a la derecha, los dos tan altos como la pantalla bajo la barra (`clamp(560px, 100svh − barra − 32px, 980px)`). La lista se desplaza dentro de su propia caja; buscar, ordenar y «Exportar CSV» quedan encima, «Mostrar más rutas» al final. Al llegar a un extremo de la caja, la rueda sigue con la página. |
-| Menos de 1024 px | El mapa queda fijo (`position: sticky`) bajo la barra, a unos 31 svh en móviles (38 svh hasta 1023 px), con las cifras de la ruta debajo; la lista va en el flujo de la página, sin caja propia que atrape el desplazamiento. La altura de la barra (una o dos filas) la publica `src/ui/app.ts` en `--bar-h` con un `ResizeObserver` que se suelta con la vista. En móviles el título de la ruta solo lo oyen los lectores de pantalla y la fecha va en la franja de cifras, para que la parte fija no pase de la mitad de la pantalla. |
+| Menos de 1024 px | El mapa queda fijo (`position: sticky`) bajo la barra, a unos 31 svh en móviles (38 svh hasta 1023 px), con las cifras de la ruta debajo; la lista va en el flujo de la página, sin caja propia que atrape el desplazamiento. La altura de la barra (una o dos filas) la publica `src/ui/app.ts` en `--bar-h` con un `ResizeObserver` que se suelta con la vista. En móviles el título de la ruta solo lo oyen los lectores de pantalla y la fecha va en la franja de cifras, para que la parte fija no pase de la mitad de la pantalla. La lista empieza plegada tras el botón «Ver las N rutas» (apartado siguiente). |
+
+### La lista plegada en pantallas estrechas
+
+Por debajo de 1024 px (el mismo corte de la tabla de arriba: la lista deja de
+tener caja propia y obliga a bajar por todas las rutas para seguir por la
+página), la lista, con su búsqueda, su orden y «Exportar CSV», empieza
+plegada bajo el mapa tras un botón real (`<button>` con `aria-expanded` y
+`aria-controls`): «Ver las N rutas» (en la demo, «Ver las 1.075 rutas»; N es el total de rutas, con el
+formato español de `formatNumber`; «Ver la ruta» si hay una) y, abierta,
+«Ocultar las rutas». El periodo de la barra no cambia N: la lista no sigue
+al periodo. Desde 1024 px no hay botón y la lista se ve como siempre.
+
+- La ocultan el botón y el panel con `hidden` desde `src/ui/routesView.ts`
+  (`NARROW_LIST`, `matchMedia`), no una regla CSS: así, al cambiar de ancho
+  el código decide el foco antes de que algo desaparezca. Si el ancho baja
+  con el foco dentro de la lista, la lista se abre; si sube con el foco en
+  el botón, el foco pasa a la búsqueda. Fuera de eso, la elección del
+  usuario (abierta o plegada) se conserva al girar el móvil. El escuchador
+  se suelta con la vista.
+- Abrir o cerrar no anima nada, con o sin movimiento reducido. Al imprimir
+  la lista nunca está plegada.
+- Si algo abre una ruta con la lista plegada («Ruta anterior / siguiente» o
+  «Ver en el mapa» del atlas), la lista **sigue plegada** y la página no se
+  mueve: el mapa ya enseña la ruta, y su fila queda marcada para cuando se
+  abra la lista. Desplegarla obligaría otra vez a bajar por todas las rutas.
 
 La leyenda del mapa y la nota de la lista van debajo de los dos
 (`.archive-notes`). Cada ruta es una fila de tabla presentada como tarjeta:
