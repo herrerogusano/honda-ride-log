@@ -1683,7 +1683,12 @@ repo.
    lee el servicio; uno que el servicio rechazaría no se envía). Si se
    pulsa antes de que el control termine, dice «Comprobando que no eres un
    robot…» y envía el pase solo, una vez, cuando llega el resultado; tras
-   un error del control o un pase rechazado, hace falta pulsar otra vez.
+   un error del control o un pase rechazado, hace falta pulsar otra vez. Ese
+   envío solo vale para el formulario que está en pantalla: un resultado
+   tardío de un formulario abandonado con «Volver» o sustituido al
+   restaurar la página desde la caché no envía nada, y editar el correo o
+   desmarcar la casilla mientras se espera cancela la espera (hay que
+   volver a pulsar con lo que se ve en pantalla).
 4. Con el pase, el formulario se borra antes de salir (el correo, el
    resultado y el control de Turnstile; queda solo «Abriendo el login…»,
    por si el navegador guarda la página para «Atrás») y el login empieza
@@ -1767,7 +1772,9 @@ sitio. Ni `/estado` ni `/pase` llevan token, cookies ni referente.
   entrar» (que abre la pantalla previa); `rate_limited` y
   `service_unavailable`, «Reintentar». Con `session_expired` el cliente
   olvida el token, porque el servicio ya ha borrado la sesión. Un build
-  por invitación sigue con el texto general de `tool_error`.
+  por invitación sigue con el texto general de `tool_error`. Lo mismo en
+  los paneles de error del mapa y del atlas (al leer el recorrido de una
+  ruta), que reciben el modo de la página.
 
 ### Política de seguridad de contenido: motivo del cambio
 

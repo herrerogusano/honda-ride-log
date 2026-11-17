@@ -139,7 +139,12 @@ export function showPassScreen(options: PassScreenOptions): () => void {
       widget?.reset();
     }
 
+    /** True while this form is the one on screen: not left with «Volver», not replaced after a restore from cache. */
+    const current = (): boolean => !disposed && mine === round;
+
     async function send(): Promise<void> {
+      // A late callback of an abandoned form never sends anything.
+      if (!current()) return;
       if (sending) return;
       if (!consent.checked) return say("Para seguir tienes que aceptar el aviso de privacidad.");
       const address = normalizeEmail(email.value);
@@ -153,7 +158,7 @@ export function showPassScreen(options: PassScreenOptions): () => void {
       submit.disabled = true;
       say("Comprobando…");
       const outcome = await requestPass(access.passUrl, address, result, deps);
-      if (disposed || mine !== round) return;
+      if (!current()) return;
       if (outcome === "issued") {
         // Nothing of the form stays in the page the browser may keep for «Atrás».
         email.value = "";
@@ -199,12 +204,23 @@ export function showPassScreen(options: PassScreenOptions): () => void {
       message,
       el("div", { class: "landing-actions" }, submit, backButton),
     );
+    // The pass goes out by itself only for what was confirmed with «Continuar»:
+    // editing the email or the consent while the check runs cancels that wait.
+    const cancelWait = (): void => {
+      if (!waiting) return;
+      waiting = false;
+      say("");
+    };
+    email.addEventListener("input", cancelWait);
+    consent.addEventListener("change", cancelWait);
+
     if (full) body.append(el("p", { class: "pass-state", attrs: { role: "note" } }, STATUS_TEXT.lleno));
     body.append(form);
 
     options
       .renderChallenge(challengeHost, access.turnstileSiteKey, {
         onResult: (value) => {
+          if (!current()) return;
           result = value;
           if (waiting) void send();
         },
@@ -212,6 +228,7 @@ export function showPassScreen(options: PassScreenOptions): () => void {
           result = null;
         },
         onError: () => {
+          if (!current()) return;
           result = null;
           waiting = false;
           say(CHALLENGE_FAILED);

@@ -299,6 +299,60 @@ describe("the screen before the login", () => {
     expect(passRequests()).toBe(1);
   });
 
+  it("«Volver» while waiting for the check: a late result of that form sends nothing", async () => {
+    await openForm();
+    consentBox().checked = true;
+    emailField().value = "rider@example.test";
+    submit();
+    expect(text()).toContain("Comprobando que no eres un robot…");
+    const old = widgets[0];
+    button("Volver").click();
+    old?.callbacks.onResult("synthetic-result-late");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(passRequests()).toBe(0);
+    expect(navigations).toEqual([]);
+  });
+
+  it("restored from cache while waiting for the check: a late result of the old form sends nothing", async () => {
+    await openForm();
+    consentBox().checked = true;
+    emailField().value = "rider@example.test";
+    submit();
+    const old = widgets[0];
+    window.dispatchEvent(Object.assign(new Event("pageshow"), { persisted: true }));
+    await vi.waitFor(() => expect(widgets).toHaveLength(2));
+    old?.callbacks.onResult("synthetic-result-late");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(passRequests()).toBe(0);
+    expect(navigations).toEqual([]);
+  });
+
+  it.each([
+    ["editing the email", () => {
+      emailField().value = "other@example.test";
+      emailField().dispatchEvent(new Event("input"));
+    }],
+    ["unticking the consent", () => {
+      consentBox().checked = false;
+      consentBox().dispatchEvent(new Event("change"));
+    }],
+  ])("%s while waiting for the check cancels the wait: the result alone sends nothing", async (_label, change) => {
+    await openForm();
+    consentBox().checked = true;
+    emailField().value = "rider@example.test";
+    submit();
+    expect(text()).toContain("Comprobando que no eres un robot…");
+    change();
+    expect(text()).not.toContain("Comprobando que no eres un robot…");
+    widgets[0]?.callbacks.onResult("synthetic-result-0007");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(passRequests()).toBe(0);
+    // A new press sends what is on screen now.
+    consentBox().checked = true;
+    submit();
+    await vi.waitFor(() => expect(passRequests()).toBe(1));
+  });
+
   it("does not send by itself after a failed check, nor without being asked", async () => {
     await openForm();
     consentBox().checked = true;
@@ -518,6 +572,23 @@ describe("leaving the account", () => {
     await start(PUBLIC);
     expect(text()).not.toContain(DELETE_UNCONFIRMED);
     expect(storageForTab.items.size).toBe(0);
+  });
+
+  it.each(["session_limit_reached", "session_expired"])("a route trace refused with %s offers «Volver a entrar» in the map, never «Reintentar»", async (code) => {
+    server.mcpOverride = (request) => {
+      const message = JSON.parse(request.body) as { id: number; params: { name: string } };
+      if (message.params.name !== "get_route_detail") return null;
+      return { body: JSON.stringify({ jsonrpc: "2.0", id: message.id, result: { content: [{ type: "text", text: `${code}: x` }], isError: true } }) };
+    };
+    await signedIn();
+    await vi.waitFor(() => expect(root.querySelector(".routes-table tbody tr .row-button")).not.toBeNull());
+    root.querySelector<HTMLButtonElement>(".routes-table tbody tr .row-button")?.click();
+    const panel = await vi.waitFor(() => {
+      const found = root.querySelector<HTMLElement>(".archive-map .error");
+      expect(found).not.toBeNull();
+      return found as HTMLElement;
+    });
+    expect([...panel.querySelectorAll("button")].map((one) => one.textContent)).toEqual(["Volver a entrar"]);
   });
 
   it("a paused service mid-session shows the maintenance text with «Reintentar»", async () => {

@@ -486,6 +486,7 @@ export function startApp(options: AppOptions): App {
     const signInOffer = account === undefined || data.demo ? null : signIn;
     const map = mapFactory(data, caller, {
       signIn: signInOffer,
+      publicService: publicService !== null,
       traces,
       // The map's own «anterior / siguiente» keep the list's chosen row in view.
       onOpen: (route) => list.mark(route, !fromList),
@@ -496,6 +497,7 @@ export function startApp(options: AppOptions): App {
     const atlas = createAtlasView(data, "all", {
       traces,
       signIn: signInOffer,
+      publicService: publicService !== null,
       showOnMap: (route) => {
         // The route opens in the map of «Rutas» (its row marked) and the page goes there.
         map.open(route);
