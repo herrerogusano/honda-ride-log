@@ -138,15 +138,17 @@ describe("chart columns", () => {
     expect(document.activeElement).toBe(columns[0]);
   });
 
-  it("dims, in the 12-month chart, the years outside the chosen period, and none for the whole history", () => {
+  it("draws the 12-month chart of the chosen period, the chosen year in red", () => {
     const view = page();
-    const months = [...view.querySelectorAll<HTMLElement>("figure.chart-dual")][0] as HTMLElement;
-    const dimmed = (): string[] => [...new Set([...months.querySelectorAll(".dim")].map((one) => one.getAttribute("data-series") ?? ""))];
-    expect(dimmed()).toEqual(["2025"]);
+    const months = (): HTMLElement => [...view.querySelectorAll<HTMLElement>("figure.chart-dual")][0] as HTMLElement;
+    const red = (): string[] => [...new Set([...months().querySelectorAll(".chart-bar.tone-now")].map((one) => one.getAttribute("data-series") ?? ""))];
+    expect(red()).toEqual(["2026"]);
+    expect(months().querySelectorAll(".dim")).toHaveLength(0);
     (view.querySelector('.period-control input[value="2025"]') as HTMLInputElement).click();
-    expect(dimmed()).toEqual(["2026"]);
+    expect(red()).toEqual(["2025"]);
+    expect(months().querySelector('[data-series="2026"]')).toBeNull();
     (view.querySelector('.period-control input[value="all"]') as HTMLInputElement).click();
-    expect(dimmed()).toEqual([]);
+    expect(red()).toEqual(["2026"]);
   });
 });
 

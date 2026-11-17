@@ -70,10 +70,16 @@ const PAIRS: readonly (readonly [string, string, number, string])[] = [
   ["--control-line", "--bg", 3, "control border"],
   ["--control-line", "--surface", 3, "control border"],
   ["--red-hi", "--surface-2", 3, "focus outline"],
-  // Series of the km-per-month chart (graphical objects) against the page.
-  ["--red-hi", "--bg", 3, "this year's bars"],
-  ["--bar-prev", "--bg", 3, "last year's bars"],
-  ["--bar-old", "--bg", 3, "older years' bars"],
+  // Series of the km-per-month chart (graphical objects) against the page and the blocks.
+  ...["--bg", "--surface"].flatMap((bg) =>
+    [
+      ["--red-hi", bg, 3, "the chosen year's bars"],
+      ["--bar-prev", bg, 3, "the nearer earlier year's bars (ivory)"],
+      ["--bar-old", bg, 3, "the older earlier year's bars (steel blue)"],
+    ] as const,
+  ),
+  // The bar of the earlier month in «Mes frente a mes» lies on its track.
+  ["--bar-prev", "--surface-2", 3, "earlier month bar on its track"],
   // Weekday and hour charts: the bars that are not the peak (the peak is --red-hi).
   ["--red-mid", "--bg", 3, "weekday and hour bars"],
 ];
@@ -93,6 +99,17 @@ describe("colour contrast of the stylesheet tokens", () => {
 
   it.each(PAIRS)("%s on %s reaches %s:1 (%s)", (fg, bg, minimum) => {
     expect(contrast(token(fg), token(bg))).toBeGreaterThanOrEqual(minimum);
+  });
+
+  it("keeps the three series of the km-per-month chart apart in lightness, not only in hue", () => {
+    // Three colours cannot all reach 3:1 with one another and with the page at once; the legend,
+    // the column names and the table carry the years. What is asked here: no two within 1.3:1.
+    const series = ["--red-hi", "--bar-prev", "--bar-old"].map(token);
+    for (let one = 0; one < series.length; one += 1) {
+      for (let two = one + 1; two < series.length; two += 1) {
+        expect(contrast(series[one] as [number, number, number], series[two] as [number, number, number])).toBeGreaterThanOrEqual(1.3);
+      }
+    }
   });
 
   it("is dark only: one colour scheme and no light-theme block", () => {

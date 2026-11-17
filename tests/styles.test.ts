@@ -172,3 +172,12 @@ describe("phase 4 rules", () => {
     expect(block("@keyframes tag-in")).toMatch(/translateX\(-12px\)/);
   });
 });
+
+describe("streak tiles", () => {
+  it("share two grid rows with the tiles beside them, so the figures line up whatever the title length", () => {
+    const tile = rule(".tiles-4 .tile");
+    expect(declaration(tile, "display")).toBe("grid");
+    expect(declaration(tile, "grid-row")).toBe("span 2");
+    expect(declaration(tile, "grid-template-rows")).toBe("subgrid");
+  });
+});
