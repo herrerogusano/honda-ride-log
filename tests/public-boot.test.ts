@@ -489,6 +489,15 @@ describe("the screen before the login", () => {
 });
 
 describe("leaving the account", () => {
+  it("keeps the two account actions together in the bar, as one labelled group, «Borrar mis datos» first", async () => {
+    await signedIn();
+    await vi.waitFor(() => expect(visibleButtons()).toContain("Salir"));
+    const group = root.querySelector<HTMLElement>(".bar-end .bar-account");
+    expect(group?.getAttribute("role")).toBe("group");
+    expect(group?.getAttribute("aria-label")).toBe("Tu cuenta");
+    expect([...(group?.children ?? [])].map((one) => one.textContent)).toEqual(["Borrar mis datos", "Salir"]);
+  });
+
   it("«Salir» calls cerrar_sesion with the token, then goes to the login's sign-out page", async () => {
     await signedIn();
     await vi.waitFor(() => expect(visibleButtons()).toContain("Salir"));
@@ -614,6 +623,12 @@ describe("leaving the account", () => {
 });
 
 describe("the invitation build stays as it was", () => {
+  it("keeps «Salir» straight in the bar, with no account group", async () => {
+    await start(INVITATION);
+    expect(root.querySelector(".bar-account")).toBeNull();
+    expect(root.querySelector(".bar-end > .sign-out")).not.toBeNull();
+  });
+
   it("does not read or show the open service's notice", async () => {
     storageForTab.setItem("ride-log.leave-notice", JSON.stringify({ notice: "delete_unconfirmed", createdAt: server.clock.now }));
     await start(INVITATION);

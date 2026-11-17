@@ -1761,6 +1761,14 @@ sitio. Ni `/estado` ni `/pase` llevan token, cookies ni referente.
 - Las herramientas de cuenta solo cuentan como hechas si la respuesta dice
   `isError: false` y trae un elemento de texto no vacío; si no, es
   `bad_response` (un `result: {}` ya no pasa por un borrado correcto).
+- En la barra, «Borrar mis datos» y «Salir» van juntos en un grupo
+  («Tu cuenta») separado por una línea fina: «Salir» es texto, como los
+  enlaces de sección, con una línea que crece debajo al pasar el ratón;
+  «Borrar mis datos» lleva un contorno tenue (dibujado dentro de la zona
+  pulsable de 44 px) que se vuelve rojo al pasar el ratón. Con la barra en
+  dos filas (1100 px o menos) el grupo pasa a la segunda, a la derecha de
+  los enlaces, para que el periodo no quede aplastado (antes, a 375 px, se
+  quedaba en 0 px de ancho). La barra del modo por invitación no cambia.
 - El script de Turnstile tiene 15 s para llegar; si no, el formulario dice
   que no se ha podido hacer la comprobación. El elemento `<script>` se
   queda (quitarlo no cancela la petición): un reintento espera sobre el

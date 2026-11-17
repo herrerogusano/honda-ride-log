@@ -310,7 +310,13 @@ export function startApp(options: AppOptions): App {
         demoBadge,
       ),
       navSlot,
-      el("div", { class: "bar-end" }, periodSlot, publicService === null ? null : deleteButton, signOutButton),
+      el(
+        "div",
+        { class: "bar-end" },
+        periodSlot,
+        // The open service groups its two account actions (styled as a pair); the invitation bar keeps «Salir» as it was.
+        publicService === null ? signOutButton : el("div", { class: "bar-account", attrs: { role: "group", "aria-label": "Tu cuenta" } }, deleteButton, signOutButton),
+      ),
     ),
   );
   clear(root);
