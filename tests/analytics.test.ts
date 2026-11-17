@@ -267,15 +267,17 @@ describe("consent across tabs and over time", () => {
     expect(changes).toEqual(["granted", "denied"]);
   });
 
-  it("follows an acceptance made in another tab, and the line at the end of the page says so", () => {
+  it("follows an acceptance made in another tab, and closes the notice open here", () => {
     const tracker = newTracker(GOOGLE_ONLY, { arrival: () => null });
     const host = document.createElement("div");
     document.body.append(host);
     mountConsentNotice(host, tracker);
     tracker.start();
+    expect(host.querySelector<HTMLElement>(".consent")?.hidden).toBe(false);
     answerInAnotherTab("granted");
     expect(scripts()).toEqual([`https://www.googletagmanager.com/gtag/js?id=${GA}`]);
-    expect(host.querySelector(".consent-state")?.textContent).toBe("Google Analytics: aceptado.");
+    expect(host.querySelector<HTMLElement>(".consent")?.hidden).toBe(true);
+    expect(host.querySelector<HTMLElement>(".consent-prefs")?.textContent).toBe("Cookies");
     window.dispatchEvent(new StorageEvent("storage", { key: "another-key" }));
     expect(scripts()).toHaveLength(1);
   });
@@ -574,14 +576,18 @@ describe("the cookie notice", () => {
     expect(scripts()).toEqual([`https://www.googletagmanager.com/gtag/js?id=${GA}`]);
     expect(notice?.hidden).toBe(true);
     expect(prefs?.hidden).toBe(false);
-    expect(prefs?.textContent).toBe("Google Analytics: aceptado. Cambiar las cookies");
-    expect(document.activeElement).toBe(button("Cambiar las cookies"));
-    button("Cambiar las cookies").click();
+    // Only a discreet «Cookies» stays: no line saying the answer.
+    expect(prefs?.textContent).toBe("Cookies");
+    expect(prefs?.textContent).not.toMatch(/Google Analytics|aceptado|rechazado/);
+    expect(button("Cookies").getAttribute("aria-label")).toBe("Cookies: cambiar tu respuesta");
+    expect(document.activeElement).toBe(button("Cookies"));
+    // Withdrawing takes the same two clicks as accepting: «Cookies», then «Rechazar».
+    button("Cookies").click();
     expect(notice?.hidden).toBe(false);
     expect(document.activeElement).toBe(button("Aceptar"));
     button("Rechazar").click();
     expect(flags()[`ga-disable-${GA}`]).toBe(true);
-    expect(prefs?.textContent).toBe("Google Analytics: rechazado. Cambiar las cookies");
+    expect(prefs?.textContent).toBe("Cookies");
     expect(readConsent(Date.now())).toBe("denied");
   });
 
@@ -597,7 +603,7 @@ describe("the cookie notice", () => {
     writeConsent("denied", Date.now());
     const { notice, prefs } = mount(GOOGLE_ONLY);
     expect(notice?.hidden).toBe(true);
-    expect(prefs?.textContent).toBe("Google Analytics: rechazado. Cambiar las cookies");
+    expect(prefs?.textContent).toBe("Cookies");
   });
 
   it("does not appear with Cloudflare alone, which needs no consent", () => {
