@@ -21,8 +21,11 @@ import { completeLogin, logout, startLogin, type AuthDeps, type LoginReturn } fr
 import type { AuthSession } from "./auth/session";
 import type { ServiceEnvironment } from "./service/environment";
 import { signInError, type LoadError } from "./service/loader";
-import { createMcpClient, type McpClientOptions } from "./service/mcpClient";
+import { ToolCallError } from "./service/contract";
+import { createMcpClient, ServiceError, type McpClient, type McpClientOptions } from "./service/mcpClient";
+import { renderTurnstile, type ChallengeRenderer } from "./access/turnstile";
 import { clear, el } from "./ui/dom";
+import { showPassScreen } from "./ui/passScreen";
 import { startApp, type App, type AppOptions } from "./ui/app";
 import type { Counter } from "./analytics/config";
 
@@ -37,10 +40,12 @@ export interface BootOptions extends Omit<AppOptions, "account" | "initialView" 
   readonly mcp?: McpClientOptions;
   /** The visit counters; none if left out. */
   readonly analytics?: BootAnalytics;
+  /** Only for tests: the anti-robot check of the open service (Cloudflare Turnstile in the page). */
+  readonly challenge?: ChallengeRenderer;
 }
 
 export async function boot(options: BootOptions): Promise<App> {
-  const { environment, auth, mcp, analytics, ...rest } = options;
+  const { environment, auth, mcp, analytics, challenge, ...rest } = options;
   const appOptions: Omit<AppOptions, "account" | "initialView"> = { ...rest, onDemo: () => analytics?.track("demo_open") };
   if (environment.kind === "demo") {
     // No login in this build, so the address never carries a code.
@@ -51,6 +56,8 @@ export async function boot(options: BootOptions): Promise<App> {
   const { config } = environment;
   const deps = auth();
   let session: AuthSession | null = null;
+  let client: McpClient | null = null;
+  const access = config.publicAccess;
 
   // Only visible while the token exchange is on its way; when the address
   // is not a return from the login, the page replaces it before any paint.
@@ -73,21 +80,88 @@ export async function boot(options: BootOptions): Promise<App> {
     // A return from the login (good or bad) decides the first view; the
     // fragment does not, so `#demo` cannot replace the account.
     initialView: back.status === "signed_in" || failure !== null ? "none" : "address",
-    account: {
-      signIn: () => startLogin(config, deps),
-      signOut: () => {
-        const ending = session;
-        session = null;
-        logout(config, ending, deps);
-      },
-    },
+    account:
+      access === null
+        ? {
+            signIn: () => startLogin(config, deps),
+            signOut: () => {
+              const ending = session;
+              session = null;
+              client = null;
+              logout(config, ending, deps);
+              return null;
+            },
+          }
+        : {
+            signIn: () => startLogin(config, deps),
+            signOut: () => leave((open) => open.endSession(), signOutProblem),
+            publicService: {
+              showAccess: (view) =>
+                showPassScreen({
+                  host: view.host,
+                  access,
+                  deps: { fetch: deps.fetch },
+                  renderChallenge: challenge ?? renderTurnstile,
+                  startLogin: (email) => startLogin(config, deps, email),
+                  onBack: view.back,
+                  onFailure: view.fail,
+                }),
+              deleteMyData: () => leave((open) => open.deleteMyData(), deleteProblem),
+            },
+          },
   });
+
+  /**
+   * The open service: one account tool with the token, then the token goes.
+   * Done, the browser also leaves for the login's sign-out page (if the build
+   * knows one). Failed, the token is forgotten here all the same and the
+   * landing says what happened; the service deletes every session by itself
+   * in less than one hour.
+   */
+  async function leave(run: (open: McpClient) => Promise<void>, problem: (error: unknown) => string): Promise<string | null> {
+    const ending = session;
+    const open = client;
+    session = null;
+    client = null;
+    let text: string | null = null;
+    if (ending === null || open === null || ending.endReason !== null) {
+      text = problem(null);
+    } else {
+      try {
+        await run(open);
+      } catch (error) {
+        text = problem(error);
+      }
+    }
+    logout(text === null ? config : { ...config, logoutUri: null }, ending, deps);
+    return text;
+  }
 
   if (failure !== null) {
     app.showLanding(failure);
   } else if (back.status === "signed_in") {
     session = back.session;
-    void app.load(createMcpClient(config.mcpUrl, back.session, mcp), { demo: false });
+    client = createMcpClient(config.mcpUrl, back.session, { ...mcp, publicService: access !== null });
+    void app.load(client, { demo: false });
   }
   return app;
+}
+
+/** A closed code for a failed account tool: the tool's own code or the transport kind. */
+function failureCode(error: unknown): string {
+  if (error instanceof ToolCallError) return error.code;
+  if (error instanceof ServiceError) return error.kind;
+  return "unknown";
+}
+
+/** Provisional texts (docs/PLAN.md, section 18). `null`: the session had already ended. */
+function signOutProblem(error: unknown): string {
+  if (error === null) return "Tu sesión ya había terminado. En el servicio se borra sola en menos de una hora.";
+  return `No se ha podido cerrar la sesión del todo en el servicio (código: ${failureCode(error)}). Se borrará sola en menos de una hora.`;
+}
+
+function deleteProblem(error: unknown): string {
+  const again = "Entra de nuevo y repite «Borrar mis datos».";
+  if (error === null) return `No se han podido borrar tus datos porque tu sesión ya había terminado. ${again}`;
+  return `No se han podido borrar tus datos (código: ${failureCode(error)}). Tu sesión en esta web se ha cerrado. ${again}`;
 }

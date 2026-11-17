@@ -28,6 +28,23 @@ export interface ServiceConfig {
    * verified, to be what gives the token the audience the service requires.
    */
   readonly sendResourceIndicator: boolean;
+  /**
+   * How people get in. `null` (the default, and every entry without
+   * `access`): by invitation, exactly as before. Otherwise the open service
+   * (docs/PLAN.md, section 18): a status check and an anti-bot pass before
+   * the login.
+   */
+  readonly publicAccess: PublicAccessConfig | null;
+}
+
+/** The open service: no invitation, a cap of people and a pass before the login. */
+export interface PublicAccessConfig {
+  /** `GET` it for `{"estado": ...}`. Next to `/mcp`, on the same origin. */
+  readonly statusUrl: string;
+  /** `POST` the email and the Turnstile result to it for a pass. Next to `/mcp`. */
+  readonly passUrl: string;
+  /** Public site key of the Cloudflare Turnstile widget (not a secret). */
+  readonly turnstileSiteKey: string;
 }
 
 export type ServiceEnvironment = { readonly kind: "demo" } | { readonly kind: "service"; readonly config: ServiceConfig };
@@ -43,7 +60,25 @@ export class EnvironmentError extends Error {
 }
 
 const CLIENT_ID = /^[A-Za-z0-9_-]{1,128}$/;
-const FIELDS = ["mcpUrl", "loginDomain", "webClientId", "redirectUri", "logoutUri", "sendResourceIndicator"];
+/** Turnstile site keys start with `0x` (Cloudflare's dummy test keys too). */
+const SITE_KEY = /^0x[A-Za-z0-9_-]{8,64}$/;
+const FIELDS = ["mcpUrl", "loginDomain", "webClientId", "redirectUri", "logoutUri", "sendResourceIndicator", "access", "turnstileSiteKey"];
+
+/** `access` and `turnstileSiteKey`: invitation by default; `public` needs a site key and `/mcp` at the end of `mcpUrl`. */
+function publicAccessOf(entry: Record<string, unknown>, mcpUrl: string): PublicAccessConfig | null {
+  const access = entry["access"] ?? "invitation";
+  const siteKey = text(entry, "turnstileSiteKey");
+  if (access === "invitation") {
+    if (siteKey !== "") throw new EnvironmentError("turnstileSiteKey", "empty unless access is public");
+    return null;
+  }
+  if (access !== "public") throw new EnvironmentError("access", "invitation or public");
+  if (!SITE_KEY.test(siteKey)) throw new EnvironmentError("turnstileSiteKey", "a Turnstile site key (0x...) when access is public");
+  // The open service answers /estado and /pase next to /mcp, on the same origin.
+  if (!mcpUrl.endsWith("/mcp")) throw new EnvironmentError("mcpUrl", "a URL ending in /mcp when access is public");
+  const base = mcpUrl.slice(0, -"/mcp".length);
+  return Object.freeze({ statusUrl: `${base}/estado`, passUrl: `${base}/pase`, turnstileSiteKey: siteKey });
+}
 
 function text(entry: Record<string, unknown>, field: string): string {
   const value = entry[field] ?? "";
@@ -100,7 +135,13 @@ export function parseEnvironment(raw: unknown): ServiceEnvironment {
   const mcpUrl = text(entry, "mcpUrl");
   const loginDomain = text(entry, "loginDomain");
   const webClientId = text(entry, "webClientId");
-  if (mcpUrl === "" && loginDomain === "" && webClientId === "") return DEMO_ONLY;
+  if (mcpUrl === "" && loginDomain === "" && webClientId === "") {
+    // A demo-only entry may keep `access` written, but never half a public setup.
+    const access = entry["access"] ?? "invitation";
+    if (access !== "invitation" && access !== "public") throw new EnvironmentError("access", "invitation or public");
+    if (text(entry, "turnstileSiteKey") !== "") throw new EnvironmentError("turnstileSiteKey", "empty when the service is not configured");
+    return DEMO_ONLY;
+  }
   if (mcpUrl === "" || loginDomain === "" || webClientId === "") {
     throw new EnvironmentError("mcpUrl, loginDomain and webClientId", "all filled or all empty");
   }
@@ -128,11 +169,20 @@ export function parseEnvironment(raw: unknown): ServiceEnvironment {
     redirectUri: returnUrl(redirectUri, "redirectUri"),
     logoutUri: logoutUri === "" ? null : returnUrl(logoutUri, "logoutUri"),
     sendResourceIndicator: sendResource,
+    publicAccess: publicAccessOf(entry, mcpUrl),
   };
   return Object.freeze({ kind: "service", config: Object.freeze(config) });
 }
 
-/** The origins the page must be allowed to connect to: none in demo. */
+/** True when the build talks to the open service and so shows the Turnstile check. */
+export function usesTurnstile(environment: ServiceEnvironment): boolean {
+  return environment.kind === "service" && environment.config.publicAccess !== null;
+}
+
+/**
+ * The origins the page must be allowed to connect to: none in demo. The open
+ * service's `/estado` and `/pase` share the origin of `/mcp`, so they add none.
+ */
 export function connectOrigins(environment: ServiceEnvironment): string[] {
   if (environment.kind === "demo") return [];
   const origins = [new URL(environment.config.mcpUrl).origin, environment.config.loginOrigin];

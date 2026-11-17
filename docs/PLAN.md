@@ -4,7 +4,7 @@ Este documento explica a quien lea el código qué se construye, qué está
 decidido, qué reglas de privacidad y de datos se cumplen y qué se ha
 comprobado y qué no.
 
-Última actualización: 2026-11-11.
+Última actualización: 2026-11-17.
 
 ## 1. Qué es
 
@@ -34,7 +34,7 @@ las decisiones anotadas aquí.
 | Velocidad máxima | Se enseña en cada ruta (lista, mapa y CSV), nunca en la tarjeta para compartir, porque la tarjeta sale de la web. Desde el 2026-11-10; antes estaba fuera en cualquier parte. |
 | Aspecto | Solo tema oscuro (D-026). Fuentes propias servidas por la web, Barlow Condensed y Manrope (D-025). Movimiento sin librería, con unas duraciones fijas (D-027). Detalle en el apartado 11. |
 | Privacidad | Ver el apartado 4. Son requisitos. |
-| Terceros | Solo tres, cerrados: las teselas de OpenStreetMap, Cloudflare Web Analytics y Google Analytics 4 (este, solo si el visitante acepta las cookies). Los dos contadores están apagados mientras `analytics.config.json` esté vacío y reciben la visita y los eventos `demo_open` y `login`, nada más. Cualquier otro tercero (otra analítica, etiquetas, fuentes, CDN) sigue prohibido: la política de seguridad no lo deja cargar y `tests/csp.test.ts` fija la lista entera de orígenes ajenos. Apartado 17. |
+| Terceros | Solo tres, cerrados: las teselas de OpenStreetMap, Cloudflare Web Analytics y Google Analytics 4 (este, solo si el visitante acepta las cookies). Los dos contadores están apagados mientras `analytics.config.json` esté vacío y reciben la visita y los eventos `demo_open` y `login`, nada más. Cualquier otro tercero (otra analítica, etiquetas, fuentes, CDN) sigue prohibido: la política de seguridad no lo deja cargar y `tests/csp.test.ts` fija la lista entera de orígenes ajenos. Apartado 17. Un build del servicio abierto (`access: "public"`) añade un cuarto, Cloudflare Turnstile, solo en la pantalla previa al login (apartado 18). |
 | Unidades | «km» a secas, con nota al pie: se usan los campos `*_km` del servicio, que el propio servicio marca como conversión sin confirmar. Nunca se convierte la distancia nativa. |
 | Zona horaria | Una sola: la del navegador. El campo `timezone` de cada ruta no se usa. |
 | Pila | Vite y TypeScript estricto, sin framework. Leaflet como única dependencia de ejecución. Gráficos en SVG a mano. Vitest y ESLint. |
@@ -1628,3 +1628,125 @@ antes de `start()`. Habría que elegir entre:
 - El login desde `pages.dev` (no está dado de alta en el servicio).
 - Safari, Firefox, un móvil físico, un lector de pantalla con el aviso.
 - Si el texto del aviso basta legalmente: no es asesoramiento jurídico.
+
+## 18. Servicio abierto (sin invitación)
+
+Escrito el 2026-11-17. El servicio tiene, además del de invitación, un
+despliegue aparte de acceso abierto: sin invitación, con un cupo de
+personas y con un pase anti-robots antes del login. Su contrato está en el
+repo del servicio (`docs/public-web.md`; código en `public_pass.py`,
+`public_identity.py` y `public_web_service.py`). Esta web lo usa solo si el
+entorno lo pide; **sin `access` en `environments.config.json` todo sigue
+exactamente como antes** (por invitación), y así están las entradas del
+repo.
+
+### Configuración
+
+- `access`: `invitation` (por defecto) o `public`. Con `public` hace falta
+  `turnstileSiteKey`, la clave de sitio pública de Cloudflare Turnstile
+  (empieza por `0x`; no es un secreto), y `mcpUrl` tiene que acabar en
+  `/mcp`: `GET /estado` y `POST /pase` están al lado, en el mismo origen.
+  Una clave de sitio sin `access: "public"` rompe el build.
+- Los valores de un despliegue abierto no se suben (regla de `AGENTS.md`).
+  Para probar en local, ver «Trying the open service locally» en
+  `AGENTS.md`.
+
+### El camino de entrada
+
+1. «Entrar» no sale de la página: muestra una pantalla previa
+   (`src/ui/passScreen.ts`) y pide `GET /estado`.
+2. `abierto` enseña el formulario; `lleno` también, con una nota (quien ya
+   entró antes puede seguir entrando); `cerrado` y `pausa` lo dicen y no
+   ofrecen nada que enviar; un fallo de red o una respuesta rara dicen que
+   no se ha podido comprobar. Todos ofrecen «Comprobar otra vez» y
+   «Volver».
+3. El formulario: el texto de consentimiento (**provisional**, marcado así
+   en pantalla y en el código), una casilla para aceptarlo, el correo y el
+   control de Turnstile. «Continuar al login» envía `POST /pase` con
+   `{"email", "turnstile"}` (el correo recortado y en minúsculas, como lo
+   lee el servicio; uno que el servicio rechazaría no se envía).
+4. Con el pase, el login empieza como siempre (PKCE) con el correo en
+   `login_hint`, para que la página del login lo traiga escrito.
+5. Cada respuesta de `/pase` tiene su texto (control no válido o ya usado,
+   demasiados pases desde la conexión, correo rechazado, cerrado, pausa,
+   no disponible). Un resultado de Turnstile vale una sola vez: tras
+   cualquier rechazo el control empieza de nuevo.
+
+El correo vive en el campo y en esa petición; no se guarda en ningún
+sitio. Ni `/estado` ni `/pase` llevan token, cookies ni referente.
+
+### Turnstile
+
+- `src/access/turnstile.ts` pide
+  `https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit`
+  solo al enseñar el formulario (nunca en la portada, la demo ni la página
+  de una cuenta), y lo pinta en un solo contenedor con la acción
+  `web-pass`, la que comprueba el servicio. La página solo lee el
+  resultado, que va directo a `/pase`.
+- En pantallas de menos de 300 px útiles usa el tamaño compacto.
+
+### Dentro de la cuenta
+
+- El cliente de `/mcp` se crea con `publicService`. Las dos herramientas
+  de cuenta del servicio abierto no están en `ALLOWED_TOOLS`: solo salen
+  por `endSession` (`cerrar_sesion`) y `deleteMyData` (`borrar_mis_datos`
+  con `confirmar: true`), y un cliente por invitación las rechaza.
+- **«Salir»** quita primero los datos de la pantalla, después llama a
+  `cerrar_sesion` con el token y, si sale bien, olvida el token y va al
+  `/logout` del login. Si falla, olvida el token igualmente, no sale de la
+  página y dice (con el código) que el servicio borra la sesión solo en
+  menos de una hora.
+- **«Borrar mis datos»**, al lado de «Salir», pide confirmación y después
+  hace lo mismo con `borrar_mis_datos`.
+- Errores por código de herramienta, solo en este modo: `service_paused`
+  da «Estamos haciendo mantenimiento; vuelve más tarde.» (provisional) con
+  «Reintentar»; `session_expired` y `session_limit_reached`, «Volver a
+  entrar» (que abre la pantalla previa); `rate_limited` y
+  `service_unavailable`, «Reintentar». Con `session_expired` el cliente
+  olvida el token, porque el servicio ya ha borrado la sesión. Un build
+  por invitación sigue con el texto general de `tool_error`.
+
+### Política de seguridad de contenido: motivo del cambio
+
+Turnstile es un script de Cloudflare que pinta su control en un marco de
+su origen. Un build con `access: "public"` añade
+`https://challenges.cloudflare.com` a `script-src` y a una directiva nueva,
+`frame-src`, y nada más (están en `csp.config.json`, bajo `turnstile`).
+`connect-src` no cambia: `/estado` y `/pase` comparten el origen de
+`/mcp`, que ya estaba. Un build por invitación no lleva ese origen en
+ninguna directiva (test). `tests/csp.test.ts` fija el texto exacto y la
+lista entera de orígenes ajenos con el modo abierto; `scripts/check-dist.mjs`
+hace la misma cuenta.
+
+### Qué se ha comprobado y dónde
+
+- Tests (Vitest, local en Windows con Node 24), contra dobles: el servidor
+  falso de `tests/fakeServer.ts` con `/estado`, `/pase` y las dos
+  herramientas de cuenta, y un Turnstile falso. Prueban el contrato tal
+  como se lee en el código del servicio, no que el servicio real se porte
+  así. Cada test nuevo se vio fallar: 39 roturas a propósito, una cada vez;
+  las dos que sobrevivieron llevaron a endurecer un test y a quitar código
+  redundante.
+- Navegador (Chromium de la vista previa, build `development` con los
+  valores del despliegue abierto de pruebas puestos en local y sin
+  commitear, `vite preview` en `localhost:5173`; 2026-11-17): `/estado` se
+  lee (`abierto`), aparece el formulario y el control de Turnstile se
+  carga y se pinta sin ninguna infracción de la política; a 320 px usa el
+  tamaño compacto y no hay desplazamiento lateral. El build `production`
+  (por invitación) tiene la misma política que antes, el mismo texto y
+  ningún botón nuevo.
+
+### Qué no se ha comprobado
+
+- **Nada con una cuenta real**: ni un pase pedido de verdad, ni que el
+  login de Cognito acepte `login_hint` y traiga el correo escrito, ni
+  `cerrar_sesion` y `borrar_mis_datos` contra el servicio, ni la forma
+  real de su respuesta (la web no la lee: basta con que no sea un error).
+- Que el control de Turnstile se resuelva con interacción (en la prueba se
+  resolvió solo) y en un iPhone.
+- La barra con «Borrar mis datos» y «Salir» con una cuenta en pantalla: se
+  midió forzando los botones visibles en la portada (caben a 320 px, en
+  dos líneas), no con datos reales.
+- Que Cloudflare Pages con sus cabeceras (`frame-ancestors`,
+  `Cross-Origin-Opener-Policy`) no moleste al control: solo se probó con
+  la etiqueta `<meta>`.

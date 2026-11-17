@@ -23,6 +23,13 @@ const value = (field) => (typeof entry?.[field] === "string" ? entry[field].trim
 if (value("mcpUrl") || value("loginDomain") || value("webClientId")) {
   const origins = [new URL(value("mcpUrl")).origin, new URL(value("loginDomain")).origin];
   expected.directives["connect-src"] = [...expected.directives["connect-src"], ...new Set(origins)];
+  // The open service (access "public", section 18) also shows the Turnstile check.
+  if (entry?.access === "public") {
+    for (const [directive, values] of Object.entries(expected.turnstile)) {
+      const current = expected.directives[directive] ?? [];
+      expected.directives[directive] = [...current, ...values.filter((one) => !current.includes(one))];
+    }
+  }
 }
 // Each visit counter set in analytics.config.json adds the origins listed for
 // it under `analytics` in csp.config.json, and nothing else (section 17).

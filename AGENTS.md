@@ -26,7 +26,13 @@ technical facts.
   of events in `src/analytics/`, never a route, a figure, an identifier,
   anything of the sign-in or the full address, and they start only after
   the page has dealt with the return from the login. They are started from
-  `src/main.ts` only. Any other third party (another analytics or tag
+  `src/main.ts` only. One more, only in a build for the open service
+  (`access: "public"` in `environments.config.json`, `docs/PLAN.md`
+  section 18): Cloudflare Turnstile (`challenges.cloudflare.com`, script
+  and frame), loaded only on the screen before the login and given nothing
+  but its own check; the email goes only to the service's `/pase` and as
+  the login hint. An invitation build does not even allow its origin.
+  Any other third party (another analytics or tag
   service, fonts, a CDN, embeds) stays banned: `tests/csp.test.ts` pins the
   full list of foreign origins. The Content Security Policy lives in
   `csp.config.json`; changing it needs a written reason in `docs/PLAN.md`
@@ -50,6 +56,18 @@ technical facts.
   ESLint import rules that guard `serviceRouteId` and `untrimmedLines`.
 - Runtime dependencies: Leaflet only. Charts are hand-written SVG.
 - User-facing text is Spanish. Code, comments and commit messages are English.
+
+## Trying the open service locally
+
+Put the values of a public deployment in the `development` entry of
+`environments.config.json` as an uncommitted change (`access: "public"`,
+`turnstileSiteKey`, the service values and `http://localhost:5173/` as
+return and sign-out address), then `npm run dev`. To see the security
+policy at work, `npx vite build --mode development` and
+`npx vite preview --mode development --port 5173 --strictPort` (open
+`http://localhost:5173/honda-ride-log/`): the service only answers CORS
+from `http://localhost:5173`. Put the entry back before committing; the
+tests expect it empty.
 
 ## Commands
 

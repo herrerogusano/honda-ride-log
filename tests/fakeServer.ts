@@ -22,6 +22,18 @@ export const TEST_CONFIG: ServiceConfig = Object.freeze({
   redirectUri: "http://localhost:5173/",
   logoutUri: null,
   sendResourceIndicator: true,
+  publicAccess: null,
+});
+
+/** The open service (docs/PLAN.md, section 18), synthetic: `/estado` and `/pase` next to `/mcp`. */
+export const PUBLIC_CONFIG: ServiceConfig = Object.freeze({
+  ...TEST_CONFIG,
+  logoutUri: "http://localhost:5173/",
+  publicAccess: Object.freeze({
+    statusUrl: "https://api.example.test/estado",
+    passUrl: "https://api.example.test/pase",
+    turnstileSiteKey: "0x4AAAAAAASyntheticKey",
+  }),
 });
 
 export interface RecordedRequest {
@@ -57,6 +69,16 @@ export interface FakeServer {
   hold: Promise<void> | null;
   tools: ToolCaller;
   clock: { now: number };
+  /** Open service: what `GET /estado` answers (a word, or a raw answer). */
+  status: string | McpAnswer | "network";
+  /** Open service: what `POST /pase` answers when the body is valid (default: the pass). */
+  passOverride: McpAnswer | "network" | null;
+  /** Open service: the bodies of every valid `POST /pase`. */
+  readonly passes: { email: string; turnstile: string }[];
+  /** Open service: the account tools called, with their arguments. */
+  readonly accountCalls: { name: string; arguments: unknown }[];
+  /** Open service: the error code each account tool answers with, if any. */
+  accountFailure: string | null;
 }
 
 const ALLOWED_MCP_HEADERS = new Set(["authorization", "content-type", "accept"]);
@@ -87,6 +109,11 @@ export function createFakeServer(config: ServiceConfig = TEST_CONFIG): FakeServe
     tools,
     clock: { now: Date.parse("2026-07-01T10:00:00Z") },
     peakConcurrency: () => peak,
+    status: "abierto",
+    passOverride: null,
+    passes: [],
+    accountCalls: [],
+    accountFailure: null,
 
     approve(authorizeUrl) {
       const url = new URL(authorizeUrl);
@@ -162,6 +189,31 @@ export function createFakeServer(config: ServiceConfig = TEST_CONFIG): FakeServe
           inFlight -= 1;
         }
       }
+      const open = config.publicAccess;
+      if (open !== null && url === open.statusUrl) {
+        if (init.method !== "GET" || init.credentials !== "omit") return json(404, { error: "no_encontrado" });
+        if (server.status === "network") throw new TypeError("Failed to fetch");
+        if (typeof server.status === "string") return json(200, { estado: server.status });
+        return new Response(server.status.body ?? "", { status: server.status.status ?? 200, headers: { "content-type": server.status.contentType ?? "application/json" } });
+      }
+      if (open !== null && url === open.passUrl) {
+        if (init.method !== "POST" || init.credentials !== "omit") return json(404, { error: "no_encontrado" });
+        // The pass function accepts exactly this media type and exactly these two fields.
+        if (headers.get("content-type") !== "application/json") return json(400, { error: "peticion_invalida" });
+        const parsed = JSON.parse(body) as Record<string, unknown>;
+        if (Object.keys(parsed).sort().join(",") !== "email,turnstile" || typeof parsed["email"] !== "string" || typeof parsed["turnstile"] !== "string") {
+          return json(400, { error: "peticion_invalida" });
+        }
+        if (server.passOverride === "network") throw new TypeError("Failed to fetch");
+        server.passes.push({ email: parsed["email"], turnstile: parsed["turnstile"] });
+        if (server.passOverride !== null) {
+          return new Response(server.passOverride.body ?? "", {
+            status: server.passOverride.status ?? 200,
+            headers: { "content-type": server.passOverride.contentType ?? "application/json" },
+          });
+        }
+        return json(200, { pase: "emitido", caduca_en_segundos: 300 });
+      }
       throw new TypeError("Failed to fetch");
     },
   };
@@ -182,6 +234,16 @@ export function createFakeServer(config: ServiceConfig = TEST_CONFIG): FakeServe
     const message = JSON.parse(request.body) as { jsonrpc: string; id: number; method: string; params: { name: ToolName; arguments: never } };
     if (message.jsonrpc !== "2.0" || message.method !== "tools/call") {
       return json(200, { jsonrpc: "2.0", id: message.id, error: { code: -32601, message: "Method not found" } });
+    }
+    const account = ["cerrar_sesion", "borrar_mis_datos"];
+    if (config.publicAccess !== null && account.includes(message.params.name)) {
+      server.accountCalls.push({ name: message.params.name, arguments: message.params.arguments });
+      if (server.accountFailure !== null) {
+        return json(200, { jsonrpc: "2.0", id: message.id, result: { content: [{ type: "text", text: `${server.accountFailure}: no` }], isError: true } });
+      }
+      // The service's account tools answer with a text, wrapped as FastMCP does for a str result.
+      const text = "Hecho.";
+      return json(200, { jsonrpc: "2.0", id: message.id, result: { content: [{ type: "text", text }], structuredContent: { result: text }, isError: false } });
     }
     try {
       const result = await tools.callTool(message.params.name, message.params.arguments);

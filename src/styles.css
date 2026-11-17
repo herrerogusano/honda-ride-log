@@ -1319,6 +1319,105 @@ select:focus-visible {
   color: var(--fg-2);
 }
 
+/* ---------- the screen before the login of the open service (src/ui/passScreen.ts) ---------- */
+.pass-screen {
+  display: grid;
+  gap: var(--s4);
+  justify-items: start;
+}
+
+.pass-title {
+  font: var(--w-title) clamp(34px, 5.4vw, 64px) / 1 var(--display);
+  color: var(--fg);
+  text-transform: uppercase;
+}
+
+.pass-body,
+.pass-form {
+  display: grid;
+  gap: var(--s4);
+  width: min(100%, 64ch);
+}
+
+.pass-consent {
+  display: grid;
+  gap: var(--s2);
+  padding: var(--s4);
+  background: var(--surface);
+  border-left: 2px solid var(--red);
+  color: var(--fg-2);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.pass-consent p:first-child {
+  font: 700 var(--fs-eyebrow) / 1.2 var(--text);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--amber);
+}
+
+.pass-check {
+  display: flex;
+  gap: var(--s2);
+  align-items: center;
+  min-height: 44px;
+}
+
+.pass-check input {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  accent-color: var(--red);
+}
+
+.pass-field {
+  display: grid;
+  gap: 6px;
+}
+
+.pass-field label {
+  font: 700 var(--fs-eyebrow) / 1.2 var(--text);
+}
+
+.pass-email {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--control-line);
+  border-radius: 2px;
+  color: var(--fg);
+  font: 600 15px/1.2 var(--text);
+}
+
+/* Cloudflare's widget sets its own size (300 x 65 px) inside. */
+.pass-challenge {
+  min-height: 65px;
+  max-width: 100%;
+}
+
+.pass-message:empty {
+  display: none;
+}
+
+.pass-message,
+.pass-state {
+  max-width: 64ch;
+  color: var(--fg-2);
+  font-size: 14px;
+}
+
+.pass-state {
+  padding: var(--s3) var(--s4);
+  background: var(--surface);
+  border-left: 2px solid var(--amber);
+}
+
+.content > .account-notice {
+  margin-bottom: 0;
+}
+
 /* ---------- loading: the shape of the page, in grey ---------- */
 .bone {
   position: relative;

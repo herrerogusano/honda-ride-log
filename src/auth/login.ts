@@ -98,7 +98,12 @@ export function scopesFor(config: ServiceConfig): string {
   return `openid ${config.mcpUrl}/use`;
 }
 
-export function authorizeUrl(config: ServiceConfig, state: string, challenge: string): string {
+/**
+ * The address of the login page. `loginHint` (open service only, docs/PLAN.md
+ * section 18) is the email the pass was issued for, so the login page shows
+ * it already typed; it is never stored.
+ */
+export function authorizeUrl(config: ServiceConfig, state: string, challenge: string, loginHint: string | null = null): string {
   const url = new URL("/oauth2/authorize", config.loginOrigin);
   const params = url.searchParams;
   params.set("response_type", "code");
@@ -110,11 +115,12 @@ export function authorizeUrl(config: ServiceConfig, state: string, challenge: st
   params.set("code_challenge_method", "S256");
   // Unverified: believed to set the audience of the token (RFC 8707).
   if (config.sendResourceIndicator) params.set("resource", config.mcpUrl);
+  if (loginHint !== null) params.set("login_hint", loginHint);
   return url.href;
 }
 
 /** Sends the browser to the login page. Resolves only if navigation is stubbed. */
-export async function startLogin(config: ServiceConfig | null, deps: AuthDeps): Promise<void> {
+export async function startLogin(config: ServiceConfig | null, deps: AuthDeps, loginHint: string | null = null): Promise<void> {
   if (config === null) throw new AuthError("config_missing");
   const storage = storageOf(deps);
   if (storage === null) throw new AuthError("storage_unavailable");
@@ -126,7 +132,7 @@ export async function startLogin(config: ServiceConfig | null, deps: AuthDeps): 
   } catch {
     throw new AuthError("storage_unavailable");
   }
-  deps.navigate(authorizeUrl(config, state, challenge));
+  deps.navigate(authorizeUrl(config, state, challenge, loginHint));
 }
 
 export type LoginReturn = { readonly status: "none" } | { readonly status: "signed_in"; readonly session: AuthSession };

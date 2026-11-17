@@ -4,7 +4,7 @@ import policy from "./csp.config.json" with { type: "json" };
 import analyticsFile from "./analytics.config.json" with { type: "json" };
 import environments from "./environments.config.json" with { type: "json" };
 import { NO_ANALYTICS, parseAnalytics, type AnalyticsConfig } from "./src/analytics/config";
-import { connectOrigins, parseEnvironment, type ServiceEnvironment } from "./src/service/environment";
+import { connectOrigins, parseEnvironment, usesTurnstile, type ServiceEnvironment } from "./src/service/environment";
 
 /**
  * Content Security Policy of the published page, defined in
@@ -30,6 +30,9 @@ import { connectOrigins, parseEnvironment, type ServiceEnvironment } from "./src
  * policy is exactly the file's (docs/PLAN.md, section 10). Likewise each
  * visit counter set in `analytics.config.json` adds its own origins, listed
  * under `analytics` in `csp.config.json`; with none set, nothing is added.
+ * A build for the open service (`access: "public"`, docs/PLAN.md section
+ * 18) adds the Cloudflare Turnstile origin to `script-src` and `frame-src`,
+ * listed under `turnstile`; an invitation build adds nothing.
  */
 export const CSP_DIRECTIVES: Readonly<Record<string, readonly string[]>> = policy.directives;
 export const REFERRER_POLICY: string = policy.referrer;
@@ -38,6 +41,7 @@ export const HEADER_ONLY_DIRECTIVES: Readonly<Record<string, readonly string[]>>
 export const SECURITY_HEADERS: Readonly<Record<string, string>> = policy.headers;
 type Sources = Readonly<Record<string, readonly string[]>>;
 export const ANALYTICS_SOURCES: Readonly<{ cloudflare: Sources; google: Sources }> = policy.analytics;
+export const TURNSTILE_SOURCES: Sources = policy.turnstile;
 
 function add(directives: Record<string, readonly string[]>, extra: Sources): void {
   for (const [name, values] of Object.entries(extra)) {
@@ -51,6 +55,7 @@ export function directivesFor(environment: ServiceEnvironment, analytics: Analyt
   const directives: Record<string, readonly string[]> = { ...CSP_DIRECTIVES };
   const extra = connectOrigins(environment);
   if (extra.length > 0) directives["connect-src"] = [...(CSP_DIRECTIVES["connect-src"] ?? []), ...extra];
+  if (usesTurnstile(environment)) add(directives, TURNSTILE_SOURCES);
   if (analytics.cloudflareToken !== null) add(directives, ANALYTICS_SOURCES.cloudflare);
   if (analytics.googleMeasurementId !== null) add(directives, ANALYTICS_SOURCES.google);
   return directives;
