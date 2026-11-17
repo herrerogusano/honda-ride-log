@@ -63,8 +63,13 @@ export interface Tracker extends Counter {
   onChange(listener: () => void): void;
 }
 
-/** Parameters the login puts in the address on the way back (src/auth/login.ts). */
-const LOGIN_PARAMS = ["code", "state", "error", "error_description", "error_uri"];
+/**
+ * Parameters of the login in an address: those it puts there on the way back
+ * (src/auth/login.ts), and `login_hint`, the email the open service hands the
+ * login page. This page never puts `login_hint` in its own address, but
+ * anyone can open it with one, and a counter script could read it there.
+ */
+const LOGIN_PARAMS = ["code", "state", "error", "error_description", "error_uri", "login_hint"];
 
 export function hasLoginParams(href: string): boolean {
   try {

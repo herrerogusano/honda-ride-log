@@ -1470,8 +1470,10 @@ la política es exactamente la de antes (test):
   de navegación del navegador (`performance.getEntriesByType("navigation")`),
   que conserva la dirección de llegada y que un script de terceros puede
   leer. Por eso `start()` mira la dirección actual **y** la de llegada, y si
-  cualquiera lleva un parámetro del login (`code`, `state`, `error`...), no
-  carga nada en esa carga de página, ni después al aceptar. Toda sesión con
+  cualquiera lleva un parámetro del login (`code`, `state`, `error`...,
+  y también `login_hint`, que lleva un correo: esta web nunca lo pone en su
+  propia dirección, pero cualquiera puede abrirla con él), no carga nada en
+  esa carga de página, ni después al aceptar. Toda sesión con
   cuenta empieza así, y el token solo vive en esa carga, de modo que
   **ningún contador comparte página con los datos de una cuenta**: solo con
   la portada y la demo.

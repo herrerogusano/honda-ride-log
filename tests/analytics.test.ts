@@ -78,6 +78,21 @@ describe("a page load that arrived from the login", () => {
     expect(scripts()).toEqual([]);
   });
 
+  it("loads no counter when the address carries a login_hint (an email), now or on arrival, whatever the answer to the cookies", () => {
+    writeConsent("granted", Date.now());
+    history.replaceState(null, "", "/?login_hint=rider%40example.test");
+    const here = newTracker(BOTH, { arrival: () => null });
+    here.start();
+    here.grant();
+    expect(scripts()).toEqual([]);
+    history.replaceState(null, "", "/");
+    const arrived = newTracker(BOTH, { arrival: () => "http://localhost:3000/?login_hint=rider%40example.test" });
+    arrived.start();
+    arrived.grant();
+    expect(scripts()).toEqual([]);
+    expect(flags()["dataLayer"]).toBeUndefined();
+  });
+
   it("reads the arrival address from the browser's navigation timing entry", () => {
     vi.spyOn(performance, "getEntriesByType").mockImplementation((type) =>
       type === "navigation" ? [{ name: "http://localhost:3000/?code=synthetic&state=synthetic" } as PerformanceEntry] : [],
