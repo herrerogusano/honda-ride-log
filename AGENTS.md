@@ -25,7 +25,9 @@ technical facts.
   `analytics.config.json` is empty. They get the visit and the closed list
   of events in `src/analytics/`, never a route, a figure, an identifier,
   anything of the sign-in or the full address, and they start only after
-  the page has dealt with the return from the login. They are started from
+  the page has dealt with the return from the login. They never share a
+  page load with the open service's screen before the login, where the
+  email is typed (`seal()`, `docs/PLAN.md` section 18). They are started from
   `src/main.ts` only. One more, only in a build for the open service
   (`access: "public"` in `environments.config.json`, `docs/PLAN.md`
   section 18): Cloudflare Turnstile (`challenges.cloudflare.com`, script

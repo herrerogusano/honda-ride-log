@@ -26,6 +26,13 @@ export interface Counter {
   /** Called once the page has dealt with the return from the login: nothing of the sign-in is left in the address. */
   start(): void;
   track(event: AnalyticsEvent): void;
+  /**
+   * From now on nothing more loads or is sent in this document: the open
+   * service's screen before the login, where the email is typed, is about to
+   * be drawn in it (docs/PLAN.md, section 18). Returns true when a counter
+   * script had already been added to the document, which cannot be undone.
+   */
+  seal(): boolean;
 }
 
 export interface AnalyticsConfig {

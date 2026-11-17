@@ -25,6 +25,19 @@
  *   acceptance older than a year counts as none, and its cookies are deleted.
  * - The address given to Google is the origin and path only: no query, no
  *   fragment. The referrer, the origin of the previous page only.
+ * - **One visit per page load.** The visit is the `page_view` that Google's
+ *   own `config` command sends, with the clean address, and `config` runs
+ *   once per page load. There is no `page_view` event of ours on top of it
+ *   (before, `send_page_view: false` plus an explicit event was the only
+ *   path to a visit; two were seen on acceptance), and accepting again after
+ *   a withdrawal on the same page counts no new visit.
+ * - **`seal()`: no counter shares a document with the open service's screen
+ *   before the login** (docs/PLAN.md, section 18), where the email is typed.
+ *   Once sealed, nothing more loads or is sent in this document, whatever
+ *   the visitor answers in the cookie notice. It says whether a counter
+ *   script was already added: a script in the page cannot be unloaded, so
+ *   then `src/boot.ts` reloads the page into that screen, sealed from the
+ *   start.
  */
 import { CONSENT_KEY, consentExpired, deleteGoogleCookies, readConsent, writeConsent, type ConsentChoice } from "../storage/consent";
 import type { AnalyticsConfig, AnalyticsEvent, Counter } from "./config";
@@ -39,6 +52,7 @@ export interface Tracker extends Counter {
   /** Loads the counters this build has and the visitor allows. Call once the address is clean. */
   start(): void;
   track(event: AnalyticsEvent): void;
+  seal(): boolean;
   /** The visitor's stored answer, or null if they have not answered (or it expired). */
   choice(): ConsentChoice | null;
   /** The visitor accepts Google Analytics: remembered, and loaded if the page has started. */
@@ -106,6 +120,10 @@ export function createTracker(config: AnalyticsConfig, options: TrackerOptions =
   const flags = window as unknown as Record<string, unknown>;
   const listeners: (() => void)[] = [];
   let started = false;
+  /** No counter may load or send in this document any more (`seal()`). */
+  let sealed = false;
+  /** A counter script was added to this document: it cannot be taken out. */
+  let added = false;
   let gtag: Gtag | null = null;
   let choice: ConsentChoice | null = googleId === null ? null : readConsent(now());
   // An old acceptance is no acceptance, and the cookies it left go with it.
@@ -116,15 +134,12 @@ export function createTracker(config: AnalyticsConfig, options: TrackerOptions =
     script.async = true;
     script.src = src;
     for (const [name, value] of Object.entries(attributes)) script.setAttribute(name, value);
+    added = true;
     document.head.append(script);
   }
 
-  function pageView(): void {
-    gtag?.("event", "page_view", { page_location: cleanLocation(location.href), page_title: "Ride Log" });
-  }
-
   function loadGoogle(): void {
-    if (googleId === null || disableFlag === null) return;
+    if (sealed || googleId === null || disableFlag === null) return;
     flags[disableFlag] = false;
     if (gtag === null) {
       const layer = ((flags["dataLayer"] as unknown[] | undefined) ??= []);
@@ -134,8 +149,8 @@ export function createTracker(config: AnalyticsConfig, options: TrackerOptions =
         layer.push(arguments);
       };
       gtag("js", new Date(now()));
+      // `config` sends the visit itself (`send_page_view` is on by default), with these values.
       gtag("config", googleId, {
-        send_page_view: false,
         page_location: cleanLocation(location.href),
         page_referrer: cleanReferrer(document.referrer),
         page_title: "Ride Log",
@@ -144,7 +159,6 @@ export function createTracker(config: AnalyticsConfig, options: TrackerOptions =
       });
       addScript(`${GOOGLE_TAG}?id=${encodeURIComponent(googleId)}`);
     }
-    pageView();
   }
 
   /** Switches Google off and deletes its cookies, without touching the stored answer. */
@@ -179,7 +193,7 @@ export function createTracker(config: AnalyticsConfig, options: TrackerOptions =
     config,
     needsConsent: googleId !== null,
     start() {
-      if (started) return;
+      if (started || sealed) return;
       const arrived = arrival();
       if (hasLoginParams(location.href) || (arrived !== null && hasLoginParams(arrived))) return;
       started = true;
@@ -205,8 +219,14 @@ export function createTracker(config: AnalyticsConfig, options: TrackerOptions =
       changed();
     },
     track(event) {
-      if (!started || choice !== "granted" || gtag === null) return;
+      if (sealed || !started || choice !== "granted" || gtag === null) return;
       gtag("event", event, { page_location: cleanLocation(location.href) });
+    },
+    seal() {
+      sealed = true;
+      // A Google already in the page stops sending too (the page reloads right after).
+      if (gtag !== null && disableFlag !== null) flags[disableFlag] = true;
+      return added;
     },
     onChange(listener) {
       listeners.push(listener);

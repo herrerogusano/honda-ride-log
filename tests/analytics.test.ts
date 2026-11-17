@@ -110,8 +110,8 @@ describe("what Google is handed, exactly", () => {
       [
         "config",
         GA,
+        // `config` sends the visit itself, with these values: no page_view event of ours on top.
         {
-          send_page_view: false,
           page_location: "http://localhost:3000/app/",
           page_referrer: "https://login.example.test/",
           page_title: "Ride Log",
@@ -119,18 +119,74 @@ describe("what Google is handed, exactly", () => {
           allow_ad_personalization_signals: false,
         },
       ],
-      ["event", "page_view", { page_location: "http://localhost:3000/app/", page_title: "Ride Log" }],
       ["event", "demo_open", { page_location: "http://localhost:3000/app/" }],
       ["event", "login", { page_location: "http://localhost:3000/app/" }],
     ]);
   });
+
+  /** The commands that count a visit: Google's `config` (which sends the page view) and any page_view event. */
+  const visits = (): unknown[][] => layer().filter((one) => one[0] === "config" || one[1] === "page_view");
 
   it("counts the visit once when accepting twice", () => {
     const tracker = newTracker(GOOGLE_ONLY, { arrival: () => null });
     tracker.start();
     tracker.grant();
     tracker.grant();
-    expect(layer().filter((one) => one[1] === "page_view")).toHaveLength(1);
+    expect(visits()).toEqual([["config", GA, expect.objectContaining({ page_location: "http://localhost:3000/" })]]);
+  });
+
+  it("counts one visit per page load: no page_view event of ours, and none again after withdrawing and accepting", () => {
+    const tracker = newTracker(GOOGLE_ONLY, { arrival: () => null });
+    tracker.start();
+    tracker.grant();
+    tracker.deny();
+    tracker.grant();
+    answerInAnotherTab("granted");
+    expect(visits()).toHaveLength(1);
+    expect(layer().some((one) => one[1] === "page_view")).toBe(false);
+    expect(layer()[1]?.[2]).not.toHaveProperty("send_page_view");
+  });
+});
+
+describe("sealed for the open service's screen before the login", () => {
+  it("sealed before starting: loads nothing and sends nothing, whatever the visitor answers here or in another tab", () => {
+    writeConsent("granted", Date.now());
+    const tracker = newTracker(BOTH, { arrival: () => null });
+    expect(tracker.seal()).toBe(false);
+    tracker.start();
+    tracker.grant();
+    answerInAnotherTab("granted");
+    tracker.track("demo_open");
+    expect(scripts()).toEqual([]);
+    expect(flags()["dataLayer"]).toBeUndefined();
+  });
+
+  it("sealed after starting with nothing loaded (no answer yet): accepting stores the answer but loads nothing", () => {
+    const tracker = newTracker(GOOGLE_ONLY, { arrival: () => null });
+    tracker.start();
+    expect(tracker.seal()).toBe(false);
+    tracker.grant();
+    expect(tracker.choice()).toBe("granted");
+    expect(readConsent(Date.now())).toBe("granted");
+    expect(scripts()).toEqual([]);
+    expect(flags()["dataLayer"]).toBeUndefined();
+  });
+
+  it("says so when a counter is already in the page, and Google stops sending", () => {
+    const cloudflare = newTracker(CLOUDFLARE_ONLY, { arrival: () => null });
+    cloudflare.start();
+    expect(cloudflare.seal()).toBe(true);
+    document.head.replaceChildren();
+    writeConsent("granted", Date.now());
+    const google = newTracker(GOOGLE_ONLY, { arrival: () => null });
+    google.start();
+    const before = layer().length;
+    expect(google.seal()).toBe(true);
+    expect(flags()[`ga-disable-${GA}`]).toBe(true);
+    google.track("demo_open");
+    google.grant();
+    expect(layer()).toHaveLength(before);
+    expect(flags()[`ga-disable-${GA}`]).toBe(true);
   });
 });
 
@@ -294,10 +350,9 @@ describe("Google Analytics", () => {
     expect(sent.map((one) => one.slice(0, 2))).toEqual([
       ["js", new Date(NOW)],
       ["config", GA],
-      ["event", "page_view"],
       ["event", "demo_open"],
     ]);
-    expect(sent[1]?.[2]).toMatchObject({ send_page_view: false, allow_google_signals: false, allow_ad_personalization_signals: false });
+    expect(sent[1]?.[2]).toMatchObject({ allow_google_signals: false, allow_ad_personalization_signals: false });
     const text = JSON.stringify(sent);
     expect(text).toContain('"page_location":"http://localhost:3000/some/path"');
     expect(text).not.toMatch(/utm_source|#|heavy|login/);
@@ -327,7 +382,10 @@ describe("Google Analytics", () => {
     tracker.grant();
     expect(flags()[`ga-disable-${GA}`]).toBe(false);
     expect(scripts()).toHaveLength(1);
-    expect(layer().at(-1)?.slice(0, 2)).toEqual(["event", "page_view"]);
+    // Sending again, but the visit of this page was already counted.
+    expect(layer()).toHaveLength(before);
+    tracker.track("demo_open");
+    expect(layer().at(-1)?.slice(0, 2)).toEqual(["event", "demo_open"]);
   });
 
   it("gives only the origin of the previous page and of this one", () => {
