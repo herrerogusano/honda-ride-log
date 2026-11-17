@@ -200,6 +200,8 @@ export function createMcpClient(mcpUrl: string, session: AuthSession, options: M
   let active = 0;
   let nextStartMs = -Infinity;
   const waiting: (() => void)[] = [];
+  /** Set when an account tool starts (signing out or deleting): no read starts after it. */
+  let closing = false;
 
   /** Waits for a free slot and takes it. Never throws, so `release` always balances it. */
   async function acquire(): Promise<void> {
@@ -222,7 +224,8 @@ export function createMcpClient(mcpUrl: string, session: AuthSession, options: M
 
   async function send(name: ToolName | AccountTool, args: Record<string, string | boolean>): Promise<unknown> {
     // Checked when the request actually starts: a queued call never uses a
-    // token that ended while it waited.
+    // token that ended while it waited, nor one that is being signed out.
+    if (closing && !(ACCOUNT_TOOLS as readonly string[]).includes(name)) throw new ServiceError("reauth_required", "signed_out");
     const authorization = session.authorization(now());
     if (authorization === null) throw new ServiceError("reauth_required", session.endReason ?? "expired");
     const id = nextId++;
@@ -290,6 +293,8 @@ export function createMcpClient(mcpUrl: string, session: AuthSession, options: M
 
   async function accountTool(name: AccountTool, args: Record<string, boolean>): Promise<void> {
     if (!publicService) throw new ServiceError("not_allowed", "tool");
+    // Leaving: reads still waiting in the queue never go out with the token.
+    closing = true;
     await queued(() => send(name, args));
   }
 

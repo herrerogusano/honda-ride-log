@@ -1734,6 +1734,9 @@ sitio. Ni `/estado` ni `/pase` llevan token, cookies ni referente.
   en un dispositivo compartido, el siguiente «Entrar» podría entrar como
   la persona anterior. Un fallo de `cerrar_sesion` no se enseña: el
   servicio borra la sesión solo en menos de una hora.
+- En cuanto empieza una herramienta de cuenta, las lecturas que esperaban
+  en la cola del cliente se cancelan sin salir (`reauth_required`,
+  `signed_out`); las que ya estaban en vuelo terminan.
 - **«Borrar mis datos»**, al lado de «Salir», pide confirmación y llama a
   `borrar_mis_datos`; después, lo mismo que «Salir», también si falla. Si
   falla (o la sesión ya había terminado), antes de irse deja una marca

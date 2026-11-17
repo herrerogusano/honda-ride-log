@@ -198,6 +198,26 @@ describe("account tools of the /mcp client", () => {
     }
   });
 
+  it("on signing out, reads still waiting in the queue never go out with the token; those in flight finish", async () => {
+    const server = createFakeServer(PUBLIC_CONFIG);
+    const { client } = await signedInClient(server);
+    let release: () => void = () => undefined;
+    server.hold = new Promise<void>((resolve) => (release = resolve));
+    const inFlight = [client.callTool("get_vehicle_status", {}), client.callTool("get_vehicle_details", {})];
+    const queued = client.callTool("get_vehicle_status", {}).then(
+      () => "sent",
+      (error: unknown) => (error instanceof ServiceError ? `${error.kind}/${error.detail}` : "other"),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const leaving = client.endSession();
+    release();
+    await Promise.allSettled(inFlight);
+    await leaving;
+    expect(await queued).toBe("reauth_required/signed_out");
+    const tools = server.requests.filter((one) => one.url === PUBLIC_CONFIG.mcpUrl).map((one) => (JSON.parse(one.body) as { params: { name: string } }).params.name);
+    expect(tools).toEqual(["get_vehicle_status", "get_vehicle_details", "cerrar_sesion"]);
+  });
+
   it("reports the tool's code when it fails", async () => {
     const server = createFakeServer(PUBLIC_CONFIG);
     const { client } = await signedInClient(server);
