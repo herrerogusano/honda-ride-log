@@ -143,8 +143,22 @@ export function createTracker(config: AnalyticsConfig, options: TrackerOptions =
     document.head.append(script);
   }
 
+  /**
+   * True when nothing may load or be sent any more. After `start()`, the
+   * address is read again before loading Google, switching it back on and
+   * every event: a login parameter that appears in it later seals the rest of
+   * this page load, even if it is cleaned afterwards.
+   */
+  function shut(): boolean {
+    if (!sealed && hasLoginParams(location.href)) {
+      sealed = true;
+      if (gtag !== null && disableFlag !== null) flags[disableFlag] = true;
+    }
+    return sealed;
+  }
+
   function loadGoogle(): void {
-    if (sealed || googleId === null || disableFlag === null) return;
+    if (shut() || googleId === null || disableFlag === null) return;
     flags[disableFlag] = false;
     if (gtag === null) {
       const layer = ((flags["dataLayer"] as unknown[] | undefined) ??= []);
@@ -198,6 +212,7 @@ export function createTracker(config: AnalyticsConfig, options: TrackerOptions =
     config,
     needsConsent: googleId !== null,
     start() {
+      // Refused, not sealed: `start()` may be called again once the address is clean.
       if (started || sealed) return;
       const arrived = arrival();
       if (hasLoginParams(location.href) || (arrived !== null && hasLoginParams(arrived))) return;
@@ -224,7 +239,7 @@ export function createTracker(config: AnalyticsConfig, options: TrackerOptions =
       changed();
     },
     track(event) {
-      if (sealed || !started || choice !== "granted" || gtag === null) return;
+      if (shut() || !started || choice !== "granted" || gtag === null) return;
       gtag("event", event, { page_location: cleanLocation(location.href) });
     },
     seal() {

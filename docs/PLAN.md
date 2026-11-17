@@ -1473,7 +1473,11 @@ la política es exactamente la de antes (test):
   cualquiera lleva un parámetro del login (`code`, `state`, `error`...,
   y también `login_hint`, que lleva un correo: esta web nunca lo pone en su
   propia dirección, pero cualquiera puede abrirla con él), no carga nada en
-  esa carga de página, ni después al aceptar. Toda sesión con
+  esa carga de página, ni después al aceptar. Después de `start()` la
+  dirección actual se vuelve a mirar antes de cargar Google, de reactivarlo
+  al aceptar otra vez y de cada envío: si aparece uno de esos parámetros,
+  el resto de la carga queda sellada (Google ya cargado se apaga con su
+  interruptor), aunque luego se limpie la dirección. Toda sesión con
   cuenta empieza así, y el token solo vive en esa carga, de modo que
   **ningún contador comparte página con los datos de una cuenta**: solo con
   la portada y la demo.

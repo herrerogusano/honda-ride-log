@@ -22,6 +22,7 @@ const CLOUDFLARE_ONLY: AnalyticsConfig = { cloudflareToken: TOKEN, googleMeasure
 const GOOGLE_ONLY: AnalyticsConfig = { cloudflareToken: null, googleMeasurementId: GA };
 const NOW = Date.UTC(2026, 10, 11, 12);
 
+const CLOUDFLARE_BEACON_SRC = "https://static.cloudflareinsights.com/beacon.min.js";
 const scripts = (): string[] => [...document.querySelectorAll("script")].map((one) => one.src);
 const flags = (): Record<string, unknown> => window as unknown as Record<string, unknown>;
 const layer = (): unknown[][] => ((flags()["dataLayer"] as IArguments[] | undefined) ?? []).map((one) => [...one]);
@@ -92,6 +93,46 @@ describe("a page load that arrived from the login", () => {
     expect(scripts()).toEqual([]);
     expect(flags()["dataLayer"]).toBeUndefined();
   });
+
+  it.each(["login_hint=rider%40example.test", "code=synthetic", "state=synthetic", "error=access_denied"])(
+    "with %s put in the address after start, accepting loads nothing",
+    (param) => {
+      const tracker = newTracker(BOTH, { arrival: () => null });
+      tracker.start();
+      expect(scripts()).toEqual([CLOUDFLARE_BEACON_SRC]);
+      history.replaceState(null, "", `/?${param}`);
+      tracker.grant();
+      answerInAnotherTab("granted");
+      expect(scripts()).toEqual([CLOUDFLARE_BEACON_SRC]);
+      expect(flags()["dataLayer"]).toBeUndefined();
+    },
+  );
+
+  it.each(["login_hint=rider%40example.test", "code=synthetic", "state=synthetic", "error=access_denied"])(
+    "with %s put in the address after Google loaded, nothing more is sent and accepting again does not switch it back on",
+    (param) => {
+      const tracker = newTracker(GOOGLE_ONLY, { arrival: () => null });
+      tracker.start();
+      tracker.grant();
+      const before = layer().length;
+      history.replaceState(null, "", `/?${param}`);
+      tracker.track("demo_open");
+      expect(layer()).toHaveLength(before);
+      // Google, already in the page, is switched off at once with its own flag.
+      expect(flags()[`ga-disable-${GA}`]).toBe(true);
+      tracker.deny();
+      tracker.grant();
+      expect(flags()[`ga-disable-${GA}`]).toBe(true);
+      tracker.track("demo_open");
+      expect(layer()).toHaveLength(before);
+      // Cleaning the address afterwards does not reopen this page load.
+      history.replaceState(null, "", "/");
+      tracker.grant();
+      tracker.track("demo_open");
+      expect(layer()).toHaveLength(before);
+      expect(flags()[`ga-disable-${GA}`]).toBe(true);
+    },
+  );
 
   it("reads the arrival address from the browser's navigation timing entry", () => {
     vi.spyOn(performance, "getEntriesByType").mockImplementation((type) =>
