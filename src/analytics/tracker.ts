@@ -127,20 +127,39 @@ export function createTracker(config: AnalyticsConfig, options: TrackerOptions =
   let started = false;
   /** No counter may load or send in this document any more (`seal()`). */
   let sealed = false;
-  /** A counter script was added to this document: it cannot be taken out. */
+  /** A counter script was added to this document: it cannot be taken out once it runs. */
   let added = false;
+  /** Cloudflare's beacon, until it has run (it has no switch of its own). */
+  let pendingBeacon: HTMLScriptElement | null = null;
   let gtag: Gtag | null = null;
   let choice: ConsentChoice | null = googleId === null ? null : readConsent(now());
   // An old acceptance is no acceptance, and the cookies it left go with it.
   if (googleId !== null && consentExpired(now())) deleteGoogleCookies(location.hostname);
 
-  function addScript(src: string, attributes: Readonly<Record<string, string>> = {}): void {
+  function addScript(src: string, attributes: Readonly<Record<string, string>> = {}): HTMLScriptElement {
     const script = document.createElement("script");
     script.async = true;
     script.src = src;
     for (const [name, value] of Object.entries(attributes)) script.setAttribute(name, value);
     added = true;
     document.head.append(script);
+    return script;
+  }
+
+  /**
+   * Nothing more loads or is sent in this page load. Google, if loaded, is
+   * switched off with its own flag. Cloudflare's beacon, if it has not run
+   * yet, loses its token and leaves the document; one that already ran
+   * cannot be stopped.
+   */
+  function sealNow(): void {
+    sealed = true;
+    if (gtag !== null && disableFlag !== null) flags[disableFlag] = true;
+    if (pendingBeacon !== null) {
+      pendingBeacon.removeAttribute("data-cf-beacon");
+      pendingBeacon.remove();
+      pendingBeacon = null;
+    }
   }
 
   /**
@@ -150,10 +169,7 @@ export function createTracker(config: AnalyticsConfig, options: TrackerOptions =
    * this page load, even if it is cleaned afterwards.
    */
   function shut(): boolean {
-    if (!sealed && hasLoginParams(location.href)) {
-      sealed = true;
-      if (gtag !== null && disableFlag !== null) flags[disableFlag] = true;
-    }
+    if (!sealed && hasLoginParams(location.href)) sealNow();
     return sealed;
   }
 
@@ -191,6 +207,13 @@ export function createTracker(config: AnalyticsConfig, options: TrackerOptions =
     for (const listener of listeners) listener();
   }
 
+  // A navigation inside the page (Back, a fragment) that brings a login
+  // parameter into the address seals at once. `history.replaceState` fires
+  // no event: such a change is caught at the next load, re-enable or send.
+  for (const type of ["popstate", "hashchange"]) {
+    window.addEventListener(type, () => void shut(), options.signal === undefined ? {} : { signal: options.signal });
+  }
+
   if (googleId !== null) {
     // Another tab answered: follow it, so a withdrawal there stops sending here.
     window.addEventListener("storage", (event) => {
@@ -212,13 +235,23 @@ export function createTracker(config: AnalyticsConfig, options: TrackerOptions =
     config,
     needsConsent: googleId !== null,
     start() {
-      // Refused, not sealed: `start()` may be called again once the address is clean.
       if (started || sealed) return;
+      // A login parameter in the current or the arrival address seals the
+      // whole page load: cleaning the address later does not reopen it. With
+      // no arrival address (no Navigation Timing, or it failed) only the
+      // current one can tell.
       const arrived = arrival();
-      if (hasLoginParams(location.href) || (arrived !== null && hasLoginParams(arrived))) return;
+      if (hasLoginParams(location.href) || (arrived !== null && hasLoginParams(arrived))) {
+        sealNow();
+        return;
+      }
       started = true;
-      if (config.cloudflareToken !== null) {
-        addScript(CLOUDFLARE_BEACON, { "data-cf-beacon": JSON.stringify({ token: config.cloudflareToken, spa: false }) });
+      if (config.cloudflareToken !== null && !shut()) {
+        const beacon = addScript(CLOUDFLARE_BEACON, { "data-cf-beacon": JSON.stringify({ token: config.cloudflareToken, spa: false }) });
+        pendingBeacon = beacon;
+        beacon.addEventListener("load", () => {
+          if (pendingBeacon === beacon) pendingBeacon = null;
+        });
       }
       if (choice === "granted") loadGoogle();
     },
@@ -243,9 +276,8 @@ export function createTracker(config: AnalyticsConfig, options: TrackerOptions =
       gtag("event", event, { page_location: cleanLocation(location.href) });
     },
     seal() {
-      sealed = true;
       // A Google already in the page stops sending too (the page reloads right after).
-      if (gtag !== null && disableFlag !== null) flags[disableFlag] = true;
+      sealNow();
       return added;
     },
     onChange(listener) {

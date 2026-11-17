@@ -1473,11 +1473,25 @@ la política es exactamente la de antes (test):
   cualquiera lleva un parámetro del login (`code`, `state`, `error`...,
   y también `login_hint`, que lleva un correo: esta web nunca lo pone en su
   propia dirección, pero cualquiera puede abrirla con él), no carga nada en
-  esa carga de página, ni después al aceptar. Después de `start()` la
-  dirección actual se vuelve a mirar antes de cargar Google, de reactivarlo
-  al aceptar otra vez y de cada envío: si aparece uno de esos parámetros,
-  el resto de la carga queda sellada (Google ya cargado se apaga con su
-  interruptor), aunque luego se limpie la dirección. Toda sesión con
+  esa carga de página, ni después al aceptar.
+  **Cualquier rechazo sella el resto de la carga** (cambiado el
+  2026-11-17), en `start()` o después: limpiar la dirección y volver a
+  llamar a `start()` ya no carga nada. Antes un `start()` rechazado podía
+  repetirse; sin dirección de llegada (Navigation Timing ausente o con
+  fallo), eso dejaba cargar los contadores en una página que había llevado
+  un parámetro del login. En ese caso solo la dirección actual puede
+  decirlo, y si la lleva se trata como llegada sensible: se pierde alguna
+  visita, no se arriesga el parámetro. Después de `start()` la dirección
+  actual se vuelve a mirar antes de inyectar el script de Cloudflare, de
+  cargar Google, de reactivarlo al aceptar otra vez y de cada envío, y al
+  navegar dentro de la página (`popstate`, `hashchange`).
+  `history.replaceState` no avisa: un cambio así se ve en la siguiente de
+  esas comprobaciones. Al sellar, Google ya cargado se apaga con su
+  interruptor, y el script de Cloudflare que aún no se ha ejecutado pierde
+  su token y sale del documento. **Un script que ya se ha ejecutado no se
+  puede parar** (Cloudflare no tiene interruptor), y no está comprobado
+  que quitar uno pendiente impida que el navegador lo ejecute; hoy el
+  token de Cloudflare está vacío. Toda sesión con
   cuenta empieza así, y el token solo vive en esa carga, de modo que
   **ningún contador comparte página con los datos de una cuenta**: solo con
   la portada y la demo.

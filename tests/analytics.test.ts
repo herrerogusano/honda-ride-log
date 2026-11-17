@@ -95,15 +95,18 @@ describe("a page load that arrived from the login", () => {
   });
 
   it.each(["login_hint=rider%40example.test", "code=synthetic", "state=synthetic", "error=access_denied"])(
-    "with %s put in the address after start, accepting loads nothing",
+    "with %s put in the address after start, accepting loads nothing and Cloudflare's beacon, not run yet, leaves the page without its token",
     (param) => {
       const tracker = newTracker(BOTH, { arrival: () => null });
       tracker.start();
+      const beacon = document.head.querySelector("script");
       expect(scripts()).toEqual([CLOUDFLARE_BEACON_SRC]);
       history.replaceState(null, "", `/?${param}`);
       tracker.grant();
       answerInAnotherTab("granted");
-      expect(scripts()).toEqual([CLOUDFLARE_BEACON_SRC]);
+      expect(scripts()).toEqual([]);
+      expect(beacon?.isConnected).toBe(false);
+      expect(beacon?.hasAttribute("data-cf-beacon")).toBe(false);
       expect(flags()["dataLayer"]).toBeUndefined();
     },
   );
@@ -371,12 +374,61 @@ describe("Cloudflare Web Analytics", () => {
 
   it("does not load while the address carries a return from the login", () => {
     history.replaceState(null, "", "/?code=synthetic&state=synthetic");
-    const tracker = newTracker(CLOUDFLARE_ONLY);
+    const tracker = newTracker(BOTH, { arrival: () => null });
     tracker.start();
     expect(scripts()).toEqual([]);
+    // Changed on 2026-11-17: a refusal seals the whole page load, so cleaning
+    // the address and starting again loads nothing (docs/PLAN.md, section 17).
     history.replaceState(null, "", "/");
     tracker.start();
-    expect(scripts()).toHaveLength(1);
+    tracker.grant();
+    expect(scripts()).toEqual([]);
+    expect(flags()["dataLayer"]).toBeUndefined();
+  });
+
+  it("a refusal for the arrival address alone seals too", () => {
+    const tracker = newTracker(BOTH, { arrival: () => "http://localhost:3000/?login_hint=rider%40example.test" });
+    tracker.start();
+    tracker.start();
+    tracker.grant();
+    expect(scripts()).toEqual([]);
+    expect(flags()["dataLayer"]).toBeUndefined();
+  });
+
+  it("switching Google back on reads the address again, on its own (no event in between)", () => {
+    const tracker = newTracker(GOOGLE_ONLY, { arrival: () => null });
+    tracker.start();
+    tracker.grant();
+    tracker.deny();
+    const before = layer().length;
+    history.replaceState(null, "", "/?login_hint=rider%40example.test");
+    tracker.grant();
+    expect(flags()[`ga-disable-${GA}`]).toBe(true);
+    expect(layer()).toHaveLength(before);
+  });
+
+  it("a navigation in the page that brings a login parameter switches Google off at once", () => {
+    const tracker = newTracker(GOOGLE_ONLY, { arrival: () => null });
+    tracker.start();
+    tracker.grant();
+    expect(flags()[`ga-disable-${GA}`]).toBe(false);
+    history.replaceState(null, "", "/?code=synthetic");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    expect(flags()[`ga-disable-${GA}`]).toBe(true);
+  });
+
+  it("a beacon that already ran stays (it cannot be stopped); one that has not, goes", () => {
+    const ran = newTracker(CLOUDFLARE_ONLY, { arrival: () => null });
+    ran.start();
+    const beacon = document.head.querySelector("script");
+    beacon?.dispatchEvent(new Event("load"));
+    expect(ran.seal()).toBe(true);
+    expect(beacon?.isConnected).toBe(true);
+    document.head.replaceChildren();
+    const pending = newTracker(CLOUDFLARE_ONLY, { arrival: () => null });
+    pending.start();
+    expect(pending.seal()).toBe(true);
+    expect(scripts()).toEqual([]);
   });
 });
 
