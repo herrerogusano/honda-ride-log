@@ -229,6 +229,8 @@ describe("the screen before the login", () => {
     const url = new URL(navigations[0] ?? "");
     expect(url.origin + url.pathname).toBe("https://login.example.test/oauth2/authorize");
     expect(url.searchParams.get("login_hint")).toBe("rider@example.test");
+    // The managed login shows its own texts in Spanish (open service only).
+    expect(url.searchParams.get("lang")).toBe("es");
     // The rest of the authorization request is the usual one.
     expect(url.searchParams.get("scope")).toBe("openid https://api.example.test/mcp/use");
     // Nothing of the email in the browser: not in storage, not in the address.
@@ -555,6 +557,7 @@ describe("the invitation build stays as it was", () => {
     button("Entrar").click();
     await vi.waitFor(() => expect(navigations).toHaveLength(1));
     expect(new URL(navigations[0] ?? "").searchParams.has("login_hint")).toBe(false);
+    expect(new URL(navigations[0] ?? "").searchParams.has("lang")).toBe(false);
     expect(server.requests).toHaveLength(0);
     expect(widgets).toHaveLength(0);
   });

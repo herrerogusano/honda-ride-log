@@ -89,6 +89,12 @@ describe("authorization request", () => {
     });
   });
 
+  it("asks the managed login for Spanish only for the open service; the invitation request has no lang", () => {
+    const open = { ...TEST_CONFIG, logoutUri: "http://localhost:5173/", publicAccess: { statusUrl: "https://api.example.test/estado", passUrl: "https://api.example.test/pase", turnstileSiteKey: "0x4AAAAAAASyntheticKey" } };
+    expect(new URL(authorizeUrl(open, "s".repeat(43), "c".repeat(43))).searchParams.get("lang")).toBe("es");
+    expect(new URL(authorizeUrl(TEST_CONFIG, "s".repeat(43), "c".repeat(43))).searchParams.has("lang")).toBe(false);
+  });
+
   it("leaves out the resource when the configuration says so", () => {
     const url = new URL(authorizeUrl({ ...TEST_CONFIG, sendResourceIndicator: false }, "s".repeat(43), "c".repeat(43)));
     expect(url.searchParams.has("resource")).toBe(false);

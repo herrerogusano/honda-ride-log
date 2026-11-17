@@ -1688,7 +1688,11 @@ repo.
    resultado y el control de Turnstile; queda solo «Abriendo el login…»,
    por si el navegador guarda la página para «Atrás») y el login empieza
    como siempre (PKCE) con el correo en `login_hint`, para que la página
-   del login lo traiga escrito. Si el navegador restaura la página de su
+   del login lo traiga escrito, y con `lang=es`, para que el login
+   gestionado de Cognito muestre sus textos en español (documentación de
+   Cognito, «Managed login localization»; solo vale con *managed login* en
+   el plan Essentials o Plus, y Cognito guarda la elección en su propia
+   cookie `lang`). El login por invitación no lleva `lang`. Si el navegador restaura la página de su
    caché al volver atrás (`pageshow` con `persisted`), la pantalla empieza
    de cero: `/estado`, formulario vacío y control nuevo. Mientras se espera
    la respuesta de `/pase`, enviar otra vez no hace nada.

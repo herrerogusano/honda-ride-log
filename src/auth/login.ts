@@ -121,6 +121,10 @@ export function authorizeUrl(config: ServiceConfig, state: string, challenge: st
   // Unverified: believed to set the audience of the token (RFC 8707).
   if (config.sendResourceIndicator) params.set("resource", config.mcpUrl);
   if (loginHint !== null) params.set("login_hint", loginHint);
+  // Open service only: the managed login's own texts in Spanish (Cognito
+  // "Managed login localization"; it keeps the choice in its own cookie).
+  // The invitation login stays exactly as it was.
+  if (config.publicAccess !== null) params.set("lang", "es");
   return url.href;
 }
 
