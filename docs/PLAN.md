@@ -207,7 +207,7 @@ color, foco visible y zonas de pulsación de 44 px como mínimo.
 | Nunca identificadores de ruta en pantalla ni en exportaciones | El identificador vive detrás de un `RouteRef` opaco y sin campos; solo `serviceRouteId` lo recupera, y ESLint solo deja importar esa función desde `src/service/` (donde va la petición de detalle; `tests/lint-seals.test.ts`). Serializar una ruta no lo incluye. |
 | Recortar 400 m al inicio y al final de cada traza antes de dibujarla | `TRIM_METERS` en `src/domain/privacy.ts` y `trimTrace` en `src/domain/trim.ts`. Se cumple con una regla más fuerte: **no se dibuja nada a menos de 401 m en línea recta del inicio ni del final** (ver «Cómo quedó el recorte»). El radio no es un parámetro: nadie puede pedir un corte más corto. El mapa y el atlas solo guardan en memoria las líneas ya recortadas (`src/ui/traceStore.ts`). El saneador devuelve un `UntrimmedTrace` sellado, sin campos legibles; sus líneas solo salen con `untrimmedLines` y los dos puntos de inicio y final con `sensitivePlaces`, y ESLint solo deja importar esas dos funciones desde ese archivo (`tests/lint-seals.test.ts`). |
 | Ocultar rutas de menos de 300 m | `hideShortRoutes` en `src/domain/privacy.ts`. |
-| Token solo en memoria | Ver «Almacenamiento» en el apartado 2. ESLint prohíbe `localStorage`, `sessionStorage` y `document.cookie` en todo el código, con tres excepciones de un único archivo cada una (la tercera, `src/storage/consent.ts`, en el apartado 17). **`src/storage/maintenance.ts` puede usar `localStorage`** (y solo `localStorage`) para guardar los dos números del mantenimiento que escribe el usuario, con una clave para la cuenta y otra para la demo. **`src/auth/pendingLogin.ts` puede usar `sessionStorage`** (y solo `sessionStorage`) para el login a medio hacer, y solo lo importa `src/auth/login.ts` (apartado 10). `tests/units.test.ts` y `tests/lint-storage.test.ts` comprueban que cada excepción vale para su archivo y para ningún otro, que cada uno sigue teniendo prohibido el almacenamiento del otro y que las listas de prohibiciones no se separan. |
+| Token solo en memoria | Ver «Almacenamiento» en el apartado 2. ESLint prohíbe `localStorage`, `sessionStorage` y `document.cookie` en todo el código, con tres excepciones de un único archivo cada una (la tercera, `src/storage/consent.ts`, en el apartado 17). **`src/storage/maintenance.ts` puede usar `localStorage`** (y solo `localStorage`) para guardar los dos números del mantenimiento que escribe el usuario, con una clave para la cuenta y otra para la demo. **`src/auth/pendingLogin.ts` puede usar `sessionStorage`** (y solo `sessionStorage`) para el login a medio hacer y, en el servicio abierto, una marca fija de borrado no confirmado (apartado 18), y solo lo importa `src/auth/login.ts` (apartado 10). `tests/units.test.ts` y `tests/lint-storage.test.ts` comprueban que cada excepción vale para su archivo y para ningún otro, que cada uno sigue teniendo prohibido el almacenamiento del otro y que las listas de prohibiciones no se separan. |
 | Sin terceros salvo las teselas de OpenStreetMap y dos contadores de visitas (apartado 17): Cloudflare Web Analytics y, solo si el visitante acepta, Google Analytics. A ninguno se le envía una ruta, una cifra, un identificador ni la dirección completa; con `analytics.config.json` vacío no se carga ninguno | Política de seguridad de contenido en `csp.config.json`; los orígenes de cada contador se añaden solo si tiene valor. `scripts/check-dist.mjs` rompe el build si la página que genera Vite no lleva exactamente esa política, o si detecta código en línea o recursos de otro origen; `tests/csp.test.ts` fija su texto. Es una red contra errores propios hecha con expresiones regulares, no un analizador de HTML: no protege contra quien edite `dist/` a mano, y no tiene tests propios. |
 | Los datos viven solo en el navegador y solo durante la sesión | Nada se guarda salvo los dos números de mantenimiento y la respuesta al aviso de cookies (tercera excepción: **`src/storage/consent.ts` puede usar `localStorage`**, y `document.cookie` solo para borrar las de Google Analytics; apartado 17). |
 
@@ -1646,7 +1646,9 @@ repo.
   `turnstileSiteKey`, la clave de sitio pública de Cloudflare Turnstile
   (empieza por `0x`; no es un secreto), y `mcpUrl` tiene que acabar en
   `/mcp`: `GET /estado` y `POST /pase` están al lado, en el mismo origen.
-  Una clave de sitio sin `access: "public"` rompe el build.
+  Una clave de sitio sin `access: "public"` rompe el build. Con `public`
+  también hace falta `logoutUri`: sin dirección de salida, «Salir» no
+  cerraría la sesión propia del login.
 - Los valores de un despliegue abierto no se suben (regla de `AGENTS.md`).
   Para probar en local, ver «Trying the open service locally» en
   `AGENTS.md`.
@@ -1665,8 +1667,14 @@ repo.
    control de Turnstile. «Continuar al login» envía `POST /pase` con
    `{"email", "turnstile"}` (el correo recortado y en minúsculas, como lo
    lee el servicio; uno que el servicio rechazaría no se envía).
-4. Con el pase, el login empieza como siempre (PKCE) con el correo en
-   `login_hint`, para que la página del login lo traiga escrito.
+4. Con el pase, el formulario se borra antes de salir (el correo, el
+   resultado y el control de Turnstile; queda solo «Abriendo el login…»,
+   por si el navegador guarda la página para «Atrás») y el login empieza
+   como siempre (PKCE) con el correo en `login_hint`, para que la página
+   del login lo traiga escrito. Si el navegador restaura la página de su
+   caché al volver atrás (`pageshow` con `persisted`), la pantalla empieza
+   de cero: `/estado`, formulario vacío y control nuevo. Mientras se espera
+   la respuesta de `/pase`, enviar otra vez no hace nada.
 5. Cada respuesta de `/pase` tiene su texto (control no válido o ya usado,
    demasiados pases desde la conexión, correo rechazado, cerrado, pausa,
    no disponible). Un resultado de Turnstile vale una sola vez: tras
@@ -1699,10 +1707,24 @@ sitio. Ni `/estado` ni `/pase` llevan token, cookies ni referente.
   la persona anterior. Un fallo de `cerrar_sesion` no se enseña: el
   servicio borra la sesión solo en menos de una hora.
 - **«Borrar mis datos»**, al lado de «Salir», pide confirmación y llama a
-  `borrar_mis_datos`. Si sale bien, lo mismo que «Salir». Si falla, olvida
-  el token, se queda en la portada para que se lea el fallo (con su
-  código) y ofrece «Terminar de salir», que va al `/logout` del login: que
-  no se borraran los datos no puede pasar en silencio.
+  `borrar_mis_datos`; después, lo mismo que «Salir», también si falla. Si
+  falla (o la sesión ya había terminado), antes de irse deja una marca
+  fija, y al volver del `/logout` la portada dice «No se ha podido
+  confirmar el borrado de tus datos. Tu sesión se ha cerrado. Entra de
+  nuevo y repite «Borrar mis datos».» (provisional), una sola vez: que no
+  se borraran los datos no puede pasar en silencio. El código del fallo no
+  cruza la ida y vuelta.
+- La marca va en `sessionStorage`, dentro de la excepción que ya existía
+  (`src/auth/pendingLogin.ts`, que solo importa `src/auth/login.ts`): una
+  clave aparte con la palabra fija `delete_unconfirmed` y su hora; se
+  borra al leerla y no vale pasados 10 minutos. Ningún dato, código ni
+  correo. Un build por invitación no la escribe ni la lee.
+- Si `sessionStorage` falla al borrar el login pendiente o al guardar la
+  marca, `logout` va igualmente al `/logout` del login (antes un fallo al
+  borrar lo impedía; afectaba también al modo por invitación).
+- Las herramientas de cuenta solo cuentan como hechas si la respuesta dice
+  `isError: false` y trae un elemento de texto no vacío; si no, es
+  `bad_response` (un `result: {}` ya no pasa por un borrado correcto).
 - El script de Turnstile tiene 15 s para llegar; si no, el formulario dice
   que no se ha podido hacer la comprobación.
 - Errores por código de herramienta, solo en este modo: `service_paused`
@@ -1733,7 +1755,10 @@ hace la misma cuenta.
   como se lee en el código del servicio, no que el servicio real se porte
   así. Cada test nuevo se vio fallar: 39 roturas a propósito, una cada vez;
   las dos que sobrevivieron llevaron a endurecer un test y a quitar código
-  redundante.
+  redundante. Tras una revisión independiente, 22 roturas más sobre sus
+  arreglos: sobrevivieron tres, dos se cubrieron con tests y la tercera
+  (quitar el `removeEventListener` de `pageshow`) es equivalente, porque
+  el oyente ya no hace nada con la pantalla cerrada.
 - Navegador (Chromium de la vista previa, build `development` con los
   valores del despliegue abierto de pruebas puestos en local y sin
   commitear, `vite preview` en `localhost:5173`; 2026-11-17): `/estado` se

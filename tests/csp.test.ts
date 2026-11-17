@@ -21,6 +21,7 @@ const PUBLIC_ENTRY = {
   loginDomain: "https://login.example.test",
   webClientId: "synthetic-client-id",
   redirectUri: "https://example.test/",
+  logoutUri: "https://example.test/",
   access: "public",
   turnstileSiteKey: "0x4AAAAAAASyntheticKey",
 };

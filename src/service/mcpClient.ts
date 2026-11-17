@@ -152,8 +152,9 @@ function toolCode(result: Record<string, unknown>): string {
 
 /**
  * Reads a JSON-RPC answer to request `id`; returns the tool's object. The
- * account tools answer with a text, which is not read: for them a result
- * without an error is the whole answer (`requireStructured` false).
+ * account tools answer with a text, which is not read (`requireStructured`
+ * false): for them the answer must say `isError: false` and carry a
+ * non-empty text item, or it is `bad_response`.
  */
 function readEnvelope(payload: unknown, id: number, requireStructured = true): unknown {
   if (typeof payload !== "object" || payload === null || Array.isArray(payload)) throw new ServiceError("bad_response", "envelope");
@@ -169,7 +170,16 @@ function readEnvelope(payload: unknown, id: number, requireStructured = true): u
   const fields = result as Record<string, unknown>;
   // The code is shown; the service's message is not (it may quote input).
   if (fields["isError"] === true) throw new ToolCallError(toolCode(fields), "the service reported an error");
-  if (!requireStructured) return null;
+  if (!requireStructured) {
+    // The text is not read, but it must be there: `result: {}` is not a "done".
+    const content = fields["content"];
+    const first = Array.isArray(content) ? (content[0] as unknown) : undefined;
+    const item = typeof first === "object" && first !== null ? (first as Record<string, unknown>) : null;
+    if (fields["isError"] !== false || item === null || item["type"] !== "text" || typeof item["text"] !== "string" || item["text"] === "") {
+      throw new ServiceError("bad_response", "account_result");
+    }
+    return null;
+  }
   const structured = fields["structuredContent"];
   if (typeof structured !== "object" || structured === null || Array.isArray(structured)) {
     throw new ServiceError("bad_response", "structured_content");

@@ -35,7 +35,7 @@ export interface AccountActions {
    * sign-out page. The open service first ends the session on the service
    * (asynchronously) and then leaves.
    */
-  signOut(): Promise<AccountNotice | null> | null | undefined;
+  signOut(): Promise<void> | null | undefined;
   /** The open service only (docs/PLAN.md, section 18). Without it, the page is the invitation one. */
   readonly publicService?: PublicServiceActions;
 }
@@ -47,15 +47,8 @@ export interface PublicServiceActions {
    * that takes it down.
    */
   showAccess(view: { readonly host: HTMLElement; back(): void; fail(error: unknown): void }): () => void;
-  /** `borrar_mis_datos`, then sign out. Resolves what to tell on the landing if it failed (null if it did not). */
-  deleteMyData(): Promise<AccountNotice | null>;
-}
-
-/** What the landing says after leaving an account went wrong on the service. */
-export interface AccountNotice {
-  readonly text: string;
-  /** Finishes leaving (the login's sign-out page), offered as a button; null if there is none. */
-  readonly finish: (() => void) | null;
+  /** `borrar_mis_datos`, then sign out (the login's sign-out page, whatever the answer). */
+  deleteMyData(): Promise<void>;
 }
 
 export interface AppOptions {
@@ -83,6 +76,8 @@ export interface App {
   load(caller: ToolCaller, options: { readonly demo: boolean }): Promise<void>;
   /** The landing, with a failed sign-in above it if one is given. Abandons any load and drops its data. */
   showLanding(problem?: LoadError): void;
+  /** A fixed line above the landing (for example, a delete that was not confirmed). */
+  showNotice(text: string): void;
   /** Stops listening to the address and abandons any load in progress. The page keeps what it shows. */
   dispose(): void;
 }
@@ -204,16 +199,13 @@ export function startApp(options: AppOptions): App {
   }
 
   /** A line above the landing, after leaving an account: what happened on the service. */
-  function landingNotice(text: string, role: "status" | "alert", finish: (() => void) | null = null): void {
+  function landingNotice(text: string, role: "status" | "alert"): void {
     content.querySelector(".account-notice")?.remove();
-    const button =
-      finish === null ? null : el("button", { class: "button button-primary", attrs: { type: "button" }, on: { click: finish } }, "Terminar de salir");
-    content.prepend(el("div", { class: "notice account-notice", attrs: { role } }, el("p", {}, text), button));
-    button?.focus();
+    content.prepend(el("p", { class: "notice account-notice", attrs: { role } }, text));
   }
 
   /** Leaves the account: the landing first, then the token goes (and, in the open service, the session on the service). */
-  function leaveAccount(run: () => Promise<AccountNotice | null> | null | undefined, pending: string): void {
+  function leaveAccount(run: () => Promise<void> | null | undefined, pending: string): void {
     // The load stops asking and its data leaves the page before anything is sent.
     showLanding();
     const mine = generation;
@@ -221,10 +213,9 @@ export function startApp(options: AppOptions): App {
     content.querySelector("button")?.focus();
     if (outcome === null || outcome === undefined) return;
     landingNotice(pending, "status");
-    void outcome.then((notice) => {
-      if (mine !== generation) return;
-      if (notice === null) content.querySelector(".account-notice")?.remove();
-      else landingNotice(notice.text, "alert", notice.finish);
+    // Normally the page has left for the login's sign-out page by now.
+    void outcome.then(() => {
+      if (mine === generation) content.querySelector(".account-notice")?.remove();
     });
   }
   const signInButton = (label: string, primary: boolean): HTMLElement =>
@@ -663,6 +654,10 @@ export function startApp(options: AppOptions): App {
     startDemo,
     load,
     showLanding,
+    showNotice(text) {
+      showLanding();
+      landingNotice(text, "alert");
+    },
     dispose() {
       generation += 1;
       window.removeEventListener("hashchange", onHashChange);

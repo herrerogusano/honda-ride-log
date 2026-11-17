@@ -65,13 +65,13 @@ describe("parseEnvironment", () => {
   });
 
   it("reads the open service: status and pass next to /mcp, and the public Turnstile site key", () => {
-    const parsed = parseEnvironment({ ...FILLED, access: "public", turnstileSiteKey: "0x4AAAAAAASyntheticKey" });
+    const parsed = parseEnvironment({ ...FILLED, access: "public", logoutUri: "http://localhost:5173/", turnstileSiteKey: "0x4AAAAAAASyntheticKey" });
     expect(parsed.kind === "service" && parsed.config.publicAccess).toEqual({
       statusUrl: "https://api.example.test/estado",
       passUrl: "https://api.example.test/pase",
       turnstileSiteKey: "0x4AAAAAAASyntheticKey",
     });
-    const staged = parseEnvironment({ ...FILLED, mcpUrl: "https://api.example.test/dev/mcp", access: "public", turnstileSiteKey: "0x4AAAAAAASyntheticKey" });
+    const staged = parseEnvironment({ ...FILLED, mcpUrl: "https://api.example.test/dev/mcp", access: "public", logoutUri: "http://localhost:5173/", turnstileSiteKey: "0x4AAAAAAASyntheticKey" });
     expect(staged.kind === "service" && staged.config.publicAccess?.passUrl).toBe("https://api.example.test/dev/pase");
     const invited = parseEnvironment({ ...FILLED, access: "invitation" });
     expect(invited.kind === "service" && invited.config.publicAccess).toBeNull();
@@ -82,9 +82,10 @@ describe("parseEnvironment", () => {
     ["an unknown access in a demo-only entry", { ...FILLED, mcpUrl: "", loginDomain: "", webClientId: "", access: "everyone" }, /access must be invitation or public/],
     ["the open service without a site key", { ...FILLED, access: "public" }, /turnstileSiteKey must be a Turnstile site key/],
     ["an odd site key", { ...FILLED, access: "public", turnstileSiteKey: "secret value" }, /turnstileSiteKey must be a Turnstile site key/],
+    ["the open service without a sign-out address", { ...FILLED, access: "public", turnstileSiteKey: "0x4AAAAAAASyntheticKey" }, /logoutUri must be filled when access is public/],
     ["a site key without the open service", { ...FILLED, turnstileSiteKey: "0x4AAAAAAASyntheticKey" }, /turnstileSiteKey must be empty unless access is public/],
     ["a site key in a demo-only entry", { ...FILLED, mcpUrl: "", loginDomain: "", webClientId: "", turnstileSiteKey: "0x4AAAAAAASyntheticKey" }, /turnstileSiteKey must be empty when the service is not configured/],
-    ["the open service at an address not ending in /mcp", { ...FILLED, mcpUrl: "https://api.example.test/tools", access: "public", turnstileSiteKey: "0x4AAAAAAASyntheticKey" }, /mcpUrl must be a URL ending in \/mcp/],
+    ["the open service at an address not ending in /mcp", { ...FILLED, mcpUrl: "https://api.example.test/tools", access: "public", logoutUri: "http://localhost:5173/", turnstileSiteKey: "0x4AAAAAAASyntheticKey" }, /mcpUrl must be a URL ending in \/mcp/],
   ])("refuses %s", (_label, entry, message) => rejects(entry, message));
 
   it("gives demo only for null or for empty service values", () => {

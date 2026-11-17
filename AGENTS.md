@@ -43,8 +43,9 @@ technical facts.
   use `localStorage` (and only `localStorage`) for the two service-interval
   numbers the user types; `src/auth/pendingLogin.ts` may use
   `sessionStorage` (and only `sessionStorage`) for the PKCE verifier and the
-  `state` while the browser goes to the login page and back, imported only
-  by `src/auth/login.ts`; and `src/storage/consent.ts` may use
+  `state` while the browser goes to the login page and back (and, in the
+  open service only, the fixed word `delete_unconfirmed` across the trip
+  to its sign-out page), imported only by `src/auth/login.ts`; and `src/storage/consent.ts` may use
   `localStorage` for the answer to the cookie notice and `document.cookie`
   only to delete Google Analytics' cookies, imported only by
   `src/analytics/tracker.ts`.

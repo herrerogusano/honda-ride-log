@@ -17,16 +17,16 @@
  * return has been dealt with, so neither ever runs with `?code` in the
  * address; then "signed in" is counted once the code became a session.
  */
-import { completeLogin, logout, startLogin, type AuthDeps, type LoginReturn } from "./auth/login";
+import { completeLogin, logout, startLogin, takeLogoutNotice, type AuthDeps, type LoginReturn } from "./auth/login";
+import type { LeaveNotice } from "./auth/login";
 import type { AuthSession } from "./auth/session";
 import type { ServiceEnvironment } from "./service/environment";
 import { signInError, type LoadError } from "./service/loader";
-import { ToolCallError } from "./service/contract";
-import { createMcpClient, ServiceError, type McpClient, type McpClientOptions } from "./service/mcpClient";
+import { createMcpClient, type McpClient, type McpClientOptions } from "./service/mcpClient";
 import { renderTurnstile, type ChallengeRenderer } from "./access/turnstile";
 import { clear, el } from "./ui/dom";
 import { showPassScreen } from "./ui/passScreen";
-import { startApp, type AccountNotice, type App, type AppOptions } from "./ui/app";
+import { startApp, type App, type AppOptions } from "./ui/app";
 import type { Counter } from "./analytics/config";
 
 /** What `boot` needs of the visit counters (`createTracker` in the page, a fake in tests). */
@@ -106,44 +106,40 @@ export async function boot(options: BootOptions): Promise<App> {
                   onBack: view.back,
                   onFailure: view.fail,
                 }),
-              deleteMyData: () => leave((open) => open.deleteMyData(), deleteProblem),
+              deleteMyData: () => leave((open) => open.deleteMyData(), "delete_unconfirmed"),
             },
           },
   });
 
   /**
    * The open service: one account tool with the token, then the token goes
-   * and the browser leaves for the login's sign-out page, so the login's own
-   * session never outlives a sign-out (on a shared device the next person
-   * would be let in as the previous one). If the tool failed (or the session
-   * had already ended) and `problem` gives a text, the page stays to show it,
-   * with a button that finishes leaving: deleting data that did not get
-   * deleted must not pass in silence. Signing out has no such text: the
+   * and the browser always leaves for the login's sign-out page, so the
+   * login's own session never outlives a sign-out (on a shared device the
+   * next person would be let in as the previous one). A failed delete (or a
+   * session that had already ended) leaves a fixed notice for the page the
+   * sign-out page sends the browser back to: deleting data that did not get
+   * deleted must not pass in silence. A failed sign-out leaves none: the
    * service deletes every session by itself in less than one hour.
    */
-  async function leave(run: (open: McpClient) => Promise<void>, problem: ((error: unknown) => string) | null): Promise<AccountNotice | null> {
+  async function leave(run: (open: McpClient) => Promise<void>, notice: LeaveNotice | null): Promise<void> {
     const ending = session;
     const open = client;
     session = null;
     client = null;
-    let failed: { error: unknown } | null = null;
-    if (ending === null || open === null || ending.endReason !== null) {
-      failed = { error: null };
-    } else {
+    let failed = true;
+    if (ending !== null && open !== null && ending.endReason === null) {
       try {
         await run(open);
-      } catch (error) {
-        failed = { error };
+        failed = false;
+      } catch {
+        failed = true;
       }
     }
-    if (failed === null || problem === null) {
-      logout(config, ending, deps);
-      return null;
-    }
-    // Forget the token now; the login's sign-out page comes with the button.
-    logout({ ...config, logoutUri: null }, ending, deps);
-    return { text: problem(failed.error), finish: config.logoutUri === null ? null : () => logout(config, null, deps) };
+    logout(config, ending, deps, failed ? notice : null);
   }
+
+  // Back from the login's sign-out page after a delete that was not confirmed.
+  const leftNotice = access === null ? null : takeLogoutNotice(deps);
 
   if (failure !== null) {
     app.showLanding(failure);
@@ -151,20 +147,12 @@ export async function boot(options: BootOptions): Promise<App> {
     session = back.session;
     client = createMcpClient(config.mcpUrl, back.session, { ...mcp, publicService: access !== null });
     void app.load(client, { demo: false });
+  } else if (leftNotice === "delete_unconfirmed") {
+    app.showNotice(DELETE_UNCONFIRMED);
   }
   return app;
 }
 
-/** A closed code for a failed account tool: the tool's own code or the transport kind. */
-function failureCode(error: unknown): string {
-  if (error instanceof ToolCallError) return error.code;
-  if (error instanceof ServiceError) return error.kind;
-  return "unknown";
-}
-
-/** Provisional text (docs/PLAN.md, section 18). `null`: the session had already ended. */
-function deleteProblem(error: unknown): string {
-  const again = "Entra de nuevo y repite «Borrar mis datos».";
-  if (error === null) return `No se han podido borrar tus datos porque tu sesión ya había terminado. ${again}`;
-  return `No se han podido borrar tus datos (código: ${failureCode(error)}). Tu sesión en esta web se ha cerrado. ${again}`;
-}
+/** Provisional (docs/PLAN.md, section 18). Fixed: the code of the failure does not cross the sign-out page. */
+export const DELETE_UNCONFIRMED =
+  "No se ha podido confirmar el borrado de tus datos. Tu sesión se ha cerrado. Entra de nuevo y repite «Borrar mis datos».";

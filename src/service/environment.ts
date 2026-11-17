@@ -76,6 +76,8 @@ function publicAccessOf(entry: Record<string, unknown>, mcpUrl: string): PublicA
   if (!SITE_KEY.test(siteKey)) throw new EnvironmentError("turnstileSiteKey", "a Turnstile site key (0x...) when access is public");
   // The open service answers /estado and /pase next to /mcp, on the same origin.
   if (!mcpUrl.endsWith("/mcp")) throw new EnvironmentError("mcpUrl", "a URL ending in /mcp when access is public");
+  // Signing out must end the login's own session too (a shared device): no sign-out page, no build.
+  if (text(entry, "logoutUri") === "") throw new EnvironmentError("logoutUri", "filled when access is public");
   const base = mcpUrl.slice(0, -"/mcp".length);
   return Object.freeze({ statusUrl: `${base}/estado`, passUrl: `${base}/pase`, turnstileSiteKey: siteKey });
 }

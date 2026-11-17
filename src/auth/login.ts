@@ -19,8 +19,11 @@ import type { ServiceConfig } from "../service/environment";
 import {
   browserSessionStorage,
   clearPendingLogin,
+  saveLeaveNotice,
   savePendingLogin,
+  takeLeaveNotice,
   takePendingLogin,
+  type LeaveNotice,
   type PendingLogin,
   type StorageLike,
 } from "./pendingLogin";
@@ -40,6 +43,8 @@ export type AuthErrorKind =
   | "token_exchange"
   /** The token endpoint could not be reached (network, CORS or timeout). */
   | "token_network";
+
+export type { LeaveNotice };
 
 export class AuthError extends Error {
   readonly kind: AuthErrorKind;
@@ -236,14 +241,38 @@ async function exchangeCode(config: ServiceConfig, code: string, verifier: strin
  * Signs out: forgets the token and any half-done login. If the build knows a
  * sign-out URL registered in the client, also ends the session at the login
  * page (otherwise the next "Entrar" may succeed without asking again).
+ * A storage that fails never stops that last step. `notice` (open service
+ * only) is kept for the page the sign-out page sends the browser back to.
  */
-export function logout(config: ServiceConfig | null, session: AuthSession | null, deps: AuthDeps): void {
+export function logout(config: ServiceConfig | null, session: AuthSession | null, deps: AuthDeps, notice: LeaveNotice | null = null): void {
   session?.end("signed_out");
   const storage = storageOf(deps);
-  if (storage !== null) clearPendingLogin(storage);
+  if (storage !== null) {
+    try {
+      clearPendingLogin(storage);
+    } catch {
+      // The pending login expires by itself in 10 minutes; leaving matters more.
+    }
+    try {
+      if (notice !== null) saveLeaveNotice(storage, notice, deps.now());
+    } catch {
+      // Without storage the notice is lost; the sign-out still happens.
+    }
+  }
   if (config === null || config.logoutUri === null) return;
   const url = new URL("/logout", config.loginOrigin);
   url.searchParams.set("client_id", config.webClientId);
   url.searchParams.set("logout_uri", config.logoutUri);
   deps.navigate(url.href);
+}
+
+/** The notice left by `logout` before the trip to the sign-out page, read once. Null if none or storage fails. */
+export function takeLogoutNotice(deps: AuthDeps): LeaveNotice | null {
+  const storage = storageOf(deps);
+  if (storage === null) return null;
+  try {
+    return takeLeaveNotice(storage, deps.now());
+  } catch {
+    return null;
+  }
 }

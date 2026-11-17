@@ -64,6 +64,8 @@ export function showPassScreen(options: PassScreenOptions): () => void {
   const { host, access, deps } = options;
   let disposed = false;
   let widget: ChallengeWidget | null = null;
+  /** Each fresh start (first show, page restored from cache) gets a number; late answers of an older one draw nothing. */
+  let round = 0;
 
   const titleId = uniqueId("pass");
   const body = el("div", { class: "pass-body" });
@@ -85,10 +87,11 @@ export function showPassScreen(options: PassScreenOptions): () => void {
   }
 
   function showStatus(): void {
+    const mine = ++round;
     clear(body);
     body.append(el("p", { class: "loading", attrs: { role: "status" } }, "Comprobando si se puede entrar…"), el("div", { class: "landing-actions" }, backButton));
     void readStatus(access.statusUrl, deps).then((status) => {
-      if (disposed) return;
+      if (disposed || mine !== round) return;
       if (status === "abierto" || status === "lleno") showForm(status === "lleno");
       else showClosed(status);
     });
@@ -101,6 +104,7 @@ export function showPassScreen(options: PassScreenOptions): () => void {
   }
 
   function showForm(full: boolean): void {
+    const mine = round;
     clear(body);
     let result: string | null = null;
     let sending = false;
@@ -137,9 +141,15 @@ export function showPassScreen(options: PassScreenOptions): () => void {
       submit.disabled = true;
       say("Comprobando…");
       const outcome = await requestPass(access.passUrl, address, result, deps);
-      if (disposed) return;
+      if (disposed || mine !== round) return;
       if (outcome === "issued") {
-        say("Abriendo el login…");
+        // Nothing of the form stays in the page the browser may keep for «Atrás».
+        email.value = "";
+        consent.checked = false;
+        result = null;
+        dropWidget();
+        clear(body);
+        body.append(el("p", { class: "loading", attrs: { role: "status" } }, "Abriendo el login…"));
         options.startLogin(address).catch((error: unknown) => {
           if (!disposed) options.onFailure(error);
         });
@@ -190,7 +200,7 @@ export function showPassScreen(options: PassScreenOptions): () => void {
       })
       .then(
         (made) => {
-          if (disposed) made.remove();
+          if (disposed || mine !== round) made.remove();
           else widget = made;
         },
         () => {
@@ -199,9 +209,20 @@ export function showPassScreen(options: PassScreenOptions): () => void {
       );
   }
 
+  // Back from the login with «Atrás», the browser may restore this page from
+  // its cache: start over with a fresh status, form and check.
+  const onPageShow = (event: Event): void => {
+    if ((event as PageTransitionEvent).persisted && !disposed) {
+      dropWidget();
+      showStatus();
+    }
+  };
+  window.addEventListener("pageshow", onPageShow);
+
   showStatus();
   return () => {
     disposed = true;
+    window.removeEventListener("pageshow", onPageShow);
     dropWidget();
   };
 }

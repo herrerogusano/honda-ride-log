@@ -181,6 +181,23 @@ describe("account tools of the /mcp client", () => {
     expect(sent.every((one) => /^Bearer eyJaccess\./.test(one.headers.get("authorization") ?? ""))).toBe(true);
   });
 
+  it.each([
+    ["an empty result", {}],
+    ["no isError", { content: [{ type: "text", text: "Hecho." }] }],
+    ["no text", { content: [], isError: false }],
+    ["an empty text", { content: [{ type: "text", text: "" }], isError: false }],
+    ["another item type", { content: [{ type: "resource", text: "Hecho." }], isError: false }],
+  ])("does not take %s as done", async (_label, result) => {
+    const server = createFakeServer(PUBLIC_CONFIG);
+    const { client } = await signedInClient(server);
+    server.mcpOverride = (request) => ({ body: JSON.stringify({ jsonrpc: "2.0", id: (JSON.parse(request.body) as { id: number }).id, result }) });
+    for (const call of [() => client.endSession(), () => client.deleteMyData()]) {
+      const error = await call().then(() => null, (reason: unknown) => reason);
+      expect(error).toBeInstanceOf(ServiceError);
+      expect(error).toMatchObject({ kind: "bad_response", detail: "account_result" });
+    }
+  });
+
   it("reports the tool's code when it fails", async () => {
     const server = createFakeServer(PUBLIC_CONFIG);
     const { client } = await signedInClient(server);

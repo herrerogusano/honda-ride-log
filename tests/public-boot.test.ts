@@ -11,7 +11,7 @@ import type { AuthDeps } from "../src/auth/login";
 import type { StorageLike } from "../src/auth/pendingLogin";
 import type { ChallengeCallbacks, ChallengeRenderer } from "../src/access/turnstile";
 import { renderTurnstile, SCRIPT_TIMEOUT_MS, TURNSTILE_ACTION, TURNSTILE_SCRIPT } from "../src/access/turnstile";
-import { boot } from "../src/boot";
+import { boot, DELETE_UNCONFIRMED } from "../src/boot";
 import type { ServiceConfig, ServiceEnvironment } from "../src/service/environment";
 import type { App } from "../src/ui/app";
 import { createMapView } from "../src/ui/mapView";
@@ -257,6 +257,87 @@ describe("the screen before the login", () => {
     expect(passRequests()).toBe(1);
   });
 
+  it("sends one pass however many times the form is submitted while it waits", async () => {
+    await openForm();
+    fill();
+    let release: () => void = () => undefined;
+    server.passOverride = null;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const original = server.fetch;
+    Object.assign(server, {
+      fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input).endsWith("/pase")) await held;
+        return original(input, init);
+      },
+    });
+    submit();
+    submit();
+    submit();
+    release();
+    await vi.waitFor(() => expect(navigations).toHaveLength(1));
+    expect(passRequests()).toBe(1);
+  });
+
+  it("with the pass issued, wipes the email, the result and the check before leaving", async () => {
+    await openForm();
+    fill("rider@example.test");
+    const field = emailField();
+    submit();
+    await vi.waitFor(() => expect(navigations).toHaveLength(1));
+    expect(field.value).toBe("");
+    expect(form()).toBeNull();
+    expect(root.querySelector('input[type="email"]')).toBeNull();
+    expect(widgets[0]?.removed).toBe(true);
+    expect(text()).toContain("Abriendo el login…");
+    expect(new XMLSerializer().serializeToString(root)).not.toContain("rider@");
+  });
+
+  it("restored from the browser's cache («Atrás» from the login), starts over: a fresh status, form and check", async () => {
+    await openForm();
+    fill();
+    submit();
+    await vi.waitFor(() => expect(navigations).toHaveLength(1));
+    const statusReads = (): number => server.requests.filter((one) => one.url === CONFIG.publicAccess?.statusUrl).length;
+    expect(statusReads()).toBe(1);
+    // A normal page show does nothing.
+    window.dispatchEvent(Object.assign(new Event("pageshow"), { persisted: false }));
+    expect(form()).toBeNull();
+    window.dispatchEvent(Object.assign(new Event("pageshow"), { persisted: true }));
+    await vi.waitFor(() => expect(form()).not.toBeNull());
+    expect(statusReads()).toBe(2);
+    await vi.waitFor(() => expect(widgets).toHaveLength(2));
+    expect(emailField().value).toBe("");
+    expect(consentBox().checked).toBe(false);
+    // The old result is gone: nothing is sent without a new check.
+    consentBox().checked = true;
+    emailField().value = "rider@example.test";
+    submit();
+    expect(text()).toContain("Espera a que termine la comprobación");
+    expect(passRequests()).toBe(1);
+  });
+
+  it("a status answer from before a restore from cache draws nothing: one form, one check", async () => {
+    await start(PUBLIC);
+    let release: () => void = () => undefined;
+    holdStatus = new Promise<void>((resolve) => (release = resolve));
+    button("Entrar").click();
+    window.dispatchEvent(Object.assign(new Event("pageshow"), { persisted: true }));
+    release();
+    await vi.waitFor(() => expect(form()).not.toBeNull());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(root.querySelectorAll("form")).toHaveLength(1);
+    expect(widgets).toHaveLength(1);
+  });
+
+  it("stops listening for page shows once the screen is gone", async () => {
+    await openForm();
+    button("Volver").click();
+    window.dispatchEvent(Object.assign(new Event("pageshow"), { persisted: true }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(form()).toBeNull();
+    expect(server.requests.filter((one) => one.url === CONFIG.publicAccess?.statusUrl)).toHaveLength(1);
+  });
+
   it("says so when the check cannot load or fails, and sends nothing", async () => {
     challengeFails = true;
     await start(PUBLIC);
@@ -346,22 +427,38 @@ describe("leaving the account", () => {
     expect(new URL(navigations[0] ?? "").pathname).toBe("/logout");
   });
 
-  it("if borrar_mis_datos fails, says so with its code, forgets the token and offers to finish leaving", async () => {
+  it("if borrar_mis_datos fails, still goes to the login's sign-out page, and back on the page says the delete was not confirmed, once", async () => {
     await signedIn();
     await vi.waitFor(() => expect(visibleButtons()).toContain("Borrar mis datos"));
     server.accountFailure = "delete_failed";
     button("Borrar mis datos").click();
     [...root.querySelectorAll<HTMLButtonElement>(".delete-confirm button")].find((one) => one.textContent === "Borrar mis datos")?.click();
-    await vi.waitFor(() => expect(text()).toContain("No se han podido borrar tus datos (código: delete_failed)."));
-    // It does not leave by itself, so the failure is read; the button finishes at the login's sign-out page.
-    expect(navigations).toEqual([]);
-    expect(document.activeElement?.textContent).toBe("Terminar de salir");
-    button("Terminar de salir").click();
-    expect(navigations).toHaveLength(1);
+    // The login's own session ends too, whatever the tool said.
+    await vi.waitFor(() => expect(navigations).toHaveLength(1));
     expect(new URL(navigations[0] ?? "").pathname).toBe("/logout");
-    // The token went: «Salir» is gone and nothing more is sent.
-    expect(visibleButtons()).not.toContain("Salir");
-    expect(server.accountCalls).toHaveLength(1);
+    expect(server.accountCalls).toEqual([{ name: "borrar_mis_datos", arguments: { confirmar: true } }]);
+    // Back from the sign-out page: a new page load.
+    mounted?.dispose();
+    await start(PUBLIC);
+    expect(text()).toContain(DELETE_UNCONFIRMED);
+    expect(root.querySelector('[role="alert"]')?.textContent).toBe(DELETE_UNCONFIRMED);
+    expect(visibleButtons()).toContain("Entrar");
+    // Said once: a reload does not repeat it.
+    mounted?.dispose();
+    await start(PUBLIC);
+    expect(text()).not.toContain(DELETE_UNCONFIRMED);
+  });
+
+  it("a delete that succeeds leaves no notice behind", async () => {
+    await signedIn();
+    await vi.waitFor(() => expect(visibleButtons()).toContain("Borrar mis datos"));
+    button("Borrar mis datos").click();
+    [...root.querySelectorAll<HTMLButtonElement>(".delete-confirm button")].find((one) => one.textContent === "Borrar mis datos")?.click();
+    await vi.waitFor(() => expect(navigations).toHaveLength(1));
+    mounted?.dispose();
+    await start(PUBLIC);
+    expect(text()).not.toContain(DELETE_UNCONFIRMED);
+    expect(storageForTab.items.size).toBe(0);
   });
 
   it("a paused service mid-session shows the maintenance text with «Reintentar»", async () => {
@@ -387,6 +484,13 @@ describe("leaving the account", () => {
 });
 
 describe("the invitation build stays as it was", () => {
+  it("does not read or show the open service's notice", async () => {
+    storageForTab.setItem("ride-log.leave-notice", JSON.stringify({ notice: "delete_unconfirmed", createdAt: server.clock.now }));
+    await start(INVITATION);
+    expect(text()).not.toContain(DELETE_UNCONFIRMED);
+    expect(storageForTab.items.size).toBe(1);
+  });
+
   it("«Entrar» goes straight to the login: no /estado, no check, no login_hint, no «Borrar mis datos»", async () => {
     await start(INVITATION);
     expect(text()).toContain("cada persona invitada");
