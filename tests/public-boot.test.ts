@@ -517,12 +517,21 @@ describe("the real Turnstile loader", () => {
       expect(document.head.querySelectorAll("script")).toHaveLength(1);
       vi.advanceTimersByTime(SCRIPT_TIMEOUT_MS);
       expect(await pending).toBe("turnstile_unavailable");
-      expect(document.head.querySelectorAll("script")).toHaveLength(0);
-      const retry = renderTurnstile(document.createElement("div"), "0x4AAAAAAASyntheticKey", callbacks).catch(() => undefined);
-      expect(document.head.querySelectorAll("script")).toHaveLength(1);
-      // Let the retry time out too, so the next test starts with nothing cached.
+      // The late request is not repeated: the retry waits on the same element.
+      const first = document.head.querySelector("script");
+      const retry = renderTurnstile(document.createElement("div"), "0x4AAAAAAASyntheticKey", callbacks).then(
+        () => "rendered",
+        (error: unknown) => (error as Error).message,
+      );
+      expect([...document.head.querySelectorAll("script")]).toEqual([first]);
       vi.advanceTimersByTime(SCRIPT_TIMEOUT_MS);
-      await retry;
+      expect(await retry).toBe("turnstile_unavailable");
+      // The script arrives late after all: the next try uses it, without a second request.
+      Object.assign(globalThis, { turnstile: { render: () => "widget-late", reset: () => undefined, remove: () => undefined } });
+      first?.dispatchEvent(new Event("load"));
+      expect(await renderTurnstile(document.createElement("div"), "0x4AAAAAAASyntheticKey", callbacks).then(() => "rendered")).toBe("rendered");
+      expect(document.head.querySelectorAll("script")).toHaveLength(1);
+      delete (globalThis as { turnstile?: unknown }).turnstile;
     } finally {
       vi.useRealTimers();
     }

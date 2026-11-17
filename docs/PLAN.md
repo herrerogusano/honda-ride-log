@@ -1726,7 +1726,10 @@ sitio. Ni `/estado` ni `/pase` llevan token, cookies ni referente.
   `isError: false` y trae un elemento de texto no vacío; si no, es
   `bad_response` (un `result: {}` ya no pasa por un borrado correcto).
 - El script de Turnstile tiene 15 s para llegar; si no, el formulario dice
-  que no se ha podido hacer la comprobación.
+  que no se ha podido hacer la comprobación. El elemento `<script>` se
+  queda (quitarlo no cancela la petición): un reintento espera sobre el
+  mismo, y si el script llega tarde se usa sin pedirlo otra vez. Solo uno
+  que falla se sustituye.
 - Errores por código de herramienta, solo en este modo: `service_paused`
   da «Estamos haciendo mantenimiento; vuelve más tarde.» (provisional) con
   «Reintentar»; `session_expired` y `session_limit_reached`, «Volver a

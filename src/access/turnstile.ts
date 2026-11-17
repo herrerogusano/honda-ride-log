@@ -49,29 +49,53 @@ function turnstileApi(): TurnstileApi | null {
   return typeof api === "object" && api !== null && typeof (api as TurnstileApi).render === "function" ? (api as TurnstileApi) : null;
 }
 
-/** Loads the script once per page. A failed load can be tried again. */
+/**
+ * The one script element. It stays after a deadline passes: removing it
+ * would not cancel the request, and a second element could run the script
+ * twice. A retry waits on the same element; only a failed one is replaced.
+ */
+let element: HTMLScriptElement | null = null;
+
+/** Loads the script once per page. A failed or late load can be tried again. */
 function loadTurnstile(): Promise<TurnstileApi> {
+  // A script that arrived after an earlier deadline is already there.
+  const ready = turnstileApi();
+  if (ready !== null) return Promise.resolve(ready);
   loading ??= new Promise<TurnstileApi>((resolve, reject) => {
-    const script = document.createElement("script");
-    script.src = TURNSTILE_SCRIPT;
-    script.async = true;
-    // A stalled request must not leave the form waiting for ever.
-    const deadline = setTimeout(() => {
-      script.remove();
-      reject(new Error("turnstile_unavailable"));
-    }, SCRIPT_TIMEOUT_MS);
-    script.addEventListener("load", () => {
+    if (element === null || !element.isConnected) {
+      const created = document.createElement("script");
+      created.src = TURNSTILE_SCRIPT;
+      created.async = true;
+      created.addEventListener("error", () => {
+        created.remove();
+        if (element === created) element = null;
+      });
+      element = created;
+      document.head.append(created);
+    }
+    const script = element;
+    const settle = (): void => {
       clearTimeout(deadline);
+      script.removeEventListener("load", onLoad);
+      script.removeEventListener("error", onError);
+    };
+    const onLoad = (): void => {
+      settle();
       const api = turnstileApi();
       if (api === null) reject(new Error("turnstile_missing"));
       else resolve(api);
-    });
-    script.addEventListener("error", () => {
-      clearTimeout(deadline);
-      script.remove();
+    };
+    const onError = (): void => {
+      settle();
       reject(new Error("turnstile_unavailable"));
-    });
-    document.head.append(script);
+    };
+    // A stalled request must not leave the form waiting for ever.
+    const deadline = setTimeout(() => {
+      settle();
+      reject(new Error("turnstile_unavailable"));
+    }, SCRIPT_TIMEOUT_MS);
+    script.addEventListener("load", onLoad);
+    script.addEventListener("error", onError);
   }).catch((error: unknown) => {
     loading = null;
     throw error;
