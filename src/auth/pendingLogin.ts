@@ -1,8 +1,9 @@
 /**
  * The one file allowed to use `sessionStorage` (docs/PLAN.md, section 10;
  * ESLint enforces it). It keeps the PKCE verifier and the `state` of a
- * login while the browser goes to the login page and back, and nothing else:
- * never a token. The entry is removed when it is read, whatever it holds.
+ * login while the browser goes to the login page and back, and (open service
+ * only) one fixed word across the trip to its sign-out page; nothing else,
+ * never a token. Each entry is removed when it is read, whatever it holds.
  */
 import { VERIFIER_PATTERN } from "./pkce";
 
@@ -62,4 +63,36 @@ export function takePendingLogin(storage: StorageLike, nowMs: number): PendingLo
 /** Removes any pending login, for example when the user signs out. */
 export function clearPendingLogin(storage: StorageLike): void {
   storage.removeItem(KEY);
+}
+
+/**
+ * The open service (docs/PLAN.md, section 18): one fixed word that crosses
+ * the trip to the login's sign-out page and back, so the page can say that
+ * deleting the data was not confirmed. No data, no code, no time but its own.
+ */
+export type LeaveNotice = "delete_unconfirmed";
+
+const NOTICE_KEY = "ride-log.leave-notice";
+
+export function saveLeaveNotice(storage: StorageLike, notice: LeaveNotice, nowMs: number): void {
+  storage.setItem(NOTICE_KEY, JSON.stringify({ notice, createdAt: nowMs }));
+}
+
+/** Reads and removes the notice. Null if absent, older than 10 minutes or malformed. */
+export function takeLeaveNotice(storage: StorageLike, nowMs: number): LeaveNotice | null {
+  let text: string | null;
+  try {
+    text = storage.getItem(NOTICE_KEY);
+  } finally {
+    storage.removeItem(NOTICE_KEY);
+  }
+  if (text === null) return null;
+  try {
+    const { notice, createdAt } = JSON.parse(text) as Record<string, unknown>;
+    if (notice !== "delete_unconfirmed") return null;
+    if (typeof createdAt !== "number" || !(nowMs - createdAt >= 0 && nowMs - createdAt <= PENDING_LOGIN_TTL_MS)) return null;
+    return notice;
+  } catch {
+    return null;
+  }
 }

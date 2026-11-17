@@ -46,6 +46,8 @@ export interface MapView {
 export interface MapViewOptions {
   /** Offered when a trace fails because the session is over; null in the demo or without a service. */
   readonly signIn: (() => void) | null;
+  /** The open service (docs/PLAN.md, section 18): its tool codes get their own texts and actions. */
+  readonly publicService?: boolean | undefined;
   /** Told about every route the view opens, also with its own «anterior / siguiente» buttons. */
   readonly onOpen?: ((route: Route) => void) | undefined;
   /**
@@ -163,7 +165,7 @@ export function createMapView(
   }
 
   function fail(route: Route, error: unknown): void {
-    const text = errorText(error instanceof LoadError ? error : new LoadError("detail", "unknown", null));
+    const text = errorText(error instanceof LoadError ? error : new LoadError("detail", "unknown", null), options.publicService === true);
     stopMotion();
     surface?.clear();
     canvas.hidden = true;

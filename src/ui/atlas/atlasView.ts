@@ -69,6 +69,8 @@ export interface AtlasOptions {
   readonly traces: TraceStore;
   /** Offered when a read fails because the session is over; null in the demo. */
   readonly signIn: (() => void) | null;
+  /** The open service (docs/PLAN.md, section 18): its tool codes get their own texts and actions. */
+  readonly publicService?: boolean | undefined;
   /** Opens a route in the map of «Rutas» and brings it into view. */
   readonly showOnMap: (route: Route) => void;
   /** The canvas's 2D context; tests pass a recording one. Null means the browser cannot draw it. */
@@ -660,7 +662,7 @@ export function createAtlasView(data: RiderData, initialPeriod: Period, options:
   function fail(error: unknown, mine: number): void {
     if (mine !== series) return;
     phase = layers.length > 0 ? "built" : "error";
-    const text = errorText(error instanceof LoadError ? error : new LoadError("detail", "unknown", null));
+    const text = errorText(error instanceof LoadError ? error : new LoadError("detail", "unknown", null), options.publicService === true);
     let action: HTMLElement | null = null;
     if (text.action === "retry") {
       action = el("button", { class: "button", attrs: { type: "button" }, on: { click: () => void build() } }, "Reintentar");

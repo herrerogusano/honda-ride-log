@@ -19,8 +19,11 @@ import type { ServiceConfig } from "../service/environment";
 import {
   browserSessionStorage,
   clearPendingLogin,
+  saveLeaveNotice,
   savePendingLogin,
+  takeLeaveNotice,
   takePendingLogin,
+  type LeaveNotice,
   type PendingLogin,
   type StorageLike,
 } from "./pendingLogin";
@@ -40,6 +43,8 @@ export type AuthErrorKind =
   | "token_exchange"
   /** The token endpoint could not be reached (network, CORS or timeout). */
   | "token_network";
+
+export type { LeaveNotice };
 
 export class AuthError extends Error {
   readonly kind: AuthErrorKind;
@@ -98,7 +103,12 @@ export function scopesFor(config: ServiceConfig): string {
   return `openid ${config.mcpUrl}/use`;
 }
 
-export function authorizeUrl(config: ServiceConfig, state: string, challenge: string): string {
+/**
+ * The address of the login page. `loginHint` (open service only, docs/PLAN.md
+ * section 18) is the email the pass was issued for, so the login page shows
+ * it already typed; it is never stored.
+ */
+export function authorizeUrl(config: ServiceConfig, state: string, challenge: string, loginHint: string | null = null): string {
   const url = new URL("/oauth2/authorize", config.loginOrigin);
   const params = url.searchParams;
   params.set("response_type", "code");
@@ -110,11 +120,16 @@ export function authorizeUrl(config: ServiceConfig, state: string, challenge: st
   params.set("code_challenge_method", "S256");
   // Unverified: believed to set the audience of the token (RFC 8707).
   if (config.sendResourceIndicator) params.set("resource", config.mcpUrl);
+  if (loginHint !== null) params.set("login_hint", loginHint);
+  // Open service only: the managed login's own texts in Spanish (Cognito
+  // "Managed login localization"; it keeps the choice in its own cookie).
+  // The invitation login stays exactly as it was.
+  if (config.publicAccess !== null) params.set("lang", "es");
   return url.href;
 }
 
 /** Sends the browser to the login page. Resolves only if navigation is stubbed. */
-export async function startLogin(config: ServiceConfig | null, deps: AuthDeps): Promise<void> {
+export async function startLogin(config: ServiceConfig | null, deps: AuthDeps, loginHint: string | null = null): Promise<void> {
   if (config === null) throw new AuthError("config_missing");
   const storage = storageOf(deps);
   if (storage === null) throw new AuthError("storage_unavailable");
@@ -126,7 +141,7 @@ export async function startLogin(config: ServiceConfig | null, deps: AuthDeps): 
   } catch {
     throw new AuthError("storage_unavailable");
   }
-  deps.navigate(authorizeUrl(config, state, challenge));
+  deps.navigate(authorizeUrl(config, state, challenge, loginHint));
 }
 
 export type LoginReturn = { readonly status: "none" } | { readonly status: "signed_in"; readonly session: AuthSession };
@@ -230,14 +245,38 @@ async function exchangeCode(config: ServiceConfig, code: string, verifier: strin
  * Signs out: forgets the token and any half-done login. If the build knows a
  * sign-out URL registered in the client, also ends the session at the login
  * page (otherwise the next "Entrar" may succeed without asking again).
+ * A storage that fails never stops that last step. `notice` (open service
+ * only) is kept for the page the sign-out page sends the browser back to.
  */
-export function logout(config: ServiceConfig | null, session: AuthSession | null, deps: AuthDeps): void {
+export function logout(config: ServiceConfig | null, session: AuthSession | null, deps: AuthDeps, notice: LeaveNotice | null = null): void {
   session?.end("signed_out");
   const storage = storageOf(deps);
-  if (storage !== null) clearPendingLogin(storage);
+  if (storage !== null) {
+    try {
+      clearPendingLogin(storage);
+    } catch {
+      // The pending login expires by itself in 10 minutes; leaving matters more.
+    }
+    try {
+      if (notice !== null) saveLeaveNotice(storage, notice, deps.now());
+    } catch {
+      // Without storage the notice is lost; the sign-out still happens.
+    }
+  }
   if (config === null || config.logoutUri === null) return;
   const url = new URL("/logout", config.loginOrigin);
   url.searchParams.set("client_id", config.webClientId);
   url.searchParams.set("logout_uri", config.logoutUri);
   deps.navigate(url.href);
+}
+
+/** The notice left by `logout` before the trip to the sign-out page, read once. Null if none or storage fails. */
+export function takeLogoutNotice(deps: AuthDeps): LeaveNotice | null {
+  const storage = storageOf(deps);
+  if (storage === null) return null;
+  try {
+    return takeLeaveNotice(storage, deps.now());
+  } catch {
+    return null;
+  }
 }

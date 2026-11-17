@@ -168,6 +168,8 @@ interface HarnessOptions {
   readonly manual?: boolean;
   /** Replaces the answer of the read number n (1-based). */
   readonly answer?: (n: number, routeId: string) => unknown;
+  /** Built for the open service (docs/PLAN.md, section 18). */
+  readonly publicService?: boolean;
   readonly noCanvas?: boolean;
 }
 
@@ -204,6 +206,7 @@ async function harness(options: HarnessOptions = {}): Promise<Harness> {
   const view = createAtlasView(data, "all", {
     traces: store,
     signIn: () => undefined,
+    publicService: options.publicService === true,
     showOnMap: (route) => void shown.push(route),
     context: () => (options.noCanvas === true ? null : (ctx as unknown as CanvasRenderingContext2D)),
   });
@@ -398,6 +401,21 @@ describe("reads", () => {
     expect(h.reads).toHaveLength(1);
     const buttons = [...document.querySelectorAll(".atlas .error button")].map((button) => button.textContent);
     expect(buttons).toEqual(["Volver a entrar"]);
+  });
+});
+
+describe("atlas errors of the open service", () => {
+  it.each(["session_limit_reached", "session_expired"])("offers a new sign-in, not a retry, for %s in the open service only", async (code) => {
+    await harness({ publicService: true, answer: (n) => (n === 1 ? new ToolCallError(code, "x") : undefined) });
+    await press(".atlas-build");
+    await settle();
+    expect([...document.querySelectorAll(".atlas .error button")].map((button) => button.textContent)).toEqual(["Volver a entrar"]);
+    document.body.replaceChildren();
+    // The invitation build keeps the general text and its retry.
+    await harness({ answer: (n) => (n === 1 ? new ToolCallError(code, "x") : undefined) });
+    await press(".atlas-build");
+    await settle();
+    expect([...document.querySelectorAll(".atlas .error button")].map((button) => button.textContent)).toEqual(["Reintentar"]);
   });
 });
 

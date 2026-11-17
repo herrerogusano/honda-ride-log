@@ -58,8 +58,26 @@ export interface ErrorText {
   readonly action: ErrorAction;
 }
 
-export function errorText(error: LoadError): ErrorText {
-  const kind = KIND[error.kind];
+/** Provisional text of a pause of the open service, on the pass screen and after a call. */
+export const MAINTENANCE_TEXT = "Estamos haciendo mantenimiento; vuelve más tarde.";
+
+/**
+ * Tool error codes of the open service (docs/PLAN.md, section 18), read only
+ * in a build for it: an invitation build keeps the general text of
+ * `tool_error`. Texts are provisional.
+ */
+const PUBLIC_TOOL_CODES: Readonly<Record<string, { readonly text: string; readonly action: ErrorAction }>> = {
+  service_paused: { text: MAINTENANCE_TEXT, action: "retry" },
+  session_expired: { text: "Tu sesión ha terminado: dura menos de una hora y después se borra sola. Vuelve a entrar.", action: "sign_in" },
+  session_limit_reached: { text: "Has llegado al máximo de consultas de esta sesión. Sal y vuelve a entrar.", action: "sign_in" },
+  rate_limited: { text: "Demasiadas consultas seguidas. Espera un minuto y reintenta.", action: "retry" },
+  service_unavailable: { text: "El servicio no está disponible ahora mismo. Prueba de nuevo dentro de un rato.", action: "retry" },
+};
+
+export function errorText(error: LoadError, publicService = false): ErrorText {
+  const code = error.detail;
+  const special = publicService && error.kind === "tool_error" && code !== null && Object.hasOwn(PUBLIC_TOOL_CODES, code) ? PUBLIC_TOOL_CODES[code] : undefined;
+  const kind = special ?? KIND[error.kind];
   return {
     title: STEP_TEXT[error.step],
     explanation: kind.text,

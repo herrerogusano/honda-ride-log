@@ -2,7 +2,7 @@
 // we read the login's contract, not that Cognito or its CORS behave this way.
 import { webcrypto } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { AuthError, authorizeUrl, browserDeps, completeLogin, logout, startLogin, type AuthDeps } from "../src/auth/login";
+import { AuthError, authorizeUrl, browserDeps, completeLogin, logout, startLogin, takeLogoutNotice, type AuthDeps } from "../src/auth/login";
 import { PENDING_LOGIN_TTL_MS, type StorageLike } from "../src/auth/pendingLogin";
 import { createFakeServer, TEST_CONFIG, type FakeServer } from "./fakeServer";
 
@@ -87,6 +87,12 @@ describe("authorization request", () => {
       code_challenge_method: "S256",
       resource: "https://api.example.test/mcp",
     });
+  });
+
+  it("asks the managed login for Spanish only for the open service; the invitation request has no lang", () => {
+    const open = { ...TEST_CONFIG, logoutUri: "http://localhost:5173/", publicAccess: { statusUrl: "https://api.example.test/estado", passUrl: "https://api.example.test/pase", turnstileSiteKey: "0x4AAAAAAASyntheticKey" } };
+    expect(new URL(authorizeUrl(open, "s".repeat(43), "c".repeat(43))).searchParams.get("lang")).toBe("es");
+    expect(new URL(authorizeUrl(TEST_CONFIG, "s".repeat(43), "c".repeat(43))).searchParams.has("lang")).toBe(false);
   });
 
   it("leaves out the resource when the configuration says so", () => {
@@ -420,5 +426,32 @@ describe("sign-out", () => {
     const url = new URL(b.navigations[0] ?? "");
     expect(url.origin + url.pathname).toBe("https://login.example.test/logout");
     expect(Object.fromEntries(url.searchParams)).toEqual({ client_id: "synthetic-client-id", logout_uri: "http://localhost:5173/" });
+  });
+
+  it("still goes to the sign-out page when the storage fails to clear or to save", () => {
+    const server = createFakeServer();
+    const b = browser(server);
+    const broken = { getItem: () => null, setItem: () => { throw new Error("quota"); }, removeItem: () => { throw new Error("blocked"); } };
+    logout({ ...TEST_CONFIG, logoutUri: "http://localhost:5173/" }, null, { ...b.deps, storage: broken }, "delete_unconfirmed");
+    expect(b.navigations).toHaveLength(1);
+    expect(new URL(b.navigations[0] ?? "").pathname).toBe("/logout");
+  });
+
+  it("keeps one fixed notice across the trip to the sign-out page, read once and for 10 minutes only", () => {
+    const server = createFakeServer();
+    const b = browser(server);
+    logout({ ...TEST_CONFIG, logoutUri: "http://localhost:5173/" }, null, b.deps, "delete_unconfirmed");
+    // Only the fixed word and its time.
+    expect([...b.storage.items.values()].map((one) => Object.keys(JSON.parse(one) as object).sort())).toEqual([["createdAt", "notice"]]);
+    expect(takeLogoutNotice(b.deps)).toBe("delete_unconfirmed");
+    expect(takeLogoutNotice(b.deps)).toBeNull();
+    expect(b.storage.items.size).toBe(0);
+    logout(TEST_CONFIG, null, b.deps, "delete_unconfirmed");
+    server.clock.now += 10 * 60 * 1000 + 1;
+    expect(takeLogoutNotice(b.deps)).toBeNull();
+    logout(TEST_CONFIG, null, b.deps);
+    expect(takeLogoutNotice(b.deps)).toBeNull();
+    b.storage.items.set("ride-log.leave-notice", JSON.stringify({ notice: "something_else", createdAt: server.clock.now }));
+    expect(takeLogoutNotice(b.deps)).toBeNull();
   });
 });

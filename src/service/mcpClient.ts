@@ -9,7 +9,9 @@
  * does not know would be rejected). Answers are plain JSON; an event stream
  * or a session id is not expected and is not followed.
  *
- * Limits: only the four read tools of `ALLOWED_TOOLS`; at most two requests
+ * Limits: only the four read tools of `ALLOWED_TOOLS` through `callTool`
+ * (the open service's two account tools go only through `endSession` and
+ * `deleteMyData`, and only with `publicService`); at most two requests
  * in flight and a gap between starts, to stay well under the account-wide
  * 10 requests per second and 10 concurrent executions; no automatic retries.
  * After a 401, a 403 or a network failure the session ends, so a token the
@@ -29,6 +31,25 @@ export const ALLOWED_TOOLS: readonly ToolName[] = Object.freeze([
   "list_routes",
   "get_route_detail",
 ]);
+
+/**
+ * The two account tools of the open service (docs/PLAN.md, section 18):
+ * `cerrar_sesion` deletes the session on the service at once, and
+ * `borrar_mis_datos` (with `confirmar: true`) also deletes the record of the
+ * person's sign-ins. They are not in `ALLOWED_TOOLS` and `callTool` refuses
+ * them: only `endSession` and `deleteMyData` send them, and only in a client
+ * made with `publicService: true`.
+ */
+export const ACCOUNT_TOOLS = Object.freeze(["cerrar_sesion", "borrar_mis_datos"] as const);
+export type AccountTool = (typeof ACCOUNT_TOOLS)[number];
+
+/** The real client: the read tools, plus the account tools of the open service. */
+export interface McpClient extends ToolCaller {
+  /** `cerrar_sesion`. Resolves when the service says the session is gone; else throws. */
+  endSession(): Promise<void>;
+  /** `borrar_mis_datos` with `confirmar: true`. Resolves when the service says the data is gone; else throws. */
+  deleteMyData(): Promise<void>;
+}
 
 export type ServiceErrorKind =
   /** Sign in again: the token expired, was rejected (401) or the request failed after sign-in. */
@@ -70,6 +91,12 @@ export interface McpClientOptions {
   readonly maxConcurrent?: 1 | 2;
   /** Minimum gap between the start of two requests. */
   readonly minIntervalMs?: number;
+  /**
+   * The open service (docs/PLAN.md, section 18): allows the two account
+   * tools, and ends the session when a tool answers `session_expired` (the
+   * service has already deleted it), so that token is not sent again.
+   */
+  readonly publicService?: boolean;
 }
 
 const DEFAULTS = { timeoutMs: 20_000, maxConcurrent: 2, minIntervalMs: 250 } as const;
@@ -123,8 +150,13 @@ function toolCode(result: Record<string, unknown>): string {
   return SAFE_TOOL_CODE.test(code) ? code : "tool_error";
 }
 
-/** Reads a JSON-RPC answer to request `id`; returns the tool's object. */
-function readEnvelope(payload: unknown, id: number): unknown {
+/**
+ * Reads a JSON-RPC answer to request `id`; returns the tool's object. The
+ * account tools answer with a text, which is not read (`requireStructured`
+ * false): for them the answer must say `isError: false` and carry a
+ * non-empty text item, or it is `bad_response`.
+ */
+function readEnvelope(payload: unknown, id: number, requireStructured = true): unknown {
   if (typeof payload !== "object" || payload === null || Array.isArray(payload)) throw new ServiceError("bad_response", "envelope");
   const envelope = payload as Record<string, unknown>;
   if (envelope["jsonrpc"] !== "2.0" || envelope["id"] !== id) throw new ServiceError("bad_response", "envelope");
@@ -138,6 +170,16 @@ function readEnvelope(payload: unknown, id: number): unknown {
   const fields = result as Record<string, unknown>;
   // The code is shown; the service's message is not (it may quote input).
   if (fields["isError"] === true) throw new ToolCallError(toolCode(fields), "the service reported an error");
+  if (!requireStructured) {
+    // The text is not read, but it must be there: `result: {}` is not a "done".
+    const content = fields["content"];
+    const first = Array.isArray(content) ? (content[0] as unknown) : undefined;
+    const item = typeof first === "object" && first !== null ? (first as Record<string, unknown>) : null;
+    if (fields["isError"] !== false || item === null || item["type"] !== "text" || typeof item["text"] !== "string" || item["text"] === "") {
+      throw new ServiceError("bad_response", "account_result");
+    }
+    return null;
+  }
   const structured = fields["structuredContent"];
   if (typeof structured !== "object" || structured === null || Array.isArray(structured)) {
     throw new ServiceError("bad_response", "structured_content");
@@ -145,7 +187,8 @@ function readEnvelope(payload: unknown, id: number): unknown {
   return structured;
 }
 
-export function createMcpClient(mcpUrl: string, session: AuthSession, options: McpClientOptions = {}): ToolCaller {
+export function createMcpClient(mcpUrl: string, session: AuthSession, options: McpClientOptions = {}): McpClient {
+  const publicService = options.publicService === true;
   const doFetch = options.fetch ?? globalThis.fetch.bind(globalThis);
   const now = options.now ?? (() => Date.now());
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
@@ -157,6 +200,8 @@ export function createMcpClient(mcpUrl: string, session: AuthSession, options: M
   let active = 0;
   let nextStartMs = -Infinity;
   const waiting: (() => void)[] = [];
+  /** Set when an account tool starts (signing out or deleting): no read starts after it. */
+  let closing = false;
 
   /** Waits for a free slot and takes it. Never throws, so `release` always balances it. */
   async function acquire(): Promise<void> {
@@ -177,9 +222,10 @@ export function createMcpClient(mcpUrl: string, session: AuthSession, options: M
     waiting.shift()?.();
   }
 
-  async function send(name: ToolName, args: Record<string, string>): Promise<unknown> {
+  async function send(name: ToolName | AccountTool, args: Record<string, string | boolean>): Promise<unknown> {
     // Checked when the request actually starts: a queued call never uses a
-    // token that ended while it waited.
+    // token that ended while it waited, nor one that is being signed out.
+    if (closing && !(ACCOUNT_TOOLS as readonly string[]).includes(name)) throw new ServiceError("reauth_required", "signed_out");
     const authorization = session.authorization(now());
     if (authorization === null) throw new ServiceError("reauth_required", session.endReason ?? "expired");
     const id = nextId++;
@@ -226,21 +272,40 @@ export function createMcpClient(mcpUrl: string, session: AuthSession, options: M
       if (isTimeout(error)) throw new ServiceError("timeout");
       throw new ServiceError("bad_response", "json");
     }
-    return readEnvelope(payload, id);
+    try {
+      return readEnvelope(payload, id, !(ACCOUNT_TOOLS as readonly string[]).includes(name));
+    } catch (error) {
+      // The open service deleted the session already: never send this token again.
+      if (publicService && error instanceof ToolCallError && error.code === "session_expired") session.end("expired");
+      throw error;
+    }
+  }
+
+  async function queued<T>(run: () => Promise<T>): Promise<T> {
+    await acquire();
+    try {
+      await pace();
+      return await run();
+    } finally {
+      release();
+    }
+  }
+
+  async function accountTool(name: AccountTool, args: Record<string, boolean>): Promise<void> {
+    if (!publicService) throw new ServiceError("not_allowed", "tool");
+    // Leaving: reads still waiting in the queue never go out with the token.
+    closing = true;
+    await queued(() => send(name, args));
   }
 
   return {
+    endSession: () => accountTool("cerrar_sesion", {}),
+    deleteMyData: () => accountTool("borrar_mis_datos", { confirmar: true }),
     async callTool<N extends ToolName>(name: N, args: ToolArguments[N]): Promise<unknown> {
       // Checked at run time too: the type system does not survive a cast.
       if (!ALLOWED_TOOLS.includes(name)) throw new ServiceError("not_allowed", "tool");
       const copy = requestArguments(name, args);
-      await acquire();
-      try {
-        await pace();
-        return await send(name, copy);
-      } finally {
-        release();
-      }
+      return queued(() => send(name, copy));
     },
   };
 }

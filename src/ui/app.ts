@@ -30,8 +30,25 @@ import { createTraceStore, type TraceStore } from "./traceStore";
 export interface AccountActions {
   /** Leaves for the login page. Rejects without leaving if it cannot start (for example, no sessionStorage). */
   signIn(): Promise<void>;
-  /** Forgets the token and any half-done login; may leave for the login's sign-out page. */
-  signOut(): void;
+  /**
+   * Forgets the token and any half-done login; may leave for the login's
+   * sign-out page. The open service first ends the session on the service
+   * (asynchronously) and then leaves.
+   */
+  signOut(): Promise<void> | null | undefined;
+  /** The open service only (docs/PLAN.md, section 18). Without it, the page is the invitation one. */
+  readonly publicService?: PublicServiceActions;
+}
+
+export interface PublicServiceActions {
+  /**
+   * The screen before the login (status, consent, check, pass), drawn in
+   * `host`. "Entrar" shows it instead of leaving at once. Returns a function
+   * that takes it down.
+   */
+  showAccess(view: { readonly host: HTMLElement; back(): void; fail(error: unknown): void }): () => void;
+  /** `borrar_mis_datos`, then sign out (the login's sign-out page, whatever the answer). */
+  deleteMyData(): Promise<void>;
 }
 
 export interface AppOptions {
@@ -59,6 +76,8 @@ export interface App {
   load(caller: ToolCaller, options: { readonly demo: boolean }): Promise<void>;
   /** The landing, with a failed sign-in above it if one is given. Abandons any load and drops its data. */
   showLanding(problem?: LoadError): void;
+  /** A fixed line above the landing (for example, a delete that was not confirmed). */
+  showNotice(text: string): void;
   /** Stops listening to the address and abandons any load in progress. The page keeps what it shows. */
   dispose(): void;
 }
@@ -71,7 +90,10 @@ function setHash(hash: string): void {
 
 export function startApp(options: AppOptions): App {
   const { root, account } = options;
+  const publicService = account?.publicService ?? null;
   const now = options.now ?? Date.now;
+  /** Takes down the screen before the login of the open service, if it is on screen. */
+  let closeAccess: (() => void) | null = null;
   const mapFactory = options.createMap ?? createMapView;
   /** Each load gets a number; a load that is no longer the latest stops drawing. */
   let generation = 0;
@@ -147,12 +169,55 @@ export function startApp(options: AppOptions): App {
    * page the browser restores with Back shows the landing, not its data.
    */
   const signIn = (): void => {
+    if (publicService !== null) {
+      showAccess(publicService);
+      return;
+    }
     if (accountShown) showLanding();
     account?.signIn().catch((error: unknown) => {
       showLanding(signInError(error));
       content.focus();
     });
   };
+
+  /** The open service: the screen before the login, in place of the landing. */
+  function showAccess(actions: PublicServiceActions): void {
+    showLanding();
+    clear(content);
+    closeAccess = actions.showAccess({
+      host: content,
+      back: () => {
+        showLanding();
+        content.querySelector("button")?.focus();
+      },
+      fail: (error) => {
+        showLanding(signInError(error));
+        content.focus();
+      },
+    });
+    content.focus();
+  }
+
+  /** A line above the landing, after leaving an account: what happened on the service. */
+  function landingNotice(text: string, role: "status" | "alert"): void {
+    content.querySelector(".account-notice")?.remove();
+    content.prepend(el("p", { class: "notice account-notice", attrs: { role } }, text));
+  }
+
+  /** Leaves the account: the landing first, then the token goes (and, in the open service, the session on the service). */
+  function leaveAccount(run: () => Promise<void> | null | undefined, pending: string): void {
+    // The load stops asking and its data leaves the page before anything is sent.
+    showLanding();
+    const mine = generation;
+    const outcome = run();
+    content.querySelector("button")?.focus();
+    if (outcome === null || outcome === undefined) return;
+    landingNotice(pending, "status");
+    // Normally the page has left for the login's sign-out page by now.
+    void outcome.then(() => {
+      if (mine === generation) content.querySelector(".account-notice")?.remove();
+    });
+  }
   const signInButton = (label: string, primary: boolean): HTMLElement =>
     el("button", { class: primary ? "button button-primary" : "button", attrs: { type: "button" }, on: { click: signIn } }, label);
 
@@ -167,15 +232,67 @@ export function startApp(options: AppOptions): App {
           // The landing first: the load stops asking and its data leaves the
           // page. Then the token is forgotten, so a request still waiting in
           // the client's queue never goes out.
-          showLanding();
-          account?.signOut();
-          content.querySelector("button")?.focus();
+          if (account !== undefined) leaveAccount(() => account.signOut(), "Cerrando la sesión en el servicio…");
         },
       },
     },
     "Salir",
   );
   signOutButton.hidden = true;
+
+  // The open service only: next to «Salir», with a confirmation first.
+  const deleteButton = el(
+    "button",
+    { class: "button button-quiet delete-data", attrs: { type: "button" }, on: { click: () => confirmDelete() } },
+    "Borrar mis datos",
+  );
+  deleteButton.hidden = true;
+
+  function confirmDelete(): void {
+    if (publicService === null) return;
+    content.querySelector(".delete-confirm")?.remove();
+    const titleId = uniqueId("delete");
+    const panel = el(
+      "div",
+      { class: "error delete-confirm", attrs: { role: "alertdialog", "aria-labelledby": titleId } },
+      el("h2", { id: titleId }, "¿Borrar tus datos de este servicio?"),
+      el(
+        "p",
+        {},
+        "Se borran al momento tu sesión de MAPIT guardada, tu usuario de este servicio y el registro de tus entradas (la huella de tu correo, las fechas y el número de entradas). Tus datos en MAPIT no se modifican. Después se cierra la sesión.",
+      ),
+      el(
+        "div",
+        { class: "landing-actions" },
+        el(
+          "button",
+          {
+            class: "button button-primary",
+            attrs: { type: "button" },
+            on: { click: () => leaveAccount(() => publicService.deleteMyData(), "Borrando tus datos en el servicio…") },
+          },
+          "Borrar mis datos",
+        ),
+        el(
+          "button",
+          {
+            class: "button",
+            attrs: { type: "button" },
+            on: {
+              click: () => {
+                panel.remove();
+                deleteButton.focus();
+              },
+            },
+          },
+          "Cancelar",
+        ),
+      ),
+    );
+    content.prepend(panel);
+    panel.scrollIntoView?.({ block: "start" });
+    panel.querySelector("button")?.focus();
+  }
 
   // The bar holds the section links and the period of the rider's page; other views leave them empty.
   const navSlot = el("div", { class: "bar-nav" });
@@ -193,7 +310,13 @@ export function startApp(options: AppOptions): App {
         demoBadge,
       ),
       navSlot,
-      el("div", { class: "bar-end" }, periodSlot, signOutButton),
+      el(
+        "div",
+        { class: "bar-end" },
+        periodSlot,
+        // The open service groups its two account actions (styled as a pair); the invitation bar keeps «Salir» as it was.
+        publicService === null ? signOutButton : el("div", { class: "bar-account", attrs: { role: "group", "aria-label": "Tu cuenta" } }, deleteButton, signOutButton),
+      ),
     ),
   );
   clear(root);
@@ -203,6 +326,8 @@ export function startApp(options: AppOptions): App {
 
   /** Stops what the view on screen runs: its map, its motion, its observers and listeners. */
   function stopView(): void {
+    closeAccess?.();
+    closeAccess = null;
     activeMap?.destroy();
     activeMap = null;
     activeAtlas?.destroy();
@@ -235,6 +360,7 @@ export function startApp(options: AppOptions): App {
     accountShown = false;
     showDemoMarks(false);
     signOutButton.hidden = true;
+    deleteButton.hidden = true;
     setHash("");
     clear(content);
     if (problem !== undefined) content.append(errorPanel(problem, null));
@@ -254,7 +380,10 @@ export function startApp(options: AppOptions): App {
             el(
               "p",
               { class: "lead" },
-              "Esta web enseña a cada persona invitada las estadísticas de sus propias rutas, a partir de su cuenta de MAPIT. Es un proyecto personal, sin relación con Honda ni con MAPIT.",
+              publicService === null
+                ? "Esta web enseña a cada persona invitada las estadísticas de sus propias rutas, a partir de su cuenta de MAPIT. Es un proyecto personal, sin relación con Honda ni con MAPIT."
+                : // Provisional text of the open service (docs/PLAN.md, section 18).
+                  "Esta web enseña a quien tenga una cuenta de MAPIT las estadísticas de sus propias rutas. Es un proyecto personal, sin relación con Honda ni con MAPIT.",
             ),
             account === undefined
               ? el("p", { class: "hero-note" }, "El acceso con tu cuenta todavía no está disponible. Mientras tanto puedes ver cómo funciona con datos de ejemplo.")
@@ -300,7 +429,7 @@ export function startApp(options: AppOptions): App {
    * never offers to retry: the client has already forgotten the token.
    */
   function errorPanel(error: LoadError, retry: (() => void) | null): HTMLElement {
-    const text = errorText(error);
+    const text = errorText(error, publicService !== null);
     let action: HTMLElement | null = null;
     if (retry !== null && text.action === "retry") {
       action = el(
@@ -363,6 +492,7 @@ export function startApp(options: AppOptions): App {
     const signInOffer = account === undefined || data.demo ? null : signIn;
     const map = mapFactory(data, caller, {
       signIn: signInOffer,
+      publicService: publicService !== null,
       traces,
       // The map's own «anterior / siguiente» keep the list's chosen row in view.
       onOpen: (route) => list.mark(route, !fromList),
@@ -373,6 +503,7 @@ export function startApp(options: AppOptions): App {
     const atlas = createAtlasView(data, "all", {
       traces,
       signIn: signInOffer,
+      publicService: publicService !== null,
       showOnMap: (route) => {
         // The route opens in the map of «Rutas» (its row marked) and the page goes there.
         map.open(route);
@@ -425,6 +556,7 @@ export function startApp(options: AppOptions): App {
       accountShown = true;
       showDemoMarks(false);
       signOutButton.hidden = account === undefined;
+      deleteButton.hidden = publicService === null;
       if (scenarioFromHash(location.hash) !== null) setHash("");
     }
     // The instrument-cluster boot: its loops stop when this load is replaced, abandoned or done.
@@ -497,6 +629,7 @@ export function startApp(options: AppOptions): App {
     scenarioSelect.value = scenario;
     showDemoMarks(true);
     signOutButton.hidden = true;
+    deleteButton.hidden = true;
     options.onDemo?.();
     await load(createDemoCaller(scenario, now(), options.demoDelayMs ?? 120), { demo: true });
   }
@@ -529,6 +662,10 @@ export function startApp(options: AppOptions): App {
     startDemo,
     load,
     showLanding,
+    showNotice(text) {
+      showLanding();
+      landingNotice(text, "alert");
+    },
     dispose() {
       generation += 1;
       window.removeEventListener("hashchange", onHashChange);

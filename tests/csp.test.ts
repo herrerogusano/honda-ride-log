@@ -12,7 +12,19 @@ import {
   hostFor,
   REFERRER_POLICY,
   SECURITY_HEADERS,
+  TURNSTILE_SOURCES,
 } from "../vite.config";
+
+/** The open service (docs/PLAN.md, section 18), synthetic values. */
+const PUBLIC_ENTRY = {
+  mcpUrl: "https://api.example.test/mcp",
+  loginDomain: "https://login.example.test",
+  webClientId: "synthetic-client-id",
+  redirectUri: "https://example.test/",
+  logoutUri: "https://example.test/",
+  access: "public",
+  turnstileSiteKey: "0x4AAAAAAASyntheticKey",
+};
 
 describe("content security policy", () => {
   it("is exactly the policy written here", () => {
@@ -80,6 +92,21 @@ describe("content security policy", () => {
     );
     expect(cspContent(twoHosts)).toContain("connect-src 'self' https://api.example.test https://login.example.test;");
     expect(cspContent(twoHosts)).not.toContain("/prod");
+  });
+
+  it("lets a build for the open service run and frame Cloudflare Turnstile, and nothing else more (docs/PLAN.md, section 18)", () => {
+    expect(TURNSTILE_SOURCES).toEqual({ "script-src": ["https://challenges.cloudflare.com"], "frame-src": ["https://challenges.cloudflare.com"] });
+    expect(cspContent(directivesFor(parseEnvironment(PUBLIC_ENTRY)))).toBe(
+      "default-src 'none'; script-src 'self' https://challenges.cloudflare.com; style-src 'self'; " +
+        "img-src 'self' https://tile.openstreetmap.org; connect-src 'self' https://api.example.test https://login.example.test; " +
+        "font-src 'self'; base-uri 'none'; form-action 'none'; frame-src https://challenges.cloudflare.com",
+    );
+    // /estado and /pase live next to /mcp: no origin of their own.
+    expect(directivesFor(parseEnvironment(PUBLIC_ENTRY))["connect-src"]).toEqual(["'self'", "https://api.example.test", "https://login.example.test"]);
+    // An invitation build with the same service gets no Turnstile at all.
+    const invitation = directivesFor(parseEnvironment({ ...PUBLIC_ENTRY, access: "invitation", turnstileSiteKey: "" }));
+    expect(invitation["frame-src"]).toBeUndefined();
+    expect(invitation["script-src"]).toEqual(["'self'"]);
   });
 
   it("sends only the site origin as referrer, which map tiles require", () => {
@@ -165,6 +192,15 @@ describe("content security policy", () => {
     for (const directive of ["default-src", "style-src", "font-src", "base-uri", "form-action"]) expect(everything[directive]).toEqual(CSP_DIRECTIVES[directive]);
     expect(everything["frame-src"]).toBeUndefined();
     expect(Object.keys(ANALYTICS_SOURCES)).toEqual(["cloudflare", "google"]);
+
+    // The open service adds Cloudflare Turnstile, as a script and a frame, and nothing else.
+    const open = directivesFor(parseEnvironment(PUBLIC_ENTRY), { cloudflareToken: "0123456789abcdef0123456789abcdef", googleMeasurementId: "G-TEST1234" });
+    const openForeign = [...new Set(Object.values({ ...open, ...HEADER_ONLY_DIRECTIVES }).flat().filter((source) => !source.startsWith("'")))].sort();
+    expect(openForeign).toEqual([...foreign, "https://challenges.cloudflare.com"].sort());
+    expect(open["script-src"]).toEqual(["'self'", "https://challenges.cloudflare.com", "https://static.cloudflareinsights.com", "https://www.googletagmanager.com"]);
+    expect(open["frame-src"]).toEqual(["https://challenges.cloudflare.com"]);
+    for (const directive of ["default-src", "style-src", "font-src", "base-uri", "form-action"]) expect(open[directive]).toEqual(CSP_DIRECTIVES[directive]);
+    for (const source of Object.values(open).flat()) expect(source).not.toMatch(/unsafe|\*|^http:|^data:|^blob:|^https:$/);
   });
 
   it("writes exactly these headers for the Cloudflare Pages build as configured (demo only, Google's id, no Cloudflare token)", () => {

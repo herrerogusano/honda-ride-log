@@ -301,6 +301,72 @@ code {
   margin-left: 0;
 }
 
+/*
+ * The open service's account actions (src/ui/app.ts), a pair set apart by a
+ * thin rule: «Salir» reads like the section links (plain text, a line grows
+ * under it on hover); «Borrar mis datos» keeps a quiet outline that turns
+ * red only on hover. Neither competes with «Entrar» or the period.
+ */
+.bar-account {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--s1);
+  padding-left: var(--s3);
+  border-left: 1px solid var(--line);
+}
+
+/* Nothing to show (landing, demo): no rule hanging in the bar. */
+.bar-account:not(:has(> :not([hidden]))) {
+  display: none;
+}
+
+.bar-account .button {
+  padding: 0 12px;
+  background: transparent;
+  border-color: transparent;
+  font: 700 11.5px/1 var(--text);
+  letter-spacing: 0.12em;
+  color: var(--fg-2);
+}
+
+.bar-account .button:focus-visible {
+  outline-offset: 0;
+}
+
+/* The outline is drawn inside the 44 px target, lighter than a full button. */
+.bar-account .delete-data {
+  position: relative;
+}
+
+.bar-account .delete-data::before {
+  content: "";
+  position: absolute;
+  inset: 6px 0;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  transition: border-color var(--dur-ui) var(--ease-out);
+}
+
+.bar-account .sign-out {
+  position: relative;
+}
+
+.bar-account .sign-out::after {
+  content: "";
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 13px;
+  height: 1px;
+  background: var(--fg-3);
+  opacity: 0;
+  transform: scaleX(0.4);
+  transition:
+    opacity var(--dur-ui) var(--ease-out),
+    transform var(--dur-ui) var(--ease-out);
+}
+
 /* ---------- section links (src/ui/nav.ts) ---------- */
 .nav-links {
   position: relative;
@@ -596,6 +662,27 @@ code {
   .button-primary:hover:not(:disabled) {
     background: var(--red-press);
     border-color: var(--red-press);
+  }
+
+  .bar-account .sign-out:hover:not(:disabled) {
+    background: transparent;
+    border-color: transparent;
+    color: var(--fg);
+  }
+
+  .bar-account .sign-out:hover::after {
+    opacity: 1;
+    transform: none;
+  }
+
+  .bar-account .delete-data:hover:not(:disabled) {
+    background: transparent;
+    border-color: transparent;
+    color: var(--red-hi);
+  }
+
+  .bar-account .delete-data:hover::before {
+    border-color: var(--red-dim);
   }
 
   .nav-link:hover {
@@ -1317,6 +1404,128 @@ select:focus-visible {
   font-size: 16px;
   line-height: 1.65;
   color: var(--fg-2);
+}
+
+/* ---------- the screen before the login of the open service (src/ui/passScreen.ts) ---------- */
+.pass-screen {
+  display: grid;
+  gap: var(--s4);
+  justify-items: start;
+}
+
+.pass-title {
+  font: var(--w-title) clamp(40px, 6vw, 72px) / 1 var(--display);
+  color: var(--fg);
+  text-transform: uppercase;
+}
+
+.pass-body,
+.pass-form {
+  display: grid;
+  gap: var(--s3);
+  width: min(100%, 46ch);
+}
+
+.pass-lead {
+  color: var(--fg-2);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.pass-check {
+  display: flex;
+  gap: var(--s2);
+  align-items: center;
+  min-height: 44px;
+}
+
+.pass-check input {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  accent-color: var(--red);
+}
+
+/* The full privacy text, folded: the screen stays one short view. */
+.pass-privacy {
+  margin-top: calc(-1 * var(--s3));
+  color: var(--fg-2);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.pass-privacy summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--red-hi);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.pass-privacy[open] {
+  display: grid;
+  gap: var(--s2);
+  padding: 0 var(--s4) var(--s4);
+  background: var(--surface);
+  border-left: 2px solid var(--red);
+}
+
+.pass-privacy p:first-of-type {
+  font: 700 var(--fs-eyebrow) / 1.2 var(--text);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--amber);
+}
+
+.pass-field {
+  display: grid;
+  gap: 6px;
+}
+
+.pass-field label {
+  font: 700 var(--fs-eyebrow) / 1.2 var(--text);
+}
+
+.pass-email {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--control-line);
+  border-radius: 2px;
+  color: var(--fg);
+  font: 600 15px/1.2 var(--text);
+}
+
+/* Cloudflare's widget: normally invisible (interaction-only); when it asks for a click it sets its own size. */
+.pass-challenge {
+  max-width: 100%;
+}
+
+.pass-message:empty {
+  display: none;
+}
+
+.pass-message,
+.pass-state {
+  max-width: 64ch;
+  color: var(--fg-2);
+  font-size: 14px;
+}
+
+.pass-state {
+  padding: var(--s3) var(--s4);
+  background: var(--surface);
+  border-left: 2px solid var(--amber);
+}
+
+.content > .account-notice {
+  display: grid;
+  gap: var(--s3);
+  justify-items: start;
+  margin-bottom: 0;
 }
 
 /* ---------- loading: the shape of the page, in grey ---------- */
@@ -3528,6 +3737,79 @@ select:focus-visible {
   .nav-ink {
     /* The strip's own padding moves the links, not the underline's origin. */
     left: 0;
+  }
+
+  /*
+   * With the account actions on screen (open service), they move to the
+   * second row, after the section links, so the period keeps the first row
+   * with the brand: the bar stays two rows tall.
+   */
+  .topbar:has(.bar-account > :not([hidden])) .bar-end {
+    display: contents;
+  }
+
+  .topbar:has(.bar-account > :not([hidden])) .bar-period {
+    margin-left: auto;
+  }
+
+  /* An empty full-width item between the two rows: the links never climb to the first. */
+  .topbar:has(.bar-account > :not([hidden])) .topbar-in::before {
+    content: "";
+    order: 2;
+    flex: 0 0 100%;
+    height: 0;
+  }
+
+  /* Its basis outweighs its negative left margin, so it cannot sit on the separator's row. */
+  .topbar:has(.bar-account > :not([hidden])) .bar-nav {
+    flex: 1 1 calc(var(--pad) + 1px);
+    margin-right: 0;
+  }
+
+  .topbar:has(.bar-account > :not([hidden])) .bar-account {
+    order: 3;
+    align-self: stretch;
+    /* Flush with the links' strip: its top line runs on without a gap. */
+    margin-left: calc(var(--s4) * -1);
+    margin-right: calc(var(--pad) * -1);
+    padding-inline: var(--s2) var(--pad);
+    border-top: 1px solid var(--line-soft);
+    border-left-color: var(--line-soft);
+  }
+}
+
+@media (max-width: 640px) {
+  .bar-account .button {
+    padding: 0 10px;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+  }
+
+  .bar-account .sign-out::after {
+    left: 10px;
+    right: 10px;
+  }
+}
+
+@media (max-width: 520px) {
+  .topbar:has(.bar-account > :not([hidden])) .bar-account {
+    margin-left: calc(var(--s3) * -1);
+  }
+}
+
+@media (max-width: 419px) {
+  .bar-account {
+    gap: 0;
+  }
+
+  .bar-account .button {
+    padding: 0 8px;
+    letter-spacing: 0.06em;
+  }
+
+  .bar-account .sign-out::after {
+    left: 8px;
+    right: 8px;
   }
 }
 

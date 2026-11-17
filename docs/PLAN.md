@@ -4,7 +4,7 @@ Este documento explica a quien lea el código qué se construye, qué está
 decidido, qué reglas de privacidad y de datos se cumplen y qué se ha
 comprobado y qué no.
 
-Última actualización: 2026-11-11.
+Última actualización: 2026-11-17.
 
 ## 1. Qué es
 
@@ -34,7 +34,7 @@ las decisiones anotadas aquí.
 | Velocidad máxima | Se enseña en cada ruta (lista, mapa y CSV), nunca en la tarjeta para compartir, porque la tarjeta sale de la web. Desde el 2026-11-10; antes estaba fuera en cualquier parte. |
 | Aspecto | Solo tema oscuro (D-026). Fuentes propias servidas por la web, Barlow Condensed y Manrope (D-025). Movimiento sin librería, con unas duraciones fijas (D-027). Detalle en el apartado 11. |
 | Privacidad | Ver el apartado 4. Son requisitos. |
-| Terceros | Solo tres, cerrados: las teselas de OpenStreetMap, Cloudflare Web Analytics y Google Analytics 4 (este, solo si el visitante acepta las cookies). Los dos contadores están apagados mientras `analytics.config.json` esté vacío y reciben la visita y los eventos `demo_open` y `login`, nada más. Cualquier otro tercero (otra analítica, etiquetas, fuentes, CDN) sigue prohibido: la política de seguridad no lo deja cargar y `tests/csp.test.ts` fija la lista entera de orígenes ajenos. Apartado 17. |
+| Terceros | Solo tres, cerrados: las teselas de OpenStreetMap, Cloudflare Web Analytics y Google Analytics 4 (este, solo si el visitante acepta las cookies). Los dos contadores están apagados mientras `analytics.config.json` esté vacío y reciben la visita y los eventos `demo_open` y `login`, nada más. Cualquier otro tercero (otra analítica, etiquetas, fuentes, CDN) sigue prohibido: la política de seguridad no lo deja cargar y `tests/csp.test.ts` fija la lista entera de orígenes ajenos. Apartado 17. Un build del servicio abierto (`access: "public"`) añade un cuarto, Cloudflare Turnstile, solo en la pantalla previa al login (apartado 18). |
 | Unidades | «km» a secas, con nota al pie: se usan los campos `*_km` del servicio, que el propio servicio marca como conversión sin confirmar. Nunca se convierte la distancia nativa. |
 | Zona horaria | Una sola: la del navegador. El campo `timezone` de cada ruta no se usa. |
 | Pila | Vite y TypeScript estricto, sin framework. Leaflet como única dependencia de ejecución. Gráficos en SVG a mano. Vitest y ESLint. |
@@ -207,7 +207,7 @@ color, foco visible y zonas de pulsación de 44 px como mínimo.
 | Nunca identificadores de ruta en pantalla ni en exportaciones | El identificador vive detrás de un `RouteRef` opaco y sin campos; solo `serviceRouteId` lo recupera, y ESLint solo deja importar esa función desde `src/service/` (donde va la petición de detalle; `tests/lint-seals.test.ts`). Serializar una ruta no lo incluye. |
 | Recortar 400 m al inicio y al final de cada traza antes de dibujarla | `TRIM_METERS` en `src/domain/privacy.ts` y `trimTrace` en `src/domain/trim.ts`. Se cumple con una regla más fuerte: **no se dibuja nada a menos de 401 m en línea recta del inicio ni del final** (ver «Cómo quedó el recorte»). El radio no es un parámetro: nadie puede pedir un corte más corto. El mapa y el atlas solo guardan en memoria las líneas ya recortadas (`src/ui/traceStore.ts`). El saneador devuelve un `UntrimmedTrace` sellado, sin campos legibles; sus líneas solo salen con `untrimmedLines` y los dos puntos de inicio y final con `sensitivePlaces`, y ESLint solo deja importar esas dos funciones desde ese archivo (`tests/lint-seals.test.ts`). |
 | Ocultar rutas de menos de 300 m | `hideShortRoutes` en `src/domain/privacy.ts`. |
-| Token solo en memoria | Ver «Almacenamiento» en el apartado 2. ESLint prohíbe `localStorage`, `sessionStorage` y `document.cookie` en todo el código, con tres excepciones de un único archivo cada una (la tercera, `src/storage/consent.ts`, en el apartado 17). **`src/storage/maintenance.ts` puede usar `localStorage`** (y solo `localStorage`) para guardar los dos números del mantenimiento que escribe el usuario, con una clave para la cuenta y otra para la demo. **`src/auth/pendingLogin.ts` puede usar `sessionStorage`** (y solo `sessionStorage`) para el login a medio hacer, y solo lo importa `src/auth/login.ts` (apartado 10). `tests/units.test.ts` y `tests/lint-storage.test.ts` comprueban que cada excepción vale para su archivo y para ningún otro, que cada uno sigue teniendo prohibido el almacenamiento del otro y que las listas de prohibiciones no se separan. |
+| Token solo en memoria | Ver «Almacenamiento» en el apartado 2. ESLint prohíbe `localStorage`, `sessionStorage` y `document.cookie` en todo el código, con tres excepciones de un único archivo cada una (la tercera, `src/storage/consent.ts`, en el apartado 17). **`src/storage/maintenance.ts` puede usar `localStorage`** (y solo `localStorage`) para guardar los dos números del mantenimiento que escribe el usuario, con una clave para la cuenta y otra para la demo. **`src/auth/pendingLogin.ts` puede usar `sessionStorage`** (y solo `sessionStorage`) para el login a medio hacer y, en el servicio abierto, una marca fija de borrado no confirmado (apartado 18), y solo lo importa `src/auth/login.ts` (apartado 10). `tests/units.test.ts` y `tests/lint-storage.test.ts` comprueban que cada excepción vale para su archivo y para ningún otro, que cada uno sigue teniendo prohibido el almacenamiento del otro y que las listas de prohibiciones no se separan. |
 | Sin terceros salvo las teselas de OpenStreetMap y dos contadores de visitas (apartado 17): Cloudflare Web Analytics y, solo si el visitante acepta, Google Analytics. A ninguno se le envía una ruta, una cifra, un identificador ni la dirección completa; con `analytics.config.json` vacío no se carga ninguno | Política de seguridad de contenido en `csp.config.json`; los orígenes de cada contador se añaden solo si tiene valor. `scripts/check-dist.mjs` rompe el build si la página que genera Vite no lleva exactamente esa política, o si detecta código en línea o recursos de otro origen; `tests/csp.test.ts` fija su texto. Es una red contra errores propios hecha con expresiones regulares, no un analizador de HTML: no protege contra quien edite `dist/` a mano, y no tiene tests propios. |
 | Los datos viven solo en el navegador y solo durante la sesión | Nada se guarda salvo los dos números de mantenimiento y la respuesta al aviso de cookies (tercera excepción: **`src/storage/consent.ts` puede usar `localStorage`**, y `document.cookie` solo para borrar las de Google Analytics; apartado 17). |
 
@@ -1599,6 +1599,15 @@ antes de `start()`. Habría que elegir entre:
   En local, el envío de Cloudflare falla por CORS (responde para
   `http://localhost` sin puerto): no dice nada de cómo irá en `pages.dev`.
 
+- 2026-11-17, vista corta: en el servidor de desarrollo contra el
+  despliegue abierto de pruebas (sin política de seguridad, que el
+  servidor de desarrollo no lleva), medida con el navegador de la vista
+  previa sin pulsar «Continuar»: a 1280 px todo el formulario acaba a
+  520 px de altura, y a 320 px a 491 px (pantalla de 640), sin
+  desplazamiento lateral; el contenedor del control mide 0 px de alto. El
+  desplegable abierto mide 414 px a 320. No hubo captura de imagen: la
+  herramienta de capturas no respondió.
+
 ### Qué no se ha comprobado
 
 - Nada contra cuentas reales: en el navegador los identificadores eran
@@ -1628,3 +1637,197 @@ antes de `start()`. Habría que elegir entre:
 - El login desde `pages.dev` (no está dado de alta en el servicio).
 - Safari, Firefox, un móvil físico, un lector de pantalla con el aviso.
 - Si el texto del aviso basta legalmente: no es asesoramiento jurídico.
+
+## 18. Servicio abierto (sin invitación)
+
+Escrito el 2026-11-17. El servicio tiene, además del de invitación, un
+despliegue aparte de acceso abierto: sin invitación, con un cupo de
+personas y con un pase anti-robots antes del login. Su contrato está en el
+repo del servicio (`docs/public-web.md`; código en `public_pass.py`,
+`public_identity.py` y `public_web_service.py`). Esta web lo usa solo si el
+entorno lo pide; **sin `access` en `environments.config.json` todo sigue
+exactamente como antes** (por invitación), y así están las entradas del
+repo.
+
+### Configuración
+
+- `access`: `invitation` (por defecto) o `public`. Con `public` hace falta
+  `turnstileSiteKey`, la clave de sitio pública de Cloudflare Turnstile
+  (empieza por `0x`; no es un secreto), y `mcpUrl` tiene que acabar en
+  `/mcp`: `GET /estado` y `POST /pase` están al lado, en el mismo origen.
+  Una clave de sitio sin `access: "public"` rompe el build. Con `public`
+  también hace falta `logoutUri`: sin dirección de salida, «Salir» no
+  cerraría la sesión propia del login.
+- Los valores de un despliegue abierto no se suben (regla de `AGENTS.md`).
+  Para probar en local, ver «Trying the open service locally» en
+  `AGENTS.md`.
+
+### El camino de entrada
+
+1. «Entrar» no sale de la página: muestra una pantalla previa
+   (`src/ui/passScreen.ts`) y pide `GET /estado`.
+2. `abierto` enseña el formulario; `lleno` también, con una nota (quien ya
+   entró antes puede seguir entrando); `cerrado` y `pausa` lo dicen y no
+   ofrecen nada que enviar; un fallo de red o una respuesta rara dicen que
+   no se ha podido comprobar. Todos ofrecen «Comprobar otra vez» y
+   «Volver».
+3. El formulario es una sola vista corta, para que se note lo menos
+   posible: el correo (se escribe una vez; luego va en `login_hint`), una
+   línea que recuerda que la contraseña se escribe en el login, la casilla
+   «Acepto el aviso de privacidad.» y debajo «Leer el aviso de
+   privacidad», un desplegable (`<details>`, cerrado) con el texto
+   completo (**provisional**, marcado así dentro y en el código). El
+   control de Turnstile no ocupa sitio salvo que Cloudflare pida
+   interacción. «Continuar al login» envía `POST /pase` con
+   `{"email", "turnstile"}` (el correo recortado y en minúsculas, como lo
+   lee el servicio; uno que el servicio rechazaría no se envía). Si se
+   pulsa antes de que el control termine, dice «Comprobando que no eres un
+   robot…» y envía el pase solo, una vez, cuando llega el resultado; tras
+   un error del control o un pase rechazado, hace falta pulsar otra vez. Ese
+   envío solo vale para el formulario que está en pantalla: un resultado
+   tardío de un formulario abandonado con «Volver» o sustituido al
+   restaurar la página desde la caché no envía nada, y editar el correo o
+   desmarcar la casilla mientras se espera cancela la espera (hay que
+   volver a pulsar con lo que se ve en pantalla).
+4. Con el pase, el formulario se borra antes de salir (el correo, el
+   resultado y el control de Turnstile; queda solo «Abriendo el login…»,
+   por si el navegador guarda la página para «Atrás») y el login empieza
+   como siempre (PKCE) con el correo en `login_hint`, para que la página
+   del login lo traiga escrito, y con `lang=es`, para que el login
+   gestionado de Cognito muestre sus textos en español (documentación de
+   Cognito, «Managed login localization»; solo vale con *managed login* en
+   el plan Essentials o Plus, y Cognito guarda la elección en su propia
+   cookie `lang`). El login por invitación no lleva `lang`. Si el navegador restaura la página de su
+   caché al volver atrás (`pageshow` con `persisted`), la pantalla empieza
+   de cero: `/estado`, formulario vacío y control nuevo. Mientras se espera
+   la respuesta de `/pase`, enviar otra vez no hace nada.
+5. Cada respuesta de `/pase` tiene su texto (control no válido o ya usado,
+   demasiados pases desde la conexión, correo rechazado, cerrado, pausa,
+   no disponible). Un resultado de Turnstile vale una sola vez: tras
+   cualquier rechazo el control empieza de nuevo.
+
+El correo vive en el campo y en esa petición; no se guarda en ningún
+sitio. Ni `/estado` ni `/pase` llevan token, cookies ni referente.
+
+### Turnstile
+
+- `src/access/turnstile.ts` pide
+  `https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit`
+  solo al enseñar el formulario (nunca en la portada, la demo ni la página
+  de una cuenta), y lo pinta en un solo contenedor con la acción
+  `web-pass`, la que comprueba el servicio. La página solo lee el
+  resultado, que va directo a `/pase`.
+- En pantallas de menos de 300 px útiles usa el tamaño compacto.
+- Apariencia `interaction-only`: según la documentación de Cloudflare
+  (Turnstile, «Widget configurations»), «The widget becomes visible only
+  when visitor interaction is required», y los modos de apariencia solo
+  afectan a los widgets visibles (Managed y Non-Interactive). Con la clave
+  de pruebas (modo Managed) el control no ocupó sitio en la prueba. El
+  modo del widget (Managed, Non-Interactive, Invisible) se elige en el
+  panel de Cloudflare, no en el código.
+
+### Dentro de la cuenta
+
+- El cliente de `/mcp` se crea con `publicService`. Las dos herramientas
+  de cuenta del servicio abierto no están en `ALLOWED_TOOLS`: solo salen
+  por `endSession` (`cerrar_sesion`) y `deleteMyData` (`borrar_mis_datos`
+  con `confirmar: true`), y un cliente por invitación las rechaza.
+- **«Salir»** quita primero los datos de la pantalla, después llama a
+  `cerrar_sesion` con el token, olvida el token y va al `/logout` del
+  login. **Va siempre**, también si la herramienta falla o la sesión ya
+  había terminado: si no, la sesión propia del login seguiría abierta y,
+  en un dispositivo compartido, el siguiente «Entrar» podría entrar como
+  la persona anterior. Un fallo de `cerrar_sesion` no se enseña: el
+  servicio borra la sesión solo en menos de una hora.
+- En cuanto empieza una herramienta de cuenta, las lecturas que esperaban
+  en la cola del cliente se cancelan sin salir (`reauth_required`,
+  `signed_out`); las que ya estaban en vuelo terminan.
+- **«Borrar mis datos»**, al lado de «Salir», pide confirmación y llama a
+  `borrar_mis_datos`; después, lo mismo que «Salir», también si falla. Si
+  falla (o la sesión ya había terminado), antes de irse deja una marca
+  fija, y al volver del `/logout` la portada dice «No se ha podido
+  confirmar el borrado de tus datos. Tu sesión se ha cerrado. Entra de
+  nuevo y repite «Borrar mis datos».» (provisional), una sola vez: que no
+  se borraran los datos no puede pasar en silencio. El código del fallo no
+  cruza la ida y vuelta.
+- La marca va en `sessionStorage`, dentro de la excepción que ya existía
+  (`src/auth/pendingLogin.ts`, que solo importa `src/auth/login.ts`): una
+  clave aparte con la palabra fija `delete_unconfirmed` y su hora; se
+  borra al leerla y no vale pasados 10 minutos. Ningún dato, código ni
+  correo. Un build por invitación no la escribe ni la lee.
+- Si `sessionStorage` falla al borrar el login pendiente o al guardar la
+  marca, `logout` va igualmente al `/logout` del login (antes un fallo al
+  borrar lo impedía; afectaba también al modo por invitación).
+- Las herramientas de cuenta solo cuentan como hechas si la respuesta dice
+  `isError: false` y trae un elemento de texto no vacío; si no, es
+  `bad_response` (un `result: {}` ya no pasa por un borrado correcto).
+- En la barra, «Borrar mis datos» y «Salir» van juntos en un grupo
+  («Tu cuenta») separado por una línea fina: «Salir» es texto, como los
+  enlaces de sección, con una línea que crece debajo al pasar el ratón;
+  «Borrar mis datos» lleva un contorno tenue (dibujado dentro de la zona
+  pulsable de 44 px) que se vuelve rojo al pasar el ratón. Con la barra en
+  dos filas (1100 px o menos) el grupo pasa a la segunda, a la derecha de
+  los enlaces, para que el periodo no quede aplastado (antes, a 375 px, se
+  quedaba en 0 px de ancho). La barra del modo por invitación no cambia.
+- El script de Turnstile tiene 15 s para llegar; si no, el formulario dice
+  que no se ha podido hacer la comprobación. El elemento `<script>` se
+  queda (quitarlo no cancela la petición): un reintento espera sobre el
+  mismo, y si el script llega tarde se usa sin pedirlo otra vez. Solo uno
+  que falla se sustituye.
+- Errores por código de herramienta, solo en este modo: `service_paused`
+  da «Estamos haciendo mantenimiento; vuelve más tarde.» (provisional) con
+  «Reintentar»; `session_expired` y `session_limit_reached`, «Volver a
+  entrar» (que abre la pantalla previa); `rate_limited` y
+  `service_unavailable`, «Reintentar». Con `session_expired` el cliente
+  olvida el token, porque el servicio ya ha borrado la sesión. Un build
+  por invitación sigue con el texto general de `tool_error`. Lo mismo en
+  los paneles de error del mapa y del atlas (al leer el recorrido de una
+  ruta), que reciben el modo de la página.
+
+### Política de seguridad de contenido: motivo del cambio
+
+Turnstile es un script de Cloudflare que pinta su control en un marco de
+su origen. Un build con `access: "public"` añade
+`https://challenges.cloudflare.com` a `script-src` y a una directiva nueva,
+`frame-src`, y nada más (están en `csp.config.json`, bajo `turnstile`).
+`connect-src` no cambia: `/estado` y `/pase` comparten el origen de
+`/mcp`, que ya estaba. Un build por invitación no lleva ese origen en
+ninguna directiva (test). `tests/csp.test.ts` fija el texto exacto y la
+lista entera de orígenes ajenos con el modo abierto; `scripts/check-dist.mjs`
+hace la misma cuenta.
+
+### Qué se ha comprobado y dónde
+
+- Tests (Vitest, local en Windows con Node 24), contra dobles: el servidor
+  falso de `tests/fakeServer.ts` con `/estado`, `/pase` y las dos
+  herramientas de cuenta, y un Turnstile falso. Prueban el contrato tal
+  como se lee en el código del servicio, no que el servicio real se porte
+  así. Cada test nuevo se vio fallar: 39 roturas a propósito, una cada vez;
+  las dos que sobrevivieron llevaron a endurecer un test y a quitar código
+  redundante. Tras una revisión independiente, 22 roturas más sobre sus
+  arreglos: sobrevivieron tres, dos se cubrieron con tests y la tercera
+  (quitar el `removeEventListener` de `pageshow`) es equivalente, porque
+  el oyente ya no hace nada con la pantalla cerrada.
+- Navegador (Chromium de la vista previa, build `development` con los
+  valores del despliegue abierto de pruebas puestos en local y sin
+  commitear, `vite preview` en `localhost:5173`; 2026-11-17): `/estado` se
+  lee (`abierto`), aparece el formulario y el control de Turnstile se
+  carga y se pinta sin ninguna infracción de la política; a 320 px usa el
+  tamaño compacto y no hay desplazamiento lateral. El build `production`
+  (por invitación) tiene la misma política que antes, el mismo texto y
+  ningún botón nuevo.
+
+### Qué no se ha comprobado
+
+- **Nada con una cuenta real**: ni un pase pedido de verdad, ni que el
+  login de Cognito acepte `login_hint` y traiga el correo escrito, ni
+  `cerrar_sesion` y `borrar_mis_datos` contra el servicio, ni la forma
+  real de su respuesta (la web no la lee: basta con que no sea un error).
+- Que el control de Turnstile se resuelva con interacción (en la prueba se
+  resolvió solo) y en un iPhone.
+- La barra con «Borrar mis datos» y «Salir» con una cuenta en pantalla: se
+  midió forzando los botones visibles en la portada (caben a 320 px, en
+  dos líneas), no con datos reales.
+- Que Cloudflare Pages con sus cabeceras (`frame-ancestors`,
+  `Cross-Origin-Opener-Policy`) no moleste al control: solo se probó con
+  la etiqueta `<meta>`.
