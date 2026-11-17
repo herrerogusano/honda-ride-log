@@ -1,5 +1,5 @@
 {
-  "$comment": "Service settings per Vite mode (docs/PLAN.md, section 10). Empty mcpUrl, loginDomain and webClientId mean demo only. `production` holds the public values of the production service: an address, a login domain and a public client id, none of them a secret. `development` stays empty in the repository: local values are not committed. Modes not listed (for example `test` or `demo`) are demo only. `cloudflare` (the Cloudflare Pages build) is prepared for the open service (docs/PLAN.md, section 18, \"Abrir producción\"): `access` public and the pages.dev address as redirectUri and logoutUri, but with its four values empty it is still demo only. It opens when mcpUrl, loginDomain, webClientId and turnstileSiteKey of the open service's production deployment are filled in, one line each. Optional `access`: `invitation` (the default when absent) or `public` for the open service (docs/PLAN.md, section 18), which also needs `turnstileSiteKey`, the public site key of Cloudflare Turnstile.",
+  "$comment": "Service settings per Vite mode (docs/PLAN.md, section 10). Empty mcpUrl, loginDomain and webClientId mean demo only. `production` holds the public values of the production service: an address, a login domain and a public client id, none of them a secret. `development` stays empty in the repository: local values are not committed. Modes not listed (for example `test` or `demo`) are demo only. `cloudflare` (the Cloudflare Pages build) holds the public values of the open service's production deployment (docs/PLAN.md, section 18, \"Abrir producción\"): `access` public, the pages.dev address as redirectUri and logoutUri, and its mcpUrl, loginDomain, webClientId and Turnstile site key, none of them a secret. Optional `access`: `invitation` (the default when absent) or `public` for the open service (docs/PLAN.md, section 18), which also needs `turnstileSiteKey`, the public site key of Cloudflare Turnstile.",
   "demo": null,
   "development": {
     "mcpUrl": "",
@@ -19,10 +19,10 @@
   },
   "cloudflare": {
     "access": "public",
-    "mcpUrl": "",
-    "loginDomain": "",
-    "webClientId": "",
-    "turnstileSiteKey": "",
+    "mcpUrl": "https://7pr506t5wk.execute-api.eu-west-1.amazonaws.com/mcp",
+    "loginDomain": "https://my-ride-log.auth.eu-west-1.amazoncognito.com",
+    "webClientId": "6s9khvln7kgdaj1g6ufs2os3k3",
+    "turnstileSiteKey": "0x4AAAAAAGFmoLnjURJ_wiLv",
     "redirectUri": "https://my-ride-log.pages.dev/",
     "logoutUri": "https://my-ride-log.pages.dev/",
     "sendResourceIndicator": true

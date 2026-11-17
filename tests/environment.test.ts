@@ -41,18 +41,20 @@ describe("environment file", () => {
     expect([environments.development.mcpUrl, environments.development.loginDomain, environments.development.webClientId]).toEqual(["", "", ""]);
   });
 
-  it("keeps the Cloudflare Pages build prepared for the open service but demo only until its four values are filled", () => {
-    expect(environmentFor("cloudflare").environment).toEqual({ kind: "demo" });
-    expect(environments.cloudflare).toEqual({
-      access: "public",
-      mcpUrl: "",
-      loginDomain: "",
-      webClientId: "",
-      turnstileSiteKey: "",
-      redirectUri: "https://my-ride-log.pages.dev/",
-      logoutUri: "https://my-ride-log.pages.dev/",
-      sendResourceIndicator: true,
-    });
+  it("opens the Cloudflare Pages build on the open service's production deployment, returning to pages.dev", () => {
+    // Changed on purpose on 2026-11-17: the open service's production deployment exists and its public values are written here.
+    const cloudflare = environmentFor("cloudflare").environment;
+    if (cloudflare.kind !== "service") throw new Error("cloudflare has no service");
+    expect(cloudflare.config.redirectUri).toBe("https://my-ride-log.pages.dev/");
+    expect(cloudflare.config.logoutUri).toBe(cloudflare.config.redirectUri);
+    expect(new URL(cloudflare.config.mcpUrl).protocol).toBe("https:");
+    expect(new URL(cloudflare.config.mcpUrl).pathname).toBe("/mcp");
+    expect(new URL(cloudflare.config.loginOrigin).protocol).toBe("https:");
+    expect(cloudflare.config.publicAccess?.turnstileSiteKey).toMatch(/^0x[0-9A-Za-z_-]+$/);
+    // Never the invitation service, never a development address.
+    expect(cloudflare.config.mcpUrl).not.toBe(environments.production.mcpUrl);
+    expect(cloudflare.config.webClientId).not.toBe(environments.production.webClientId);
+    expect(JSON.stringify(cloudflare.config)).not.toContain("localhost");
   });
 
   it("opens the Cloudflare Pages build once the four values are filled (synthetic here), and only then", () => {
@@ -79,7 +81,7 @@ describe("environment file", () => {
     expect(directives["frame-src"]).toEqual(["https://challenges.cloudflare.com"]);
     // Half filled never builds: no service without its site key, no site key without the service.
     rejects({ ...filled, turnstileSiteKey: "" }, /turnstileSiteKey/);
-    rejects({ ...environments.cloudflare, turnstileSiteKey: "0x4AAAAAAASyntheticKey" }, /turnstileSiteKey/);
+    rejects({ ...filled, mcpUrl: "", loginDomain: "", webClientId: "" }, /turnstileSiteKey/);
     rejects({ ...filled, webClientId: "" }, /all filled or all empty/);
   });
 
