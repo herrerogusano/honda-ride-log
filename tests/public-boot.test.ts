@@ -12,10 +12,10 @@ import type { StorageLike } from "../src/auth/pendingLogin";
 import type { ChallengeCallbacks, ChallengeRenderer } from "../src/access/turnstile";
 import { renderTurnstile, SCRIPT_TIMEOUT_MS, TURNSTILE_ACTION, TURNSTILE_SCRIPT } from "../src/access/turnstile";
 import { boot, DELETE_UNCONFIRMED } from "../src/boot";
-import { CONSENT_TEXT, PRIVACY_NOTICE_VERSION } from "../src/ui/passScreen";
 import type { ServiceConfig, ServiceEnvironment } from "../src/service/environment";
 import type { App } from "../src/ui/app";
 import { createMapView } from "../src/ui/mapView";
+import { CONSENT_TEXT, PRIVACY_NOTICE_VERSION } from "../src/ui/passScreen";
 import { createFakeServer, PUBLIC_CONFIG, TEST_CONFIG, type FakeServer } from "./fakeServer";
 
 class MemoryStorage implements StorageLike {
