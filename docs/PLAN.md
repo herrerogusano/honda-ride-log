@@ -1599,6 +1599,15 @@ antes de `start()`. Habría que elegir entre:
   En local, el envío de Cloudflare falla por CORS (responde para
   `http://localhost` sin puerto): no dice nada de cómo irá en `pages.dev`.
 
+- 2026-11-17, vista corta: en el servidor de desarrollo contra el
+  despliegue abierto de pruebas (sin política de seguridad, que el
+  servidor de desarrollo no lleva), medida con el navegador de la vista
+  previa sin pulsar «Continuar»: a 1280 px todo el formulario acaba a
+  520 px de altura, y a 320 px a 491 px (pantalla de 640), sin
+  desplazamiento lateral; el contenedor del control mide 0 px de alto. El
+  desplegable abierto mide 414 px a 320. No hubo captura de imagen: la
+  herramienta de capturas no respondió.
+
 ### Qué no se ha comprobado
 
 - Nada contra cuentas reales: en el navegador los identificadores eran
@@ -1662,11 +1671,19 @@ repo.
    ofrecen nada que enviar; un fallo de red o una respuesta rara dicen que
    no se ha podido comprobar. Todos ofrecen «Comprobar otra vez» y
    «Volver».
-3. El formulario: el texto de consentimiento (**provisional**, marcado así
-   en pantalla y en el código), una casilla para aceptarlo, el correo y el
-   control de Turnstile. «Continuar al login» envía `POST /pase` con
+3. El formulario es una sola vista corta, para que se note lo menos
+   posible: el correo (se escribe una vez; luego va en `login_hint`), una
+   línea que recuerda que la contraseña se escribe en el login, la casilla
+   «Acepto el aviso de privacidad.» y debajo «Leer el aviso de
+   privacidad», un desplegable (`<details>`, cerrado) con el texto
+   completo (**provisional**, marcado así dentro y en el código). El
+   control de Turnstile no ocupa sitio salvo que Cloudflare pida
+   interacción. «Continuar al login» envía `POST /pase` con
    `{"email", "turnstile"}` (el correo recortado y en minúsculas, como lo
-   lee el servicio; uno que el servicio rechazaría no se envía).
+   lee el servicio; uno que el servicio rechazaría no se envía). Si se
+   pulsa antes de que el control termine, dice «Comprobando que no eres un
+   robot…» y envía el pase solo, una vez, cuando llega el resultado; tras
+   un error del control o un pase rechazado, hace falta pulsar otra vez.
 4. Con el pase, el formulario se borra antes de salir (el correo, el
    resultado y el control de Turnstile; queda solo «Abriendo el login…»,
    por si el navegador guarda la página para «Atrás») y el login empieza
@@ -1692,6 +1709,13 @@ sitio. Ni `/estado` ni `/pase` llevan token, cookies ni referente.
   `web-pass`, la que comprueba el servicio. La página solo lee el
   resultado, que va directo a `/pase`.
 - En pantallas de menos de 300 px útiles usa el tamaño compacto.
+- Apariencia `interaction-only`: según la documentación de Cloudflare
+  (Turnstile, «Widget configurations»), «The widget becomes visible only
+  when visitor interaction is required», y los modos de apariencia solo
+  afectan a los widgets visibles (Managed y Non-Interactive). Con la clave
+  de pruebas (modo Managed) el control no ocupó sitio en la prueba. El
+  modo del widget (Managed, Non-Interactive, Invisible) se elige en el
+  panel de Cloudflare, no en el código.
 
 ### Dentro de la cuenta
 

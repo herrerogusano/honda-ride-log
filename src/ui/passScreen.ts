@@ -33,7 +33,10 @@ export interface PassScreenOptions {
   readonly onFailure: (error: unknown) => void;
 }
 
-/** Provisional (docs/PLAN.md, section 18): the final text is still to be written. */
+/**
+ * Provisional (docs/PLAN.md, section 18): the final text is still to be
+ * written. Shown folded under the checkbox; the screen stays one short view.
+ */
 export const CONSENT_TEXT: readonly string[] = [
   "Texto provisional.",
   "Para enseñarte tus rutas, esta web te lleva al login del servicio, donde escribes la contraseña de tu cuenta de MAPIT. Esta web no la ve.",
@@ -57,6 +60,9 @@ const PASS_TEXT: Readonly<Record<Exclude<PassOutcome, "issued">, string>> = {
   unavailable: "El servicio no responde ahora mismo. Prueba de nuevo dentro de un rato.",
 };
 
+/** Shown while the (normally invisible) check has not finished; the pass goes out by itself when it does. */
+const CHECKING = "Comprobando que no eres un robot…";
+
 const CHALLENGE_FAILED = "No se ha podido hacer la comprobación anti-robots. Recarga la página o prueba con otro navegador.";
 
 /** Shows the screen. The returned function takes it down (and the check with it). */
@@ -75,8 +81,7 @@ export function showPassScreen(options: PassScreenOptions): () => void {
     el(
       "section",
       { class: "hero pass-screen", attrs: { "aria-labelledby": titleId } },
-      el("p", { class: "eyebrow hero-eyebrow" }, "Ride Log · entrar"),
-      el("h2", { id: titleId, class: "pass-title" }, "Entrar con tu cuenta de MAPIT"),
+      el("h2", { id: titleId, class: "pass-title" }, "Entrar"),
       body,
     ),
   );
@@ -108,9 +113,12 @@ export function showPassScreen(options: PassScreenOptions): () => void {
     clear(body);
     let result: string | null = null;
     let sending = false;
+    /** «Continuar» was pressed before the check finished: send as soon as it does. */
+    let waiting = false;
 
     const consentId = uniqueId("consent");
     const emailId = uniqueId("email");
+    const privacyId = uniqueId("privacy");
     const consent = el("input", { id: consentId, attrs: { type: "checkbox", required: true } });
     const email = el("input", {
       id: emailId,
@@ -133,10 +141,14 @@ export function showPassScreen(options: PassScreenOptions): () => void {
 
     async function send(): Promise<void> {
       if (sending) return;
-      if (!consent.checked) return say("Para seguir tienes que aceptar el texto de arriba.");
+      if (!consent.checked) return say("Para seguir tienes que aceptar el aviso de privacidad.");
       const address = normalizeEmail(email.value);
       if (address === null) return say("Escribe el correo de tu cuenta de MAPIT.");
-      if (result === null) return say("Espera a que termine la comprobación anti-robots.");
+      if (result === null) {
+        waiting = true;
+        return say(CHECKING);
+      }
+      waiting = false;
       sending = true;
       submit.disabled = true;
       say("Comprobando…");
@@ -165,7 +177,7 @@ export function showPassScreen(options: PassScreenOptions): () => void {
       "form",
       {
         class: "pass-form",
-        attrs: { novalidate: true, "aria-describedby": consentId + "-text" },
+        attrs: { novalidate: true, "aria-labelledby": titleId },
         on: {
           submit: (event: Event) => {
             // Never a real form submission: the policy has form-action 'none'.
@@ -174,9 +186,15 @@ export function showPassScreen(options: PassScreenOptions): () => void {
           },
         },
       },
-      el("div", { id: consentId + "-text", class: "pass-consent" }, ...CONSENT_TEXT.map((line) => el("p", {}, line))),
-      el("p", { class: "pass-check" }, consent, el("label", { attrs: { for: consentId } }, " He leído y acepto este texto.")),
       el("p", { class: "pass-field" }, el("label", { attrs: { for: emailId } }, "Correo de tu cuenta de MAPIT"), email),
+      el("p", { class: "pass-lead" }, "La contraseña la escribes después, en el login del servicio: esta web no la ve."),
+      el("p", { class: "pass-check" }, consent, el("label", { attrs: { for: consentId } }, " Acepto el aviso de privacidad.")),
+      el(
+        "details",
+        { id: privacyId, class: "pass-privacy" },
+        el("summary", {}, "Leer el aviso de privacidad"),
+        ...CONSENT_TEXT.map((line) => el("p", {}, line)),
+      ),
       challengeHost,
       message,
       el("div", { class: "landing-actions" }, submit, backButton),
@@ -188,13 +206,14 @@ export function showPassScreen(options: PassScreenOptions): () => void {
       .renderChallenge(challengeHost, access.turnstileSiteKey, {
         onResult: (value) => {
           result = value;
-          if (message.textContent === "Espera a que termine la comprobación anti-robots.") say("");
+          if (waiting) void send();
         },
         onExpired: () => {
           result = null;
         },
         onError: () => {
           result = null;
+          waiting = false;
           say(CHALLENGE_FAILED);
         },
       })
@@ -204,6 +223,7 @@ export function showPassScreen(options: PassScreenOptions): () => void {
           else widget = made;
         },
         () => {
+          waiting = false;
           if (!disposed) say(CHALLENGE_FAILED);
         },
       );

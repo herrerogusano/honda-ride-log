@@ -1327,7 +1327,7 @@ select:focus-visible {
 }
 
 .pass-title {
-  font: var(--w-title) clamp(34px, 5.4vw, 64px) / 1 var(--display);
+  font: var(--w-title) clamp(40px, 6vw, 72px) / 1 var(--display);
   color: var(--fg);
   text-transform: uppercase;
 }
@@ -1335,26 +1335,14 @@ select:focus-visible {
 .pass-body,
 .pass-form {
   display: grid;
-  gap: var(--s4);
-  width: min(100%, 64ch);
+  gap: var(--s3);
+  width: min(100%, 46ch);
 }
 
-.pass-consent {
-  display: grid;
-  gap: var(--s2);
-  padding: var(--s4);
-  background: var(--surface);
-  border-left: 2px solid var(--red);
+.pass-lead {
   color: var(--fg-2);
-  font-size: 14px;
-  line-height: 1.6;
-}
-
-.pass-consent p:first-child {
-  font: 700 var(--fs-eyebrow) / 1.2 var(--text);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--amber);
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .pass-check {
@@ -1369,6 +1357,39 @@ select:focus-visible {
   width: 22px;
   height: 22px;
   accent-color: var(--red);
+}
+
+/* The full privacy text, folded: the screen stays one short view. */
+.pass-privacy {
+  margin-top: calc(-1 * var(--s3));
+  color: var(--fg-2);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.pass-privacy summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--red-hi);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.pass-privacy[open] {
+  display: grid;
+  gap: var(--s2);
+  padding: 0 var(--s4) var(--s4);
+  background: var(--surface);
+  border-left: 2px solid var(--red);
+}
+
+.pass-privacy p:first-of-type {
+  font: 700 var(--fs-eyebrow) / 1.2 var(--text);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--amber);
 }
 
 .pass-field {
@@ -1391,9 +1412,8 @@ select:focus-visible {
   font: 600 15px/1.2 var(--text);
 }
 
-/* Cloudflare's widget sets its own size (300 x 65 px) inside. */
+/* Cloudflare's widget: normally invisible (interaction-only); when it asks for a click it sets its own size. */
 .pass-challenge {
-  min-height: 65px;
   max-width: 100%;
 }
 

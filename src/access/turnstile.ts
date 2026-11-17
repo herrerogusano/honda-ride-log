@@ -111,6 +111,10 @@ export const renderTurnstile: ChallengeRenderer = async (host, siteKey, callback
     action: TURNSTILE_ACTION,
     language: "es",
     theme: "dark",
+    // Seen only if Cloudflare needs the visitor to act; usually it resolves
+    // without showing anything ("The widget becomes visible only when visitor
+    // interaction is required", Turnstile widget configurations).
+    appearance: "interaction-only",
     // The normal widget is 300 px wide; on the narrowest phones it would stick out.
     size: host.clientWidth > 0 && host.clientWidth < 300 ? "compact" : "normal",
     // The page reads the result from the callback; no hidden form field.

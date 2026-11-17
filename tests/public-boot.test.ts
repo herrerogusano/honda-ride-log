@@ -216,7 +216,7 @@ describe("the screen before the login", () => {
     expect(text()).toContain("Escribe el correo");
     emailField().value = "rider@example.test";
     submit();
-    expect(text()).toContain("Espera a que termine la comprobación");
+    expect(text()).toContain("Comprobando que no eres un robot…");
     expect(passRequests()).toBe(0);
   });
 
@@ -253,8 +253,65 @@ describe("the screen before the login", () => {
     expect(widgets[0]?.resets).toBe(1);
     // The used result is not sent again.
     submit();
-    expect(text()).toContain("Espera a que termine la comprobación");
+    expect(text()).toContain("Comprobando que no eres un robot…");
     expect(passRequests()).toBe(1);
+  });
+
+  it("is one short view: one email field, a short consent with the full privacy text folded, nothing else to type", async () => {
+    await openForm();
+    expect(root.querySelectorAll("input")).toHaveLength(2);
+    expect(root.querySelectorAll('input[type="email"]')).toHaveLength(1);
+    const label = root.querySelector(`label[for="${consentBox().id}"]`);
+    expect(label?.textContent?.trim()).toBe("Acepto el aviso de privacidad.");
+    const privacy = root.querySelector("details");
+    expect(privacy).not.toBeNull();
+    expect(privacy?.open).toBe(false);
+    expect(privacy?.querySelector("summary")?.textContent).toBe("Leer el aviso de privacidad");
+    // The provisional mark goes with the full text.
+    expect(privacy?.textContent).toContain("Texto provisional.");
+    expect(privacy?.textContent).toContain("huella de tu correo");
+  });
+
+  it("pressed before the check finishes, says it is checking and sends the pass by itself when the result arrives, once", async () => {
+    await openForm();
+    consentBox().checked = true;
+    emailField().value = "rider@example.test";
+    submit();
+    expect(text()).toContain("Comprobando que no eres un robot…");
+    expect(passRequests()).toBe(0);
+    widgets[0]?.callbacks.onResult("synthetic-result-0002");
+    await vi.waitFor(() => expect(navigations).toHaveLength(1));
+    expect(server.passes).toEqual([{ email: "rider@example.test", turnstile: "synthetic-result-0002" }]);
+  });
+
+  it("after a refused pass, a new result is only kept: sending again needs «Continuar»", async () => {
+    await openForm();
+    server.passOverride = { status: 403, body: '{"error": "control_no_valido"}' };
+    consentBox().checked = true;
+    emailField().value = "rider@example.test";
+    submit();
+    widgets[0]?.callbacks.onResult("synthetic-result-0005");
+    await vi.waitFor(() => expect(text()).toContain("La comprobación anti-robots no es válida"));
+    widgets[0]?.callbacks.onResult("synthetic-result-0006");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(passRequests()).toBe(1);
+  });
+
+  it("does not send by itself after a failed check, nor without being asked", async () => {
+    await openForm();
+    consentBox().checked = true;
+    emailField().value = "rider@example.test";
+    // A result that arrives with nobody waiting is only kept.
+    widgets[0]?.callbacks.onResult("synthetic-result-0003");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(passRequests()).toBe(0);
+    widgets[0]?.callbacks.onExpired();
+    submit();
+    widgets[0]?.callbacks.onError();
+    expect(text()).toContain("No se ha podido hacer la comprobación anti-robots.");
+    widgets[0]?.callbacks.onResult("synthetic-result-0004");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(passRequests()).toBe(0);
   });
 
   it("sends one pass however many times the form is submitted while it waits", async () => {
@@ -312,7 +369,7 @@ describe("the screen before the login", () => {
     consentBox().checked = true;
     emailField().value = "rider@example.test";
     submit();
-    expect(text()).toContain("Espera a que termine la comprobación");
+    expect(text()).toContain("Comprobando que no eres un robot…");
     expect(passRequests()).toBe(1);
   });
 
@@ -351,7 +408,7 @@ describe("the screen before the login", () => {
     fill();
     widgets[0]?.callbacks.onExpired();
     submit();
-    expect(text()).toContain("Espera a que termine la comprobación");
+    expect(text()).toContain("Comprobando que no eres un robot…");
     expect(passRequests()).toBe(0);
   });
 
@@ -556,7 +613,7 @@ describe("the real Turnstile loader", () => {
     scripts[0]?.dispatchEvent(new Event("load"));
     await pending;
     expect(rendered).toHaveLength(1);
-    expect(rendered[0]).toMatchObject({ sitekey: "0x4AAAAAAASyntheticKey", action: TURNSTILE_ACTION, "response-field": false });
+    expect(rendered[0]).toMatchObject({ sitekey: "0x4AAAAAAASyntheticKey", action: TURNSTILE_ACTION, "response-field": false, appearance: "interaction-only" });
     expect(TURNSTILE_ACTION).toBe("web-pass");
     (rendered[0]?.["callback"] as (value: unknown) => void)("synthetic-result");
     expect(results).toEqual(["synthetic-result"]);
