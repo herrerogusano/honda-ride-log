@@ -1903,7 +1903,11 @@ Google, no lo que esos scripts harían.
 
 ### Abrir producción
 
-La entrada `cloudflare` de `environments.config.json` ya está preparada:
+**Hecho el 2026-11-17:** la entrada `cloudflare` lleva ya los cuatro valores
+del despliegue abierto de producción y la web de Cloudflare Pages ofrece
+«Entrar» sin invitación. Lo que sigue describe cómo se preparó.
+
+La entrada `cloudflare` de `environments.config.json` se preparó con
 `access: "public"`, `redirectUri` y `logoutUri` en
 `https://my-ride-log.pages.dev/` (la misma dirección para las dos, como
 espera la plantilla del despliegue abierto de producción) y
