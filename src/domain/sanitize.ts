@@ -74,10 +74,16 @@ function isInstantMs(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= MAX_INSTANT_MS;
 }
 
-/** An instant in epoch milliseconds; a number no date can hold (1e100, -1, 0.5) is treated as absent. */
+/**
+ * An instant in epoch milliseconds; a number no date can hold (1e100, -1) is
+ * treated as absent. The service sends this one as a float, so a fraction of
+ * a millisecond is dropped (rounded down) rather than losing the date.
+ */
 function instantMsOrNull(value: unknown, path: string): number | null {
   const number = finiteOrNull(value, path);
-  return number !== null && isInstantMs(number) ? (number === 0 ? 0 : number) : null;
+  if (number === null) return null;
+  const whole = Math.floor(number);
+  return isInstantMs(whole) ? (whole === 0 ? 0 : whole) : null;
 }
 
 /** A finite number that is not negative; a negative one is treated as absent. */

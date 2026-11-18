@@ -88,7 +88,9 @@ describe("vehicle sanitizers", () => {
     });
     expect(sanitizeVehicleDetails({ mileage: 0 }).mileage).toBe(0);
     // A last communication no date can hold, or between milliseconds, is absent, never a date of NaN.
-    for (const instant of [1e100, 8.64e15 + 1, 1000.5]) expect(sanitizeVehicleStatus({ last_communication: instant }).lastCommunicationMs).toBeNull();
+    for (const instant of [1e100, 8.64e15 + 1, -1]) expect(sanitizeVehicleStatus({ last_communication: instant }).lastCommunicationMs).toBeNull();
+    // The service declares it a float: a fraction of a millisecond is dropped, the date is kept.
+    expect(sanitizeVehicleStatus({ last_communication: 1_763_000_000_123.75 }).lastCommunicationMs).toBe(1_763_000_000_123);
     expect(sanitizeVehicleStatus({ last_communication: 8.64e15 }).lastCommunicationMs).toBe(8.64e15);
     // JSON can carry -0: it is kept as 0, never as -0 (which Intl writes "-0").
     expect(Object.is(sanitizeVehicleStatus({ odometer: -0 }).odometer, 0)).toBe(true);
