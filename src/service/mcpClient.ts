@@ -93,8 +93,8 @@ export interface McpClientOptions {
   readonly minIntervalMs?: number;
   /**
    * The open service (docs/PLAN.md, section 18): allows the two account
-   * tools, and ends the session when a tool answers `session_expired` (the
-   * service has already deleted it), so that token is not sent again.
+   * tools. A tool answer `session_expired` ends the session in both modes
+   * (the service has already deleted it), so that token is not sent again.
    */
   readonly publicService?: boolean;
 }
@@ -312,21 +312,27 @@ export function createMcpClient(mcpUrl: string, session: AuthSession, options: M
     const type = response.headers.get("content-type") ?? "";
     if (!/^application\/json(\s*;|$)/i.test(type)) throw new ServiceError("bad_response", "content_type");
 
+    let text: string;
+    try {
+      text = await response.text();
+    } catch (error) {
+      if (isTimeout(error)) throw new ServiceError("timeout");
+      // The connection dropped while the answer came in: the same as a failed fetch.
+      throw reauth(session, "network");
+    }
+    if (text.length > MAX_RESPONSE_CHARS) throw new ServiceError("bad_response", "too_large");
     let payload: unknown;
     try {
-      const text = await response.text();
-      if (text.length > MAX_RESPONSE_CHARS) throw new ServiceError("bad_response", "too_large");
       payload = JSON.parse(text);
-    } catch (error) {
-      if (error instanceof ServiceError) throw error;
-      if (isTimeout(error)) throw new ServiceError("timeout");
+    } catch {
       throw new ServiceError("bad_response", "json");
     }
     try {
       return readEnvelope(payload, id, name, !(ACCOUNT_TOOLS as readonly string[]).includes(name));
     } catch (error) {
-      // The open service deleted the session already: never send this token again.
-      if (publicService && error instanceof ToolCallError && error.code === "session_expired") session.end("expired");
+      // The service deleted the session already: never send this token again,
+      // and the copy kept in the tab goes with it (in both modes).
+      if (error instanceof ToolCallError && error.code === "session_expired") session.end("expired");
       throw error;
     }
   }

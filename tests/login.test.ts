@@ -433,6 +433,8 @@ describe("a reload keeps the session (docs/PLAN.md, section 10, «El token»)", 
       "not json",
       JSON.stringify({ token: "short", expiresAt: now + 3_600_000 }),
       JSON.stringify({ token: "eyJ".repeat(10), expiresAt: "later" }),
+      // One character over the longest token a sign-in takes.
+      JSON.stringify({ token: "a".repeat(8_193), expiresAt: now + 3_600_000 }),
       // Longer than a day: never trusted, as on the way in.
       JSON.stringify({ token: "eyJ".repeat(10), expiresAt: now + 2 * 86_400_000 }),
     ]) {

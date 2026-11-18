@@ -749,7 +749,8 @@ vez.
     `sessionStorage` es de la pestaña y desaparece al cerrarla.
   - Se guarda al canjear el código. Se borra cuando la sesión termina por
     cualquier motivo (salir, «Borrar mis datos», caducidad por reloj, 401,
-    403, fallo de red tras entrar, `session_expired` del servicio abierto),
+    403, fallo de red tras entrar, `session_expired` del servicio, en los
+    dos modos),
     al empezar un login nuevo, al volver del login (bien o mal) y al
     arrancar si ya caducó, está dañado o dice durar más de un día. Si la
     pestaña no deja guardarlo, la sesión sigue en memoria y recargar pide
@@ -787,7 +788,17 @@ vez.
 - Un 401, un 403 o un fallo de red tras entrar terminan la sesión: ese token
   no se vuelve a enviar y las peticiones que esperaban en cola no salen.
   Motivo del fallo de red: si el autorizador responde 401 sin cabeceras CORS
-  (**sin verificar**), el navegador lo ve como error de red.
+  (**sin verificar**), el navegador lo ve como error de red. Un corte
+  mientras llega el cuerpo de la respuesta cuenta como fallo de red (desde
+  el 2026-11-18; antes daba `bad_response (json)` y la sesión seguía); un
+  cuerpo que llega entero pero no es JSON sigue siendo `bad_response
+  (json)`, y el tiempo agotado, `timeout`, sin terminar la sesión.
+- `session_expired` de una herramienta termina la sesión en los dos modos
+  (desde el 2026-11-18; antes, solo en el servicio abierto, y en el modo por
+  invitación el token guardado en la pestaña volvía al recargar). En el modo
+  por invitación la web dice «Tu sesión ha terminado. Vuelve a entrar.» con
+  «Volver a entrar»; el resto de códigos de herramienta conserva allí el
+  texto general.
 
 ### Las peticiones a `/mcp`
 

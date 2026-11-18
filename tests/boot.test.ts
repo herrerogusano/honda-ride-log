@@ -455,6 +455,28 @@ describe("a reload keeps the session (docs/PLAN.md, section 10, «El token»)", 
     await vi.waitFor(() => expect(root.querySelector(".map-status [role='alert']")?.textContent).toContain("reauth_required (unauthorized)"));
     expect(storage?.items.size).toBe(0);
   });
+
+  it("forgets it when the service says session_expired, offers «Volver a entrar», and a reload shows the landing", async () => {
+    await signedIn();
+    await loaded();
+    await reload();
+    await loaded();
+    expect(storage?.items.size).toBe(1);
+    // The exact text the MCP Python SDK sends for a tool error.
+    server.mcpOverride = (request) => {
+      const message = JSON.parse(request.body) as { id: number; params: { name: string } };
+      const said = `Error executing tool ${message.params.name}: session_expired: the session ended`;
+      return { body: JSON.stringify({ jsonrpc: "2.0", id: message.id, result: { content: [{ type: "text", text: said }], isError: true } }) };
+    };
+    root.querySelectorAll<HTMLElement>(".row-button")[1]?.click();
+    const status = (): Element | null => root.querySelector(".map-status [role='alert']");
+    await vi.waitFor(() => expect(status()?.textContent).toContain("tool_error (session_expired)"));
+    expect(buttons(status() as Element)).toEqual(["Volver a entrar"]);
+    expect(storage?.items.size).toBe(0);
+    server.mcpOverride = null;
+    await reload();
+    expect(buttons()).toEqual(["Entrar", "Ver la demo"]);
+  });
 });
 
 describe("the whole traces leave memory when the session ends (docs/PLAN.md, section 4)", () => {

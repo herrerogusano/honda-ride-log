@@ -153,6 +153,12 @@ describe("error texts of the open service", () => {
       explanation: "Has llegado al máximo de consultas de esta sesión. Vuelve a entrar.",
       action: "sign_in",
     });
+    // The invitation build: the client has forgotten the token, so a new sign-in, never a retry.
+    expect(errorText(new LoadError("status", "tool_error", "session_expired"))).toMatchObject({
+      explanation: "Tu sesión ha terminado. Vuelve a entrar.",
+      action: "sign_in",
+    });
+    expect(errorText(new LoadError("status", "tool_error", "session_limit_reached")).action).toBe("retry");
     // A code that happens to name an object property is not a text.
     expect(errorText(new LoadError("status", "tool_error", "constructor"), true).explanation).toBe("El servicio ha respondido con un error.");
   });
@@ -247,13 +253,14 @@ describe("account tools of the /mcp client", () => {
     await expect(client.callTool("get_vehicle_status", {})).rejects.toThrow(/reauth_required/);
   });
 
-  it("keeps the token after session_expired in an invitation client, as before", async () => {
+  it("forgets the token after session_expired in an invitation client too: a reload must not bring it back", async () => {
     const server = createFakeServer(PUBLIC_CONFIG);
     const { client, session } = await signedInClient(server, false);
     server.mcpOverride = (request) => ({
       body: JSON.stringify({ jsonrpc: "2.0", id: (JSON.parse(request.body) as { id: number }).id, result: { content: [{ type: "text", text: "session_expired: x" }], isError: true } }),
     });
     await expect(client.callTool("get_vehicle_status", {})).rejects.toThrow(/session_expired/);
-    expect(session.endReason).toBeNull();
+    expect(session.endReason).toBe("expired");
+    await expect(client.callTool("get_vehicle_status", {})).rejects.toThrow(/reauth_required/);
   });
 });

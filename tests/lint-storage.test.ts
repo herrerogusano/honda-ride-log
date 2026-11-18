@@ -69,7 +69,7 @@ describe("browser storage rules", () => {
   it.each(["src/main.ts", "src/boot.ts", "src/auth/session.ts", "src/auth/pendingLogin.ts", "src/service/mcpClient.ts", "src/ui/app.ts", "src/analytics/tracker.ts", "src/storage/consent.ts", "vite.config.ts"])(
     "bans importing the stored token from %s",
     async (file) => {
-      for (const from of ["./auth/savedSession", "../auth/savedSession.ts", "./savedSession.ts?raw"]) {
+      for (const from of ["./auth/savedSession", "../auth/savedSession.ts", "./savedSession.ts?raw", "./savedSession.ts#x", "./savedSession.ts?raw#x", "./savedSession#x"]) {
         const code = `import { readSavedSession } from "${from}";\nexport const r = readSavedSession;\n`;
         expect(await errorsIn(file, code)).toEqual(["@typescript-eslint/no-restricted-imports"]);
       }
