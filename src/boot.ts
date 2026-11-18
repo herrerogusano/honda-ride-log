@@ -29,7 +29,20 @@
  * (a script cannot be unloaded), the page reloads at `#entrar` instead, and
  * that load seals them before they start and opens the screen at once.
  */
-import { completeLogin, logout, resumeSession, startLogin, takeLogoutNotice, type AuthDeps, type LoginReturn } from "./auth/login";
+import {
+  completeLogin,
+  dropAccountData,
+  keepAccountData,
+  keptAccountData,
+  logout,
+  resumeSession,
+  startLogin,
+  takeLogoutNotice,
+  type AuthDeps,
+  type LoginReturn,
+} from "./auth/login";
+import type { AccountData } from "./domain/model";
+import { accountSnapshot, restoreAccount, ShapeError } from "./domain/sanitize";
 import type { LeaveNotice } from "./auth/login";
 import type { AuthSession, Schedule } from "./auth/session";
 import type { ServiceEnvironment } from "./service/environment";
@@ -196,13 +209,34 @@ export async function boot(options: BootOptions): Promise<App> {
     started.onEnd(() => app.forgetTraces());
     started.watchExpiry(deps.now, expiryTimer);
     client = createMcpClient(config.mcpUrl, started, { ...mcp, publicService: access !== null });
-    void app.load(client, { demo: false });
+    // A reload paints what the sign-in loaded, kept in the tab for this token
+    // alone (docs/PLAN.md, section 10, «Los datos de la cuenta»); a fresh
+    // sign-in, or a reload without it, loads from the service and keeps it.
+    const saved = resumed !== null ? restoredAccount(started, deps) : null;
+    void app.load(client, {
+      demo: false,
+      saved,
+      onLoaded: (data) => keepAccountData(started, deps, accountSnapshot(data)),
+    });
   } else if (leftNotice === "delete_unconfirmed") {
     app.showNotice(DELETE_UNCONFIRMED);
   } else if (enterNow) {
     app.showAccess();
   }
   return app;
+}
+
+/** The account data kept in the tab for this session, checked again; damaged data is removed and gives null. */
+function restoredAccount(session: AuthSession, deps: AuthDeps): AccountData | null {
+  const kept = keptAccountData(session, deps);
+  if (kept === null) return null;
+  try {
+    return restoreAccount(kept);
+  } catch (error) {
+    if (!(error instanceof ShapeError)) throw error;
+    dropAccountData(deps);
+    return null;
+  }
 }
 
 /** docs/PLAN.md, section 18. Fixed: the code of the failure does not cross the sign-out page. */

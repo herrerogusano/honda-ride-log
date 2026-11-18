@@ -311,7 +311,7 @@ describe("vehicle and route detail", () => {
     expect(calls.every((call) => call.name === "list_routes")).toBe(true);
     const longest = load.routes.reduce((a, b) => (b.distanceKm > a.distanceKm ? b : a));
     const expectedId = commuter.routes.reduce((a, b) => ((b.distance_km ?? 0) > (a.distance_km ?? 0) ? b : a)).route_id;
-    const trace = await loadRouteTrace(caller, longest.ref);
+    const trace = await loadRouteTrace(caller, longest);
     expect(calls[calls.length - 1]).toEqual({ name: "get_route_detail", args: { route_id: expectedId } });
     expect(Object.keys(trace)).toEqual([]);
     expect(trimTrace(trace).lines.length).toBeGreaterThan(0);
@@ -319,7 +319,7 @@ describe("vehicle and route detail", () => {
 
   it("reports a failed detail with its own step", async () => {
     const load = await loadAllRoutes(createDemoService(commuter), NOW);
-    const ref = load.routes[0]?.ref;
+    const ref = load.routes[0];
     if (ref === undefined) throw new Error("no route");
     const other = createDemoService(generateRider({ seed: 99, nowMs: NOW }));
     const error = await failure(loadRouteTrace(other, ref));

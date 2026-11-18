@@ -158,8 +158,11 @@ describe("return from the login", () => {
     // After the return the tab keeps one entry: the access token and its expiry, nothing else.
     expect([...b.storage.items.keys()]).toEqual([SAVED_KEY]);
     const saved = JSON.parse(b.storage.items.get(SAVED_KEY) ?? "") as Record<string, unknown>;
-    expect(Object.keys(saved).sort()).toEqual(["expiresAt", "token"]);
+    expect(Object.keys(saved).sort()).toEqual(["binding", "expiresAt", "token"]);
     expect(saved["token"]).toBe(server.issuedTokens[0]);
+    // The binding of the account data is random, not made from the token.
+    expect(saved["binding"]).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(server.issuedTokens[0]).not.toContain(saved["binding"] as string);
     for (const token of server.otherTokens) expect(b.storage.items.get(SAVED_KEY)).not.toContain(token);
   });
 

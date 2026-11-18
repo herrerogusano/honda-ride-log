@@ -12,8 +12,9 @@
  * 3. Only the access token is kept, in memory (`AuthSession`) and, with its
  *    expiry, in the tab's `sessionStorage` (src/auth/savedSession.ts) so a
  *    reload keeps the session (`resumeSession`). That copy goes when the
- *    session ends. The ID token and the refresh token that the login also
- *    returns are dropped.
+ *    session ends, and with it the account data kept for that session
+ *    (`keepAccountData`). The ID token and the refresh token that the login
+ *    also returns are dropped.
  *
  * Errors are `AuthError`s with a closed `kind` and a `detail` that is either
  * null or a short OAuth error code: never a token, a code, a URL or a body.
@@ -31,7 +32,16 @@ import {
   type StorageLike,
 } from "./pendingLogin";
 import { challengeFor, randomToken, type CryptoLike } from "./pkce";
-import { browserTokenStorage, clearSavedSession, readSavedSession, saveSession, type TokenStorage } from "./savedSession";
+import {
+  browserTokenStorage,
+  clearSavedAccount,
+  clearSavedSession,
+  readSavedAccount,
+  readSavedSession,
+  saveAccount,
+  saveSession,
+  type TokenStorage,
+} from "./savedSession";
 import { createSession, MAX_SESSION_MS, TOKEN_PATTERN, type AuthSession } from "./session";
 
 export type AuthErrorKind =
@@ -107,18 +117,32 @@ function forgetSaved(deps: AuthDeps): void {
 }
 
 /**
+ * The binding of each session made here (src/auth/savedSession.ts): the
+ * account data is kept for that token entry alone. Absent when the token is
+ * not in the tab (or was saved without one).
+ */
+const bindings = new WeakMap<AuthSession, string>();
+
+/**
  * A session for this token that also lives in the tab's sessionStorage, so a
  * reload keeps it, and leaves it the moment it ends for any reason.
+ * `binding` is the one read back with the token on a reload (null for none).
  */
-function keptSession(accessToken: string, expiresAtMs: number, deps: AuthDeps, store: boolean): AuthSession {
+function keptSession(accessToken: string, expiresAtMs: number, deps: AuthDeps, store: boolean, binding: string | null = null): AuthSession {
   const session = createSession(accessToken, expiresAtMs);
   if (store) {
     const storage = tokenStorageOf(deps);
     try {
-      if (storage !== null) saveSession(storage, { accessToken, expiresAtMs });
+      if (storage !== null) {
+        const fresh = randomToken(deps.crypto);
+        saveSession(storage, { accessToken, expiresAtMs, binding: fresh });
+        bindings.set(session, fresh);
+      }
     } catch {
       // Storage full or blocked: the session works, a reload asks to sign in again.
     }
+  } else if (binding !== null) {
+    bindings.set(session, binding);
   }
   session.onEnd(() => forgetSaved(deps));
   return session;
@@ -139,7 +163,59 @@ export function resumeSession(config: ServiceConfig | null, deps: AuthDeps): Aut
   } catch {
     return null;
   }
-  return saved === null ? null : keptSession(saved.accessToken, saved.expiresAtMs, deps, false);
+  return saved === null ? null : keptSession(saved.accessToken, saved.expiresAtMs, deps, false, saved.binding);
+}
+
+/**
+ * Keeps the account data (the plain value of `accountSnapshot` in
+ * src/domain/sanitize.ts) in the tab for this session, so a reload paints it
+ * without asking the service (docs/PLAN.md, section 10, «Los datos de la
+ * cuenta»). Only while the session is active and its token is the one the
+ * tab keeps; it goes with the token. A storage that refuses it (quota, a
+ * blocked tab) keeps nothing and says nothing: the next reload loads as
+ * before.
+ */
+export function keepAccountData(session: AuthSession, deps: AuthDeps, account: unknown): void {
+  const binding = bindings.get(session);
+  const storage = tokenStorageOf(deps);
+  if (storage === null) return;
+  try {
+    if (binding === undefined || session.endReason !== null) clearSavedAccount(storage);
+    else saveAccount(storage, binding, account, deps.now());
+  } catch {
+    try {
+      clearSavedAccount(storage);
+    } catch {
+      // Nothing more can be done; it goes with the token.
+    }
+  }
+}
+
+/**
+ * The account data kept in the tab for this session, still unchecked
+ * (`restoreAccount` in src/domain/sanitize.ts checks it), or null. Data kept
+ * for another token is removed and gives null.
+ */
+export function keptAccountData(session: AuthSession, deps: AuthDeps): unknown {
+  const binding = bindings.get(session);
+  const storage = tokenStorageOf(deps);
+  if (storage === null || binding === undefined || session.endReason !== null) return null;
+  try {
+    return readSavedAccount(storage, binding, deps.now());
+  } catch {
+    return null;
+  }
+}
+
+/** Removes the kept account data alone (it did not pass the checks of `restoreAccount`). */
+export function dropAccountData(deps: AuthDeps): void {
+  const storage = tokenStorageOf(deps);
+  if (storage === null) return;
+  try {
+    clearSavedAccount(storage);
+  } catch {
+    // It goes with the token.
+  }
 }
 
 const TOKEN_TIMEOUT_MS = 20_000;

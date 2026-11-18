@@ -9,6 +9,7 @@
  */
 import type { Route, RouteRef, UntrimmedTrace, VehicleInfo, VehicleState } from "../domain/model";
 import {
+  needsRouteLookup,
   sanitizeRouteList,
   sanitizeRouteTrace,
   sanitizeVehicleDetails,
@@ -232,12 +233,112 @@ export function loadAllRoutes(
   });
 }
 
+/** What the loader needs of a route to ask for its trace. */
+export type TracedRoute = Pick<Route, "ref" | "startMs" | "distanceKm">;
+
+/**
+ * Routes restored from the tab (`needsRouteLookup`) carry no service id: it
+ * is never stored (docs/PLAN.md, section 10, «Los datos de la cuenta»). To
+ * ask for one of their traces the loader reads the light list again, once
+ * per period and per client, and takes the route that starts at the same
+ * millisecond with the same km. The period is the route's natural UTC
+ * semester, so an atlas of many routes costs one more read per semester,
+ * not per route; a semester cut at the service's limit falls back to a
+ * window of one millisecond around that start (`from_time` inclusive,
+ * `to_time` exclusive). The routes found keep their own sealed refs; the
+ * ids stay behind them in src/domain/sanitize.ts.
+ */
+type PeriodRefs = ReadonlyMap<string, RouteRef | null> | null;
+/** One read of a period: on its way, or answered (`outcome`; null when the answer was cut). */
+interface PeriodLookup {
+  readonly asked: Promise<PeriodRefs>;
+  outcome?: PeriodRefs;
+}
+const lookups = new WeakMap<ToolCaller, Map<string, PeriodLookup>>();
+
+const lookupKey = (route: Pick<Route, "startMs" | "distanceKm">): string => `${route.startMs}|${route.distanceKm}`;
+
+function semesterOf(startMs: number): readonly [number, number] {
+  const date = new Date(startMs);
+  const year = date.getUTCFullYear();
+  return date.getUTCMonth() < 6 ? [Date.UTC(year, 0, 1), Date.UTC(year, 6, 1)] : [Date.UTC(year, 6, 1), Date.UTC(year + 1, 0, 1)];
+}
+
+/** The routes of one period by start and km (null for a key two routes share), or null if the answer was cut. */
+function periodRefs(caller: ToolCaller, fromMs: number, toMs: number): Promise<PeriodRefs> {
+  let byPeriod = lookups.get(caller);
+  if (byPeriod === undefined) {
+    byPeriod = new Map();
+    lookups.set(caller, byPeriod);
+  }
+  const key = `${fromMs}-${toMs}`;
+  const known = byPeriod.get(key);
+  if (known !== undefined) return known.asked;
+  const asked = (async () => {
+    const page = sanitizeRouteList(
+      await caller.callTool("list_routes", { from_time: new Date(fromMs).toISOString(), to_time: new Date(toMs).toISOString() }),
+    );
+    if (page.truncated) return null;
+    const refs = new Map<string, RouteRef | null>();
+    for (const route of page.routes) {
+      const id = lookupKey(route);
+      refs.set(id, refs.has(id) ? null : route.ref);
+    }
+    return refs;
+  })();
+  const lookup: PeriodLookup = { asked };
+  byPeriod.set(key, lookup);
+  asked.then(
+    (outcome) => void (lookup.outcome = outcome),
+    // A failed read is asked again next time.
+    () => byPeriod.delete(key),
+  );
+  return asked;
+}
+
+/**
+ * The most light reads finding these routes can add now (the atlas says
+ * «hasta» what a build costs, so this never says fewer than are made). A
+ * semester not read yet costs its read, and each of its routes may still
+ * cost a read of one millisecond if that answer comes back cut; a semester
+ * read in full costs nothing more; one known to be cut costs the narrow
+ * reads not made yet. Exact once the semesters are known.
+ */
+export function routeLookupReads(caller: ToolCaller, routes: readonly TracedRoute[]): number {
+  const byPeriod = lookups.get(caller);
+  const reads = new Set<string>();
+  for (const route of routes) {
+    if (!needsRouteLookup(route.ref)) continue;
+    const [fromMs, toMs] = semesterOf(route.startMs);
+    const key = `${fromMs}-${toMs}`;
+    const semester = byPeriod?.get(key);
+    if (semester === undefined) reads.add(key);
+    // Answered in full: the route is found there, or it is gone; nothing more is asked.
+    if (semester?.outcome !== undefined && semester.outcome !== null) continue;
+    const narrow = `${route.startMs}-${route.startMs + 1}`;
+    if (byPeriod?.has(narrow) !== true) reads.add(narrow);
+  }
+  return reads.size;
+}
+
+async function serviceRef(caller: ToolCaller, route: TracedRoute): Promise<RouteRef> {
+  const [fromMs, toMs] = semesterOf(route.startMs);
+  const semester = await periodRefs(caller, fromMs, toMs);
+  const found = semester !== null ? semester.get(lookupKey(route)) : (await periodRefs(caller, route.startMs, route.startMs + 1))?.get(lookupKey(route));
+  // Gone from the service, changed, or two routes alike: nothing to ask for.
+  if (found === undefined || found === null) throw new LoadError("detail", "unexpected_shape", "route_lookup");
+  return found;
+}
+
 /**
  * Asks for one route's trace. The result is sealed: only the trim function
- * in `src/domain/trim.ts` can read its lines.
+ * in `src/domain/trim.ts` can read its lines. A route restored from the tab
+ * is first found again in the light list (`serviceRef`).
  */
-export function loadRouteTrace(caller: ToolCaller, ref: RouteRef): Promise<UntrimmedTrace> {
-  return step("detail", async () =>
-    sanitizeRouteTrace(await caller.callTool("get_route_detail", { route_id: serviceRouteId(ref) })),
-  );
+export function loadRouteTrace(caller: ToolCaller, route: TracedRoute): Promise<UntrimmedTrace> {
+  return step("detail", async () => {
+    // A route loaded in this page is asked for at once, in the same turn.
+    const ref = needsRouteLookup(route.ref) ? await serviceRef(caller, route) : route.ref;
+    return sanitizeRouteTrace(await caller.callTool("get_route_detail", { route_id: serviceRouteId(ref) }));
+  });
 }

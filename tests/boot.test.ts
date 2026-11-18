@@ -5,7 +5,8 @@
 // jsdom is not a browser (no layout, no security policy, no real navigation).
 import { webcrypto } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AuthDeps } from "../src/auth/login";
+import { startLogin, type AuthDeps } from "../src/auth/login";
+import { generateRider } from "../src/demo/generator";
 import type { StorageLike } from "../src/auth/pendingLogin";
 import { createTracker } from "../src/analytics/tracker";
 import { boot, type BootAnalytics } from "../src/boot";
@@ -30,8 +31,9 @@ class MemoryStorage implements StorageLike {
   }
 }
 
-/** The one entry that src/auth/savedSession.ts keeps in the tab. */
+/** The two entries that src/auth/savedSession.ts keeps in the tab: the token, and the account data bound to it. */
 const SAVED_KEY = "ride-log.session";
+const ACCOUNT_KEY = "ride-log.account";
 
 // jsdom serves the page at http://localhost:3000/; the login sends the browser back there.
 const CONFIG: ServiceConfig = Object.freeze({ ...TEST_CONFIG, redirectUri: "http://localhost:3000/" });
@@ -242,9 +244,10 @@ describe("a build with a service", () => {
     // The token is in no attribute nor text of the page, nor in the address.
     expect(page()).not.toContain(token);
     expect(location.href).not.toContain(token);
-    // The pending login was used once and is gone; the tab keeps the token and its expiry only.
-    expect([...(storage?.items.keys() ?? [])]).toEqual([SAVED_KEY]);
-    expect(Object.keys(JSON.parse(storage?.items.get(SAVED_KEY) ?? "{}") as object).sort()).toEqual(["expiresAt", "token"]);
+    // The pending login was used once and is gone; the tab keeps the token
+    // and its expiry, and the account data bound to that expiry.
+    expect([...(storage?.items.keys() ?? [])].sort()).toEqual([ACCOUNT_KEY, SAVED_KEY]);
+    expect(Object.keys(JSON.parse(storage?.items.get(SAVED_KEY) ?? "{}") as object).sort()).toEqual(["binding", "expiresAt", "token"]);
     // Nor in the title.
     expect(document.title).not.toContain(token);
   });
@@ -397,8 +400,12 @@ describe("a reload keeps the session (docs/PLAN.md, section 10, «El token»)", 
     expect(navigations).toHaveLength(1);
     expect(signOutButton().hidden).toBe(false);
     expect(root.querySelector<HTMLElement>(".demo-banner")?.hidden).toBe(true);
+    // The account data kept in the tab paints the page; only the vehicle is asked for again, behind it.
+    await vi.waitFor(() => expect(mcpRequests()).toBe(before + 2));
+    // Opening a route still asks the service, with the same token.
+    await holdATrace();
     const calls = server.requests.filter((one) => one.url === CONFIG.mcpUrl).slice(before);
-    expect(calls.length).toBeGreaterThan(2);
+    expect(calls.length).toBeGreaterThan(0);
     for (const call of calls) expect(call.headers.get("authorization")).toBe(`Bearer ${token}`);
     expect(server.issuedTokens).toHaveLength(1);
     expect(page()).not.toContain(token);
@@ -449,7 +456,7 @@ describe("a reload keeps the session (docs/PLAN.md, section 10, «El token»)", 
     await loaded();
     await reload();
     await loaded();
-    expect(storage?.items.size).toBe(1);
+    expect(storage?.items.size).toBe(2);
     server.mcpOverride = () => ({ status: 401, body: "{}" });
     root.querySelectorAll<HTMLElement>(".row-button")[1]?.click();
     await vi.waitFor(() => expect(root.querySelector(".map-status [role='alert']")?.textContent).toContain("reauth_required (unauthorized)"));
@@ -461,7 +468,7 @@ describe("a reload keeps the session (docs/PLAN.md, section 10, «El token»)", 
     await loaded();
     await reload();
     await loaded();
-    expect(storage?.items.size).toBe(1);
+    expect(storage?.items.size).toBe(2);
     // The exact text the MCP Python SDK sends for a tool error.
     server.mcpOverride = (request) => {
       const message = JSON.parse(request.body) as { id: number; params: { name: string } };
@@ -476,6 +483,287 @@ describe("a reload keeps the session (docs/PLAN.md, section 10, «El token»)", 
     server.mcpOverride = null;
     await reload();
     expect(buttons()).toEqual(["Entrar", "Ver la demo"]);
+  });
+});
+
+describe("a reload paints the account data kept in the tab (docs/PLAN.md, section 10, «Los datos de la cuenta»)", () => {
+  async function reload(address = "/"): Promise<App> {
+    mounted?.dispose();
+    return start(SERVICE, address);
+  }
+  /** The tools named in the /mcp requests made since `from`. */
+  const toolsSince = (from: number): string[] =>
+    server.requests.filter((one) => one.url === CONFIG.mcpUrl).slice(from).map((one) => toolOf(one.body));
+  const content = (): string => root.querySelector(".content")?.textContent ?? "";
+  const rows = (): number => root.querySelectorAll(".routes-table tbody tr").length;
+  function choosePeriod(value: string): void {
+    const select = root.querySelector<HTMLSelectElement>(".period-select");
+    if (select === null) throw new Error("no period select");
+    select.value = value;
+    select.dispatchEvent(new Event("change"));
+  }
+  /** The same synthetic rider the fake server answers with (tests/fakeServer.ts). */
+  const rider = generateRider({ seed: 7, nowMs: Date.parse("2026-07-01T00:00:00Z") });
+
+  /** Reloads, and waits until the vehicle read behind the painted page has been answered and shown. */
+  async function reloadAndRefresh(): Promise<void> {
+    const from = mcpRequests();
+    await reload();
+    await loaded();
+    await vi.waitFor(() => expect(toolsSince(from)).toEqual(["get_vehicle_status", "get_vehicle_details"]));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  it("asks for nothing but the vehicle, never the route list, and the page, the period and the list work the same", async () => {
+    await signedIn();
+    await loaded();
+    const shown = content();
+    const listed = rows();
+    choosePeriod("all");
+    const allShown = content();
+    const before = mcpRequests();
+    await reload();
+    await loaded();
+    // Painted at once, from the tab.
+    expect(rows()).toBe(listed);
+    await vi.waitFor(() => expect(toolsSince(before)).toEqual(["get_vehicle_status", "get_vehicle_details"]));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(rows()).toBe(listed);
+    expect(rows()).toBeGreaterThan(10);
+    expect(content()).toBe(shown);
+    choosePeriod("all");
+    expect(content()).toBe(allShown);
+    expect(toolsSince(before)).toEqual(["get_vehicle_status", "get_vehicle_details"]);
+  });
+
+  it("finds a kept route again with one light read per semester, then asks for its trace", async () => {
+    await signedIn();
+    await loaded();
+    await reloadAndRefresh();
+    const before = mcpRequests();
+    const buttons = root.querySelectorAll<HTMLElement>(".row-button");
+    buttons[0]?.click();
+    await vi.waitFor(() => expect(held()).toHaveLength(1));
+    expect(toolsSince(before)).toEqual(["list_routes", "get_route_detail"]);
+    // The next row is in the same semester: no new list read.
+    buttons[1]?.click();
+    await vi.waitFor(() => expect(held()).toHaveLength(2));
+    expect(toolsSince(before)).toEqual(["list_routes", "get_route_detail", "get_route_detail"]);
+    // The detail asked for is the route's own: its id comes from the light read.
+    const [lookup, first] = server.requests.filter((one) => one.url === CONFIG.mcpUrl).slice(before);
+    const asked = (JSON.parse(first?.body ?? "{}") as { params: { arguments: { route_id: string } } }).params.arguments.route_id;
+    const range = (JSON.parse(lookup?.body ?? "{}") as { params: { arguments: { from_time: string; to_time: string } } }).params.arguments;
+    const route = rider.routes.find((one) => one.route_id === asked);
+    expect(route).toBeDefined();
+    const start = Date.parse(route?.started_at ?? "");
+    expect(start >= Date.parse(range.from_time) && start < Date.parse(range.to_time)).toBe(true);
+  });
+
+  it("never keeps a trace, a place, a route id, the token or anything but the closed list of fields", async () => {
+    await signedIn();
+    await loaded();
+    // Traces in memory, so a leak into the tab would show.
+    root.querySelectorAll<HTMLElement>(".row-button")[0]?.click();
+    await vi.waitFor(() => expect(held()).toHaveLength(1));
+    await reload();
+    await loaded();
+    root.querySelectorAll<HTMLElement>(".row-button")[1]?.click();
+    await vi.waitFor(() => expect(held()).toHaveLength(1));
+    const kept = storage?.items.get(ACCOUNT_KEY) ?? "";
+    expect(kept.length).toBeGreaterThan(100);
+    const token = server.issuedTokens[0] ?? "";
+    expect(kept).not.toContain(token);
+    for (const route of rider.routes) expect(kept).not.toContain(route.route_id);
+    // Not one coordinate of any trace, nor of its start and end points.
+    const coordinates = new Set<string>();
+    for (const route of rider.routes.slice(0, 40)) {
+      const detail = rider.detail(route.route_id) as { geojson: { features: { geometry: { coordinates: unknown } }[] } };
+      for (const feature of detail.geojson.features) for (const value of [feature.geometry.coordinates].flat(3)) {
+        // Latitudes and longitudes, not a stray altitude or a 0.
+        if (/\.\d{4,}/.test(String(value))) coordinates.add(String(value));
+      }
+    }
+    expect(coordinates.size).toBeGreaterThan(100);
+    for (const value of coordinates) expect(kept).not.toContain(value);
+    for (const word of ["route_id", "geojson", "registration", "vin", "position", "email", "token"]) expect(kept).not.toContain(word);
+    const value = JSON.parse(kept) as { binding: string; account: Record<string, unknown> };
+    expect(Object.keys(value).sort()).toEqual(["account", "binding"]);
+    expect(value.binding).toBe((JSON.parse(storage?.items.get(SAVED_KEY) ?? "{}") as { binding: string }).binding);
+    expect(Object.keys(value.account).sort()).toEqual(["info", "routes", "skipped", "v", "vehicle"]);
+    const routes = value.account["routes"] as unknown[][];
+    expect(routes.every((one) => one.length === 6 && one.every((field) => field === null || ["number", "boolean"].includes(typeof field)))).toBe(true);
+    expect((value.account["vehicle"] as unknown[]).length).toBe(4);
+  });
+
+  it("discards data another sign-in kept for a token with the very same expiry", async () => {
+    await signedIn();
+    await loaded();
+    const other = storage?.items.get(ACCOUNT_KEY) ?? "";
+    const otherExpiry = (JSON.parse(storage?.items.get(SAVED_KEY) ?? "{}") as { expiresAt: number }).expiresAt;
+    // A second sign-in in the same tab at the same moment: a new token that expires at the same millisecond.
+    await startLogin(CONFIG, deps());
+    const back = new URL(server.approve(navigations[navigations.length - 1] ?? ""));
+    mounted?.dispose();
+    await start(SERVICE, back.pathname + back.search);
+    await loaded();
+    expect(server.issuedTokens).toHaveLength(2);
+    expect((JSON.parse(storage?.items.get(SAVED_KEY) ?? "{}") as { expiresAt: number }).expiresAt).toBe(otherExpiry);
+    await vi.waitFor(() => expect(storage?.items.has(ACCOUNT_KEY)).toBe(true));
+    const mine = storage?.items.get(ACCOUNT_KEY) ?? "";
+    // The first session's data put back under the second token.
+    storage?.items.set(ACCOUNT_KEY, other);
+    const before = mcpRequests();
+    await reload();
+    await loaded();
+    expect(toolsSince(before)).toContain("list_routes");
+    await vi.waitFor(() => expect(storage?.items.get(ACCOUNT_KEY)).toBe(mine));
+    expect(mine).not.toBe(other);
+  });
+
+  it("asks for the vehicle in the background, never the route list, and shows and keeps what it says", async () => {
+    await signedIn();
+    await loaded();
+    const battery = (): string => {
+      const term = [...root.querySelectorAll(".plate dt")].find((one) => one.textContent === "Batería");
+      return term?.parentElement?.querySelector(".tile-value")?.textContent ?? "";
+    };
+    expect(battery()).not.toBe("");
+    expect(battery()).not.toContain("13");
+    // The service now says the battery is at 13 %.
+    server.mcpOverride = (request) => {
+      const message = JSON.parse(request.body) as { id: number; params: { name: string } };
+      if (message.params.name !== "get_vehicle_status") return null;
+      const status = { ...rider.status, battery: 13 };
+      return { body: JSON.stringify({ jsonrpc: "2.0", id: message.id, result: { content: [{ type: "text", text: JSON.stringify(status) }], structuredContent: status, isError: false } }) };
+    };
+    const before = mcpRequests();
+    await reload();
+    await loaded();
+    await vi.waitFor(() => expect(battery()).toContain("13"));
+    expect(toolsSince(before)).toEqual(["get_vehicle_status", "get_vehicle_details"]);
+    await vi.waitFor(() => expect((JSON.parse(storage?.items.get(ACCOUNT_KEY) ?? "{}") as { account: { vehicle: unknown[] } }).account.vehicle[1]).toBe(13));
+  });
+
+  it("keeps what was kept, with no error, when the background read of the vehicle fails", async () => {
+    await signedIn();
+    await loaded();
+    const kept = storage?.items.get(ACCOUNT_KEY) ?? "";
+    const shown = content();
+    server.mcpOverride = () => ({ status: 503, body: "{}" });
+    const before = mcpRequests();
+    await reload();
+    await loaded();
+    await vi.waitFor(() => expect(toolsSince(before)).toContain("get_vehicle_status"));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(root.querySelector('[role="alert"]')).toBeNull();
+    expect(content()).toBe(shown);
+    expect(storage?.items.get(ACCOUNT_KEY)).toBe(kept);
+    expect(toolsSince(before)).not.toContain("list_routes");
+  });
+
+  it("discards data kept for another token, loads from the service and keeps this session's", async () => {
+    await signedIn();
+    await loaded();
+    const kept = JSON.parse(storage?.items.get(ACCOUNT_KEY) ?? "{}") as { binding: string; account: unknown };
+    storage?.items.set(ACCOUNT_KEY, JSON.stringify({ ...kept, binding: `${kept.binding.slice(1)}x` }));
+    const before = mcpRequests();
+    await reload();
+    await loaded();
+    expect(toolsSince(before)).toContain("list_routes");
+    expect(toolsSince(before)).toContain("get_vehicle_status");
+    expect((JSON.parse(storage?.items.get(ACCOUNT_KEY) ?? "{}") as { binding: string }).binding).toBe(kept.binding);
+  });
+
+  it.each([
+    ["not JSON", () => "{"],
+    ["another version", (kept: string) => kept.replace('"v":1', '"v":2')],
+    ["a route with a text", (kept: string) => kept.replace(/"routes":\[\[[0-9]+/, '"routes":[["x"')],
+    ["a negative distance", (kept: string) => kept.replace(/"routes":\[\[([0-9]+),([0-9.e+null]+),/, '"routes":[[$1,$2,-4,')],
+  ])("discards damaged data (%s) without an error, and loads from the service", async (_name, damage) => {
+    await signedIn();
+    await loaded();
+    const kept = storage?.items.get(ACCOUNT_KEY) ?? "";
+    const damaged = damage(kept);
+    expect(damaged).not.toBe(kept);
+    storage?.items.set(ACCOUNT_KEY, damaged);
+    const before = mcpRequests();
+    await reload();
+    await loaded();
+    expect(toolsSince(before)).toContain("list_routes");
+    expect(root.querySelector('[role="alert"]')).toBeNull();
+    // Kept again, whole, after that load.
+    expect(storage?.items.get(ACCOUNT_KEY)).toBe(kept);
+  });
+
+  it("keeps nothing and shows no error when the tab refuses the data (quota)", async () => {
+    const tab = storage as MemoryStorage;
+    const setItem = tab.setItem.bind(tab);
+    tab.setItem = (key, value) => {
+      if (key === ACCOUNT_KEY) throw new DOMException("full", "QuotaExceededError");
+      setItem(key, value);
+    };
+    await signedIn();
+    await loaded();
+    expect(tab.items.has(SAVED_KEY)).toBe(true);
+    expect(tab.items.has(ACCOUNT_KEY)).toBe(false);
+    expect(root.querySelector('[role="alert"]')).toBeNull();
+    const before = mcpRequests();
+    await reload();
+    await loaded();
+    expect(toolsSince(before)).toContain("list_routes");
+  });
+
+  it.each([
+    ["«Salir»", async () => signOutButton().click()],
+    ["the clock", async () => {
+      const timer = expiryTimers[expiryTimers.length - 1];
+      server.clock.now += timer?.delayMs ?? 0;
+      timer?.run();
+    }],
+    ["a 401", async () => {
+      server.mcpOverride = () => ({ status: 401, body: "{}" });
+      root.querySelectorAll<HTMLElement>(".row-button")[1]?.click();
+      await vi.waitFor(() => expect(root.querySelector(".map-status [role='alert']")).not.toBeNull());
+    }],
+    ["session_expired", async () => {
+      server.mcpOverride = (request) => {
+        const message = JSON.parse(request.body) as { id: number; params: { name: string } };
+        const said = `Error executing tool ${message.params.name}: session_expired: the session ended`;
+        return { body: JSON.stringify({ jsonrpc: "2.0", id: message.id, result: { content: [{ type: "text", text: said }], isError: true } }) };
+      };
+      root.querySelectorAll<HTMLElement>(".row-button")[1]?.click();
+      await vi.waitFor(() => expect(root.querySelector(".map-status [role='alert']")).not.toBeNull());
+    }],
+    ["a 403", async () => {
+      server.mcpOverride = () => ({ status: 403, body: "{}" });
+      root.querySelectorAll<HTMLElement>(".row-button")[1]?.click();
+      await vi.waitFor(() => expect(root.querySelector(".map-status [role='alert']")?.textContent).toContain("forbidden"));
+    }],
+    ["a reload with the token expired", async () => {
+      server.clock.now += 3_600_000 - 60_000;
+      await reload();
+    }],
+    ["a reload with the token damaged", async () => {
+      storage?.items.set(SAVED_KEY, "{");
+      await reload();
+    }],
+    ["a new sign-in", async () => {
+      // What «Entrar» calls; the entries are still in the tab.
+      await startLogin(CONFIG, deps());
+    }],
+    ["a return from the login", async () => {
+      const kept = storage?.items.get(ACCOUNT_KEY) ?? "";
+      const back = new URL(server.approve(navigations[0] ?? ""));
+      mounted?.dispose();
+      storage?.items.set(ACCOUNT_KEY, kept);
+      await start(SERVICE, back.pathname + back.search);
+    }],
+  ])("is removed with the token on %s", async (_name, end) => {
+    await signedIn();
+    await loaded();
+    expect(storage?.items.has(ACCOUNT_KEY)).toBe(true);
+    await end();
+    expect(storage?.items.has(ACCOUNT_KEY)).toBe(false);
   });
 });
 

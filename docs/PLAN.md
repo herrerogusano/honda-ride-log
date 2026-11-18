@@ -40,7 +40,7 @@ las decisiones anotadas aquí.
 | Pila | Vite y TypeScript estricto, sin framework. Leaflet como única dependencia de ejecución. Gráficos en SVG a mano. Vitest y ESLint. |
 | Rutas de menos de 300 m | Se excluyen de todo (lista, mapa y cifras) y se dice cuántas son en una nota. Cambiarlo es una línea: `SHORT_ROUTES_COUNT_IN_FIGURES` en `src/config.ts` (y su test en `tests/units.test.ts`). |
 | Periodo del Resumen | Las cifras son del año elegido, por defecto el actual, con opción «Todo». Se cambia con `SUMMARY_DEFAULT_PERIOD` en `src/config.ts`. |
-| Almacenamiento | El token de acceso vive en una variable y, con su caducidad, en `sessionStorage` de la pestaña para que recargar no saque de la cuenta (desde el 2026-11-18, decisión del propietario; antes, solo en memoria; apartado 10, «El token»). El verificador de PKCE y el `state` van a `sessionStorage` solo durante la ida y vuelta al login y se borran al volver. El token de renovación se descarta. En `localStorage` solo va lo que el usuario escribe para el mantenimiento y su respuesta al aviso de cookies (`src/storage/consent.ts`, que además puede borrar las cookies de Google Analytics). |
+| Almacenamiento | El token de acceso vive en una variable y, con su caducidad, en `sessionStorage` de la pestaña para que recargar no saque de la cuenta (desde el 2026-11-18, decisión del propietario; antes, solo en memoria; apartado 10, «El token»). Ligados a ese token y borrados con él, los datos saneados que se cargan al entrar (fechas, km, duraciones, velocidades y etiqueta de tramos inferidos de cada ruta; batería, odómetro, último uso, modelo y kilometraje de la moto), para que recargar no los vuelva a pedir (desde el 2026-11-18, decisión del propietario; apartado 10, «Los datos de la cuenta»). Nunca trazas, puntos de inicio o final, identificadores de ruta ni el correo. El verificador de PKCE y el `state` van a `sessionStorage` solo durante la ida y vuelta al login y se borran al volver. El token de renovación se descarta. En `localStorage` solo va lo que el usuario escribe para el mantenimiento y su respuesta al aviso de cookies (`src/storage/consent.ts`, que además puede borrar las cookies de Google Analytics). |
 | Llamadas | Sin sesión MCP: una petición por herramienta, en serie (como mucho de 2 en 2). |
 | Proceso | PR pequeñas contra `main`, CI en verde y revisión independiente antes de fusionar. |
 
@@ -230,12 +230,12 @@ color, foco visible y zonas de pulsación de 44 px como mínimo.
 | Regla | Cómo se cumple |
 |---|---|
 | Nunca matrícula, bastidor, datos del concesionario ni posición actual; de cada ruta, tampoco su odómetro ni su zona horaria | `src/domain/sanitize.ts` copia una lista cerrada de campos y descarta el resto al recibir la respuesta. De una ruta copia fechas, km, velocidad media, velocidad máxima (desde el 2026-11-10; antes no se copiaba) y la etiqueta de tramos inferidos; `tests/sanitize.test.ts` fija esa lista exacta. Que ningún otro módulo lea respuestas sin sanear es una convención: ninguna herramienta lo impide. |
-| Nunca identificadores de ruta en pantalla ni en exportaciones | El identificador vive detrás de un `RouteRef` opaco y sin campos; solo `serviceRouteId` lo recupera, y ESLint solo deja importar esa función desde `src/service/` (donde va la petición de detalle; `tests/lint-seals.test.ts`). Serializar una ruta no lo incluye. |
+| Nunca identificadores de ruta en pantalla ni en exportaciones | El identificador vive detrás de un `RouteRef` opaco y sin campos; solo `serviceRouteId` lo recupera, y ESLint solo deja importar esa función desde `src/service/` (donde va la petición de detalle; `tests/lint-seals.test.ts`). Serializar una ruta no lo incluye. Tampoco se guarda en la pestaña: una ruta recuperada tras recargar lleva un `RouteRef` sin identificador detrás, y el cargador lo vuelve a encontrar en la lista ligera al abrirla (apartado 10, «Los datos de la cuenta»). |
 | En la pantalla de quien ha entrado (el mapa de «04 Rutas» y el atlas), la traza entera; todo lo que pueda salir de esa pantalla, sin trazas o recortado 400 m al inicio y al final | Desde el 2026-11-18 (ver «Trazas enteras en pantalla», abajo). `screenTrace` en `src/domain/trim.ts` entrega las líneas enteras, sin los dos puntos sueltos de inicio y final; ESLint solo deja importarla desde `src/ui/traceStore.ts`, el almacén que comparten el mapa y el atlas. `trimTrace` (mismo archivo, `TRIM_METERS` en `src/domain/privacy.ts`) sigue siendo el recorte para cualquier salida que algún día lleve trazas: **nada a menos de 401 m en línea recta del inicio ni del final** (ver «Cómo quedó el recorte»); el radio no es un parámetro. Hoy ninguna salida lleva trazas (`tests/off-screen-traces.test.ts`). El saneador devuelve un `UntrimmedTrace` sellado, sin campos legibles; sus líneas solo salen con `untrimmedLines` y los dos puntos de inicio y final con `sensitivePlaces`, y ESLint solo deja importar esas dos funciones desde `src/domain/trim.ts` (`tests/lint-seals.test.ts`). |
 | Ocultar rutas de menos de 300 m | `hideShortRoutes` en `src/domain/privacy.ts`. |
-| El token, en memoria y en la pestaña (hasta el 2026-11-18, solo en memoria) | Ver «Almacenamiento» en el apartado 2. ESLint prohíbe `localStorage`, `sessionStorage` y `document.cookie` en todo el código, con cuatro excepciones de un único archivo cada una (la tercera, `src/storage/consent.ts`, en el apartado 17; la cuarta, `src/auth/savedSession.ts`, en el apartado 10, «El token»: **puede usar `sessionStorage`**, y solo eso, para el token de acceso y su caducidad, y solo lo importa `src/auth/login.ts`). **`src/storage/maintenance.ts` puede usar `localStorage`** (y solo `localStorage`) para guardar los dos números del mantenimiento que escribe el usuario, con una clave para la cuenta y otra para la demo. **`src/auth/pendingLogin.ts` puede usar `sessionStorage`** (y solo `sessionStorage`) para el login a medio hacer y, en el servicio abierto, una marca fija de borrado no confirmado (apartado 18), y solo lo importa `src/auth/login.ts` (apartado 10). `tests/units.test.ts` y `tests/lint-storage.test.ts` comprueban que cada excepción vale para su archivo y para ningún otro, que cada uno sigue teniendo prohibido el almacenamiento del otro y que las listas de prohibiciones no se separan. |
+| El token, en memoria y en la pestaña (hasta el 2026-11-18, solo en memoria) | Ver «Almacenamiento» en el apartado 2. ESLint prohíbe `localStorage`, `sessionStorage` y `document.cookie` en todo el código, con cuatro excepciones de un único archivo cada una (la tercera, `src/storage/consent.ts`, en el apartado 17; la cuarta, `src/auth/savedSession.ts`, en el apartado 10, «El token»: **puede usar `sessionStorage`**, y solo eso, para el token de acceso y su caducidad y, desde el 2026-11-18, los datos saneados de la cuenta ligados a ese token («Los datos de la cuenta»), y solo lo importa `src/auth/login.ts`). **`src/storage/maintenance.ts` puede usar `localStorage`** (y solo `localStorage`) para guardar los dos números del mantenimiento que escribe el usuario, con una clave para la cuenta y otra para la demo. **`src/auth/pendingLogin.ts` puede usar `sessionStorage`** (y solo `sessionStorage`) para el login a medio hacer y, en el servicio abierto, una marca fija de borrado no confirmado (apartado 18), y solo lo importa `src/auth/login.ts` (apartado 10). `tests/units.test.ts` y `tests/lint-storage.test.ts` comprueban que cada excepción vale para su archivo y para ningún otro, que cada uno sigue teniendo prohibido el almacenamiento del otro y que las listas de prohibiciones no se separan. |
 | Sin terceros salvo las teselas de OpenStreetMap y dos contadores de visitas (apartado 17): Cloudflare Web Analytics y, solo si el visitante acepta, Google Analytics. A ninguno se le envía una ruta, una cifra, un identificador ni la dirección completa; con `analytics.config.json` vacío no se carga ninguno | Política de seguridad de contenido en `csp.config.json`; los orígenes de cada contador se añaden solo si tiene valor. `scripts/check-dist.mjs` rompe el build si la página que genera Vite no lleva exactamente esa política, o si detecta código en línea o recursos de otro origen; `tests/csp.test.ts` fija su texto. Es una red contra errores propios hecha con expresiones regulares, no un analizador de HTML: no protege contra quien edite `dist/` a mano, y no tiene tests propios. |
-| Los datos viven solo en el navegador y solo durante la sesión | Nada se guarda salvo los dos números de mantenimiento, la respuesta al aviso de cookies y, con la sesión abierta, el token de acceso en la pestaña (cuarta excepción, apartado 10; ninguna ruta, cifra ni correo) (tercera excepción: **`src/storage/consent.ts` puede usar `localStorage`**, y `document.cookie` solo para borrar las de Google Analytics; apartado 17). |
+| Los datos viven solo en el navegador y solo durante la sesión | Nada se guarda salvo los dos números de mantenimiento, la respuesta al aviso de cookies y, con la sesión abierta, el token de acceso en la pestaña y, ligadas a él, las cifras saneadas de la cuenta (cuarta excepción, apartado 10, «El token» y «Los datos de la cuenta»; ninguna traza, punto de inicio o final, identificador de ruta ni correo; hasta el 2026-11-18, ninguna ruta ni cifra) (tercera excepción: **`src/storage/consent.ts` puede usar `localStorage`**, y `document.cookie` solo para borrar las de Google Analytics; apartado 17). |
 
 ### Trazas enteras en pantalla
 
@@ -516,9 +516,11 @@ Cómo está hecho (`src/service/loader.ts`):
   error.
 - Las claves de mantenimiento en `localStorage` son por navegador, no por
   cuenta: dos personas que usen el mismo navegador comparten los números.
-- La web pide el historial completo en cada carga (unas 8 peticiones para
-  tres años; más si un semestre pasa de 500 rutas). No hay caché entre
-  recargas, a propósito.
+- La web pide el historial completo en cada entrada (unas 8 peticiones para
+  tres años; más si un semestre pasa de 500 rutas). Desde el 2026-11-18,
+  una recarga con la sesión abierta no lo vuelve a pedir: pinta lo que se
+  cargó al entrar, guardado en la pestaña (apartado 10, «Los datos de la
+  cuenta»). Entre sesiones no hay caché: cada entrada lo pide entero.
 
 ## 7. Configuración del servicio
 
@@ -742,11 +744,16 @@ vez.
   - **Cuarta excepción de almacenamiento: `src/auth/savedSession.ts` puede
     usar `sessionStorage`** (y solo eso; `localStorage`, `document.cookie` y
     el HTML siguen prohibidos en ese archivo) para guardar el token de
-    acceso y su caducidad bajo una clave, `ride-log.session`, y nada más:
-    ninguna ruta, cifra, correo ni identificador. Solo `src/auth/login.ts`
+    acceso y su caducidad bajo una clave, `ride-log.session`, más, desde el
+    2026-11-18, un vínculo aleatorio que liga a este token los datos de la
+    cuenta («Los datos de la cuenta», abajo); esa clave no lleva ninguna
+    ruta, cifra, correo ni identificador. Solo `src/auth/login.ts`
     puede importarlo, y ese archivo no importa el login pendiente, el
     consentimiento ni los contadores (`tests/lint-storage.test.ts`).
-    `sessionStorage` es de la pestaña y desaparece al cerrarla.
+    `sessionStorage` es de la pestaña y desaparece al cerrarla. Desde el
+    2026-11-18 el mismo archivo guarda también, en otra clave y ligados a
+    este token, los datos saneados de la cuenta («Los datos de la
+    cuenta», abajo).
   - Se guarda al canjear el código. Se borra cuando la sesión termina por
     cualquier motivo (salir, «Borrar mis datos», caducidad por reloj, 401,
     403, fallo de red tras entrar, `session_expired` del servicio, en los
@@ -799,6 +806,119 @@ vez.
   por invitación la web dice «Tu sesión ha terminado. Vuelve a entrar.» con
   «Volver a entrar»; el resto de códigos de herramienta conserva allí el
   texto general.
+
+### Los datos de la cuenta
+
+- **Sobreviven a una recarga** (desde el 2026-11-18). Motivo: decisión del
+  propietario: al recargar se volvían a pedir el estado de la moto y toda la
+  lista de rutas (unas 10 de las 80 llamadas de una sesión del servicio
+  abierto, y varios segundos). Antes la regla era «ninguna ruta, cifra ni
+  correo en la pestaña».
+- **Qué se guarda:** lo que se carga al entrar, tal como sale de
+  `src/domain/sanitize.ts`, y nada más. `accountSnapshot` copia campo a
+  campo: de cada ruta, el inicio, el final, los km, la velocidad media, la
+  máxima y la etiqueta de tramos inferidos (la duración sale del inicio y el
+  final); de la moto, el estado, la batería, el último contacto y el
+  odómetro; de sus datos, el modelo y el kilometraje; y cuántas rutas
+  llegaron sin fecha o km. **Nunca** trazas (ni recortadas ni enteras), los
+  dos puntos sueltos de inicio y final, identificadores de ruta, el correo
+  ni el token. Con la demo grande (1.644 rutas sintéticas) ocupa 78.409
+  caracteres, medido en `tests/saved-account.test.ts` (en memoria, no en un
+  navegador); el test exige menos de 250.000.
+- **Dónde:** en el mismo archivo y la misma excepción que el token
+  (`src/auth/savedSession.ts`, solo `sessionStorage`, solo lo importa
+  `src/auth/login.ts`), en una segunda clave, `ride-log.account`. Se eligió
+  ese archivo y no uno nuevo para que el borrado sea el mismo: la función
+  que borra el token borra también los datos, en la misma llamada.
+- **Ligados al token:** cada vez que se guarda un token, la web crea un
+  vínculo aleatorio (`binding`: 32 bytes de Web Crypto en base64url, sin
+  relación con el token) y lo escribe en la entrada del token y en la de
+  los datos. Los datos solo se guardan y se devuelven si el token guardado
+  ahora, válido, lleva ese mismo vínculo; si no, se borran. Así, los datos
+  de otra sesión puestos bajo este token no valen aunque los dos tokens
+  caduquen en el mismo milisegundo (hasta el 2026-11-18 el vínculo era la
+  caducidad, y eso sí pasaba). Ni el token se guarda dos veces ni se guarda
+  nada derivado de él. Un token guardado sin vínculo (por una versión
+  anterior de la web) sigue valiendo para la sesión, pero sin datos. Guardar
+  un token nuevo borra los datos del anterior. Se guardan al terminar una
+  carga desde el servicio, solo si la sesión sigue abierta y su token es el
+  de la pestaña.
+- **Se borran** exactamente en los mismos casos que el token: la sesión
+  termina por cualquier motivo (salir, «Borrar mis datos», caducidad por
+  reloj, 401, 403, fallo de red, `session_expired`), un login nuevo, la
+  vuelta del login (bien o mal) y el arranque con el token caducado o
+  dañado. Además, si no corresponden al token guardado o están dañados.
+- **Al recargar** con sesión válida y datos guardados, la página se pinta
+  al momento con ellos, sin esperar a ninguna llamada. Detrás, la web pide
+  el estado de la moto y sus datos (`get_vehicle_status` y
+  `get_vehicle_details`, las mismas dos llamadas que una carga completa;
+  nunca `list_routes`) y, con la respuesta, actualiza en su sitio el panel
+  «Estado» (batería, último uso, odómetro), el modelo de la portada y el
+  odómetro del mantenimiento, sin redibujar la página, y la copia guardada
+  (desde el 2026-11-18; antes no se volvía a pedir nada y el estado se
+  quedaba el de la entrada toda la sesión). Si esa lectura falla, se queda
+  lo guardado y no se dice nada; si falla solo la de los datos, se quedan el
+  modelo y el kilometraje guardados. Un 401, un 403 o un fallo de red en
+  ella terminan la sesión como cualquier otra petición (y borran token y
+  datos), sin aviso en ese momento: lo dice la siguiente petición. Antes de
+  usar los datos, `restoreAccount` (en el saneador) los vuelve a comprobar
+  como entrada no fiable; si algo no cuadra (otra versión, un campo de otro
+  tipo, una distancia negativa, una fecha que no es un milisegundo entero
+  entre 1970 y el último instante que admite `Date`, como `1e100`), se
+  borran y la carga se hace como siempre, sin error visible. La misma
+  cota de fechas vale a la entrada del servicio: un inicio o un final
+  fuera de ella cuenta como ausente (la ruta sin inicio se salta), y un
+  último contacto fuera de ella, también. Sin datos
+  guardados, también como siempre. Si la pestaña no deja guardarlos
+  (cuota), no se guarda nada y no se dice nada: la siguiente recarga los
+  vuelve a pedir.
+- **El `RouteRef`:** el identificador del servicio sigue sellado en
+  `src/domain/sanitize.ts` y no se guarda. Una ruta recuperada lleva un
+  `RouteRef` nuevo sin identificador detrás (`needsRouteLookup`), y
+  `serviceRouteId` lo rechaza. Al abrir su traza, el cargador
+  (`src/service/loader.ts`, que ya podía abrir refs) pide `list_routes` del
+  semestre natural (UTC) de esa ruta, una vez por semestre y por cliente, y
+  toma la ruta que empieza en el mismo milisegundo con los mismos km; con
+  el `RouteRef` de esa respuesta pide el detalle. Si ese semestre viene
+  cortado, lo pide con una ventana de un milisegundo en torno al inicio
+  (`from_time` inclusivo, `to_time` exclusivo, apartado 5). Si la ruta ya
+  no está, cambió o hay dos iguales, el error es
+  `detail/unexpected_shape (route_lookup)` con «Reintentar». Coste: la
+  primera ruta abierta de cada semestre tras recargar gasta una llamada
+  más, y en un semestre cortado, una más por ruta. El atlas dice «hasta»
+  cuántas lecturas hará, y esa cifra es un máximo que nunca se queda corto
+  (hasta el 2026-11-18 no contaba las de un milisegundo: con ocho rutas de
+  un semestre cortado contaba una búsqueda y hacía nueve, medido en
+  `tests/saved-account.test.ts` contra la demo): un semestre aún sin leer cuenta
+  su lectura más una de un milisegundo por cada ruta suya, por si viene
+  cortado; uno leído entero no suma nada; uno que vino cortado suma las de
+  un milisegundo que falten. Antes de la primera lectura de un semestre la
+  cifra puede ser mucho mayor que lo que de verdad se hará; desde que se
+  conoce, es exacta. No se amplió ningún sello.
+- **Ningún contador** con sesión, como antes: la recarga con datos
+  guardados también tiene token, así que `boot` los sella igual.
+- **Lo que no cambia:** el mapa y el atlas siguen pidiendo la traza al
+  abrir una ruta. La lista de rutas que se pinta es la que había al entrar:
+  una salida hecha después no aparece hasta volver a entrar (como mucho una
+  hora, lo que dura el token). El estado de la moto sí se pide de nuevo en
+  cada recarga (arriba).
+- **Riesgos aceptados:** cualquier script del mismo origen (otra web de
+  Pages de la cuenta, ver «Riesgo de origen compartido», o una dependencia
+  comprometida) puede leer la lista de rutas y las cifras mientras la
+  pestaña siga abierta con la sesión, igual que el token. Algunos
+  navegadores guardan el `sessionStorage` en disco para restaurar pestañas
+  (al reabrir el navegador), así que la lista puede quedar en el disco del
+  equipo hasta que la pestaña se cierre o la sesión termine; sin comprobar
+  en cada navegador. Duplicar la pestaña copia también estos datos.
+- Tests: `tests/saved-account.test.ts` (el valor, su comprobación, el
+  vínculo con el token, la búsqueda en la lista ligera y el tamaño) y
+  `tests/boot.test.ts` (recargar solo pide el estado y los datos de la moto,
+  nunca la lista, y la página, el periodo y la lista quedan igual; el estado
+  nuevo se ve y se guarda; si falla, se queda lo guardado sin error; el
+  borrado en cada camino, también con un 403; nunca una traza, un punto, un
+  identificador ni el token; datos de otra sesión, también con la misma
+  caducidad, o dañados se descartan; cuota). Todos en memoria contra el servicio de demo o
+  `tests/fakeServer.ts`, no en un navegador ni contra el servicio real.
 
 ### Las peticiones a `/mcp`
 

@@ -7,7 +7,7 @@
  */
 import { createDemoCaller, DEMO_SCENARIOS, isDemoScenario, scenarioFromHash, type DemoScenario } from "../demo/scenarios";
 import { formatNumber, formatWholeKm, withUnit } from "../domain/format";
-import type { VehicleState } from "../domain/model";
+import type { AccountData, VehicleState } from "../domain/model";
 import type { ToolCaller } from "../service/contract";
 import { loadAllRoutes, loadVehicleInfo, loadVehicleState, LoadError, signInError } from "../service/loader";
 import type { StorageScope } from "../storage/maintenance";
@@ -19,7 +19,7 @@ import { loadingStage, type LoadingStage } from "./loadingStage";
 import { createMapView, type MapFactory, type MapView } from "./mapView";
 import { sectionNav } from "./nav";
 import { createRouteList } from "./routesView";
-import { heroTitle, promises, renderRiderPage } from "./summary";
+import { heroTitle, promises, renderRiderPage, type RiderPage } from "./summary";
 import { createTraceStore, type TraceStore } from "./traceStore";
 
 /**
@@ -72,10 +72,23 @@ export interface AppOptions {
   readonly onDemo?: () => void;
 }
 
+export interface LoadOptions {
+  readonly demo: boolean;
+  /**
+   * An account's data kept in the tab, already checked by `restoreAccount`
+   * (docs/PLAN.md, section 10, «Los datos de la cuenta»): painted at once,
+   * without asking the service for the vehicle or the route list. Traces are
+   * still asked for when a route is opened.
+   */
+  readonly saved?: AccountData | null;
+  /** Called with what a load from the service brought, once it is on screen (to keep it in the tab). */
+  readonly onLoaded?: (data: AccountData) => void;
+}
+
 export interface App {
   startDemo(scenario: DemoScenario): Promise<void>;
   /** Loads a rider through any caller. `src/boot.ts` calls it with `demo: false` after the login. */
-  load(caller: ToolCaller, options: { readonly demo: boolean }): Promise<void>;
+  load(caller: ToolCaller, options: LoadOptions): Promise<void>;
   /** The landing, with a failed sign-in above it if one is given. Abandons any load and drops its data. */
   showLanding(problem?: LoadError): void;
   /** A fixed line above the landing (for example, a delete that was not confirmed). */
@@ -480,7 +493,8 @@ export function startApp(options: AppOptions): App {
   }
 
 
-  function showLoaded(data: RiderData, caller: ToolCaller, warnings: readonly string[], stage: LoadingStage): void {
+  /** Draws the page; gives back how to show a newer vehicle state on it in place. */
+  function showLoaded(data: RiderData, caller: ToolCaller, warnings: readonly string[], stage: LoadingStage): RiderPage["showVehicle"] {
     const scope: StorageScope = data.demo ? "demo" : "account";
     const motion = new AbortController();
     // A failed trace that needs a new sign-in offers it, never a retry.
@@ -562,14 +576,50 @@ export function startApp(options: AppOptions): App {
     // The loading stage becomes the page: its wedge wipes over the hero and settles on the hero's wedge.
     stage.handOff(page.hero, motion.signal);
     publishBar();
+    return page.showVehicle;
   }
 
-  async function load(caller: ToolCaller, loadOptions: { readonly demo: boolean }): Promise<void> {
+  /**
+   * Reads the vehicle's state and details behind a page painted from the
+   * tab, shows them in place and hands them on with the kept routes (to keep
+   * the copy up to date). A failed read changes nothing and says nothing: the
+   * kept state stays on screen. A sign-in problem still ends the session the
+   * usual way (src/service/mcpClient.ts), and the next request says so.
+   */
+  async function refreshVehicle(
+    caller: ToolCaller,
+    saved: AccountData,
+    showVehicle: RiderPage["showVehicle"],
+    current: () => boolean,
+    onLoaded: LoadOptions["onLoaded"],
+  ): Promise<void> {
+    let vehicle: VehicleState;
+    try {
+      vehicle = await loadVehicleState(caller);
+    } catch (error) {
+      if (error instanceof LoadError || !current()) return;
+      throw error;
+    }
+    if (!current()) return;
+    let info = saved.info;
+    try {
+      info = await loadVehicleInfo(caller);
+    } catch (error) {
+      // Model and mileage are extras: the kept ones stay.
+      if (!(error instanceof LoadError) && current()) throw error;
+    }
+    if (!current()) return;
+    showVehicle(vehicle, info);
+    onLoaded?.({ vehicle, info, routes: saved.routes, skipped: saved.skipped });
+  }
+
+  async function load(caller: ToolCaller, loadOptions: LoadOptions): Promise<void> {
     generation += 1;
     releaseView();
     const mine = generation;
     const current = (): boolean => mine === generation;
-    const retry = (): void => void load(caller, loadOptions);
+    // A retry always asks the service.
+    const retry = (): void => void load(caller, { ...loadOptions, saved: null });
     if (!loadOptions.demo) {
       // A real account: nothing of the demo may stay on screen or in the address.
       scenarioShown = null;
@@ -590,6 +640,19 @@ export function startApp(options: AppOptions): App {
       clear(content);
       content.append(...parts);
     };
+
+    const saved = loadOptions.demo ? null : (loadOptions.saved ?? null);
+    if (saved !== null) {
+      // A reload of a signed-in tab: what the sign-in loaded, painted at once.
+      loading.abort();
+      const routes = { routes: saved.routes, skipped: saved.skipped, requests: 0 };
+      const showVehicle = showLoaded(buildRiderData(saved.vehicle, saved.info, routes, false, now()), caller, [], stage);
+      // The vehicle changes between reloads (battery, last use): it is asked
+      // for again behind the page, with the same two calls as a full load.
+      // The route list is not.
+      await refreshVehicle(caller, saved, showVehicle, current, loadOptions.onLoaded);
+      return;
+    }
 
     let vehicle: VehicleState;
     try {
@@ -633,6 +696,7 @@ export function startApp(options: AppOptions): App {
       if (!current()) return;
       loading.abort();
       showLoaded(buildRiderData(vehicle, info, routes, loadOptions.demo, now()), caller, warnings, stage);
+      if (!loadOptions.demo) loadOptions.onLoaded?.({ vehicle, info, routes: routes.routes, skipped: routes.skipped });
     } catch (error) {
       if (!current()) return;
       if (!(error instanceof LoadError)) throw error;

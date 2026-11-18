@@ -433,7 +433,7 @@ const distanceToSegment = (p: readonly [number, number], a: readonly number[], b
 };
 
 async function trimmedOf(routes: readonly Route[]): Promise<TraceLine[][]> {
-  return Promise.all(routes.map(async (route) => [...screenTrace(await loadRouteTrace(service, route.ref)).lines]));
+  return Promise.all(routes.map(async (route) => [...screenTrace(await loadRouteTrace(service, route)).lines]));
 }
 
 describe("what is drawn", () => {
