@@ -339,7 +339,7 @@ describe("period control", () => {
     );
     const control = periodControl([2026, 2025], 2026, (period) => chosen.push(period), { signal: controller.signal });
     document.body.append(control.element);
-    const labels = [...control.element.querySelectorAll<HTMLElement>("label")];
+    const labels = [...control.element.querySelectorAll<HTMLElement>(".period-control label")];
     expect(labels.map((label) => label.textContent)).toEqual(["2026", "2025", "Todo"]);
     labels.forEach((label, index) => Object.defineProperties(label, { offsetLeft: { value: 2 + index * 60 }, offsetWidth: { value: 56 } }));
     const pills = control.element.querySelectorAll<HTMLElement>(".period-pill");
@@ -357,6 +357,37 @@ describe("period control", () => {
     expect(observed).toEqual([control.element.querySelector(".period-track")]);
     controller.abort();
     expect(disconnected).toBe(true);
+  });
+
+  it("offers the same choice as a native, labelled menu that moves the radio buttons with it", () => {
+    installMotion();
+    const chosen: (number | "all")[] = [];
+    const control = periodControl([2026, 2025, 2024], 2026, (period) => chosen.push(period));
+    document.body.append(control.element);
+    const select = control.element.querySelector<HTMLSelectElement>(".period-compact select") as HTMLSelectElement;
+    expect([...select.options].map((option) => [option.value, option.textContent])).toEqual([
+      ["2026", "2026"],
+      ["2025", "2025"],
+      ["2024", "2024"],
+      ["all", "Todo"],
+    ]);
+    expect(select.value).toBe("2026");
+    // Named for a screen reader; the drawn arrow is not read.
+    expect(control.element.querySelector(`label[for="${select.id}"]`)?.textContent).toBe("Periodo");
+    expect(control.element.querySelector(".period-caret")?.getAttribute("aria-hidden")).toBe("true");
+    const checked = (): string | undefined => control.element.querySelector<HTMLInputElement>(".period-control input:checked")?.value;
+    select.value = "all";
+    select.dispatchEvent(new Event("change"));
+    expect(chosen).toEqual(["all"]);
+    expect(checked()).toBe("all");
+    select.value = "2024";
+    select.dispatchEvent(new Event("change"));
+    expect(chosen).toEqual(["all", 2024]);
+    expect(checked()).toBe("2024");
+    // The other way round: a radio button moves the menu, and the change is said once.
+    control.element.querySelector<HTMLInputElement>('.period-control input[value="2025"]')?.click();
+    expect(chosen).toEqual(["all", 2024, 2025]);
+    expect(select.value).toBe("2025");
   });
 });
 

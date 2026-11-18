@@ -46,6 +46,40 @@ describe("the long «Continuar» button of the open service", () => {
   });
 });
 
+describe("the bar with a session open", () => {
+  it("shows the period as a menu on phones (640 px or less) and as the row of years above that", () => {
+    expect(declaration(rule(".period-compact"), "display")).toBe("none");
+    const phone = block("@media (max-width: 640px) {\n  .period-control");
+    expect(declaration(rule(".period-control", phone), "display")).toBe("none");
+    expect(declaration(rule(".period-compact", phone), "display")).toBe("block");
+  });
+
+  it("draws «Salir» as plain text, without a box", () => {
+    const body = rule(".topbar .sign-out");
+    expect([declaration(body, "background"), declaration(body, "border-color")]).toEqual(["transparent", "transparent"]);
+    expect(css).not.toContain(".bar-account");
+  });
+});
+
+describe("«Borrar mis datos» in the footer", () => {
+  it("reads as a link (the web's link colour, underlined) and keeps a 44 px target", () => {
+    const body = rule(".link-button");
+    expect(declaration(body, "color")).toBe("var(--red-hi)");
+    expect(declaration(body, "text-decoration")).toBe("underline");
+    expect(declaration(body, "padding")).toBe("12px 0");
+    expect(declaration(body, "margin-block")).toBe("-12px");
+  });
+});
+
+describe("the form before the login of the open service", () => {
+  it("sits on a dark card with an edge, so the red button never lies on the red wedge", () => {
+    const card = rule(".pass-form");
+    expect(declaration(card, "background")).toBe("var(--surface)");
+    expect(declaration(card, "border")).toBe("1px solid var(--line)");
+    expect(declaration(card, "padding")).toBe("var(--s4)");
+  });
+});
+
 describe("the «Cookies» link at the end of the page", () => {
   it("is discreet (a quiet text colour) and keeps a 44 px target", () => {
     const body = rule(".consent-link");
