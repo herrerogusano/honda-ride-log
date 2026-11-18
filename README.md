@@ -38,7 +38,7 @@ página de acceso del servicio, no en esta web. Si no quedan plazas, la demo
 sigue abierta para todo el mundo.
 
 La dirección antigua, <https://herrerogusano.github.io/honda-ride-log/>, ya
-no publica la web: solo lleva a <https://my-ride-log.pages.dev/>.
+no se usa.
 
 ## Privacidad
 
