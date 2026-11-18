@@ -4047,6 +4047,39 @@ select:focus-visible {
 }
 
 /* ---------- «04 Rutas» on narrow screens (after the base rules it overrides) ---------- */
+/* Screens only: on paper the list is never folded and runs in full. */
+@media only screen and (max-width: 1023px) {
+  /*
+   * Folded list: nothing runs under the map, so it is not pinned. Pinned,
+   * it slid down to the end of `.archive` whenever the section's top was
+   * above the bar (coming back up from «Atlas») and covered «Ver las N
+   * rutas», leaving a blank band between the map and the legend.
+   */
+  .archive:has(.route-list.is-folded) .archive-map {
+    position: static;
+  }
+
+  /*
+   * Open list: the rows scroll in a box of their own, short enough to fit
+   * whole under the bar and the pinned map (`--map-h`, written by
+   * src/ui/app.ts) with some page left below it, and never taller than
+   * 58svh. `svh` does not change when the browser's toolbars come and go,
+   * so the box keeps its height while the page scrolls. The side margins
+   * stay outside the box: a swipe there moves the page. At either end of
+   * the box the gesture carries on with the page (`overscroll-behavior`
+   * left at `auto` on purpose).
+   */
+  .route-list:not(.is-folded) .routes-scroll {
+    height: clamp(240px, calc(100svh - var(--bar-h, 101px) - var(--map-h, 360px) - 40px), 58svh);
+    margin-inline: 22px;
+    overflow-y: auto;
+    overscroll-behavior-y: auto;
+    border: 1px solid var(--line);
+    scrollbar-width: thin;
+    scrollbar-color: var(--fg-3) transparent;
+  }
+}
+
 /* Narrow screens: the pinned part (title, map, figures) stays short. */
 @media (max-width: 1023px) {
   /* The stage says «Elige una ruta» to the eye; the sentence stays for screen readers. */

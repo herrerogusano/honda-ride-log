@@ -1058,13 +1058,11 @@ cifra, ni el recorte, ni el saneador, ni los sellos de ESLint, ni el login.
 | Ancho | Cómo se ve |
 |---|---|
 | 1024 px o más | Mapa a la izquierda, lista a la derecha, los dos tan altos como la pantalla bajo la barra (`clamp(560px, 100svh − barra − 32px, 980px)`). La lista se desplaza dentro de su propia caja; buscar, ordenar y «Exportar CSV» quedan encima, «Mostrar más rutas» al final. Al llegar a un extremo de la caja, la rueda sigue con la página. |
-| Menos de 1024 px | El mapa queda fijo (`position: sticky`) bajo la barra, a unos 31 svh en móviles (38 svh hasta 1023 px), con las cifras de la ruta debajo; la lista va en el flujo de la página, sin caja propia que atrape el desplazamiento. La altura de la barra (una o dos filas) la publica `src/ui/app.ts` en `--bar-h` con un `ResizeObserver` que se suelta con la vista. En móviles el título de la ruta solo lo oyen los lectores de pantalla y la fecha va en la franja de cifras, para que la parte fija no pase de la mitad de la pantalla. La lista empieza plegada tras el botón «Ver las N rutas» (apartado siguiente). |
+| Menos de 1024 px | El mapa queda fijo (`position: sticky`) bajo la barra, a unos 31 svh en móviles (38 svh hasta 1023 px), con las cifras de la ruta debajo. Con la lista plegada el mapa no se fija: no hay nada que pase por debajo y, fijo, tapaba «Ver las N rutas» al volver desde «Atlas» (bajaba hasta el final de su bloque). Abierta, las filas van en una caja con su propio desplazamiento (experimento, pendiente de prueba en un móvil real): alta lo justo para caber entera bajo la barra y el mapa fijo con 40 px de página debajo (`100svh − --bar-h − --map-h − 40px`, entre 240 px y 58 svh; `--map-h` lo publica `src/ui/app.ts` igual que `--bar-h`), con 22 px a cada lado fuera de la caja donde deslizar mueve la página, y `overscroll-behavior` en `auto` para que en sus extremos el gesto siga con la página. Buscar, ordenar, «Exportar CSV» y el contador quedan fuera, encima. `svh` no cambia cuando el navegador muestra u oculta sus barras, así que la caja no cambia de alto al desplazarse. Solo en pantalla: al imprimir no hay caja. La altura de la barra (una o dos filas) la publica `src/ui/app.ts` en `--bar-h` con un `ResizeObserver` que se suelta con la vista. En móviles el título de la ruta solo lo oyen los lectores de pantalla y la fecha va en la franja de cifras, para que la parte fija no pase de la mitad de la pantalla. La lista empieza plegada tras el botón «Ver las N rutas» (apartado siguiente). |
 
 ### La lista plegada en pantallas estrechas
 
-Por debajo de 1024 px (el mismo corte de la tabla de arriba: la lista deja de
-tener caja propia y obliga a bajar por todas las rutas para seguir por la
-página), la lista, con su búsqueda, su orden y «Exportar CSV», empieza
+Por debajo de 1024 px (el mismo corte de la tabla de arriba), la lista, con su búsqueda, su orden y «Exportar CSV», empieza
 plegada bajo el mapa tras un botón real (`<button>` con `aria-expanded` y
 `aria-controls`): «Ver las N rutas» (en la demo, «Ver las 1.075 rutas»; N es el total de rutas, con el
 formato español de `formatNumber`; «Ver la ruta» si hay una) y, abierta,
@@ -1105,9 +1103,8 @@ el CSV no cambian.
 - «Ruta anterior / siguiente» van sobre el mapa, arriba a la derecha (en
   móviles, solo las flechas; el nombre lo oyen los lectores). Siguen el orden
   por fecha y la lista marca la ruta que abren. Si su fila no se
-  ve, en pantallas anchas se desplaza **la caja de la lista**, nunca la
-  página; en estrechas se desplaza la página lo justo
-  para dejar la fila bajo el mapa fijo, que no se mueve. Si la fila no estaba
+  ve, se desplaza **la caja de la lista**, nunca la
+  página (en estrechas, con la lista abierta; plegada, nada se mueve). Si la fila no estaba
   dibujada (más allá de «Mostrar más»), se dibujan las filas hasta ella.
 - Bajo el mapa, la franja de la ruta: salida → llegada, tramos inferidos y
   cuatro cifras grandes (distancia, duración, velocidad media y máxima, con
