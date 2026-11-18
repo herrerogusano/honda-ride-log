@@ -421,6 +421,18 @@ Cómo está hecho (`src/service/loader.ts`):
   un año natural entero sin salir pierde el historial anterior.
 - Una respuesta cortada se descarta entera y el periodo se vuelve a pedir en
   dos mitades. Si partir no acaba nunca, error `too_many_routes`.
+- **Un reintento del periodo que falla** (2026-11-18, tras un fallo real en
+  producción: un semestre agotó el tiempo de MAPIT). Si `list_routes`
+  responde `mapit_unavailable` o `internal_error`, el mismo periodo se pide
+  una vez más tras 1 s; si vuelve a fallar, la carga falla como antes, sin
+  enseñar un historial a medias. Nunca con `session_*`, `rate_limited`,
+  `service_paused`, `service_unavailable`, otros códigos ni errores de esta
+  web (tiempo, red, estado HTTP). Como mucho 2 reintentos por carga, sea
+  cual sea el número de periodos que fallen. Una carga gasta 2 llamadas
+  (estado y datos del vehículo) más una por periodo más hasta 2 reintentos:
+  con historial desde mediados de 2024, 10 sin fallos y 12 como mucho, de
+  las 80 de una sesión del servicio abierto. Un historial de muchos años, o
+  con semestres cortados, gasta más; eso ya pasaba sin reintentos.
 - Una ruta que llegue en dos respuestas se cuenta una vez (la comparación de
   identificadores ocurre dentro del cargador y no sale de él).
 - `LoadError` lleva el paso (`status`, `details`, `routes`, `detail`), un
@@ -1902,7 +1914,13 @@ confirmado) y `src/ui/app.ts` (confirmación del borrado), y los fijan
   «Reintentar»; `session_expired` y `session_limit_reached`, «Volver a
   entrar» (que abre la pantalla previa); `rate_limited` y
   `service_unavailable`, «Reintentar». Con `session_expired` el cliente
-  olvida el token, porque el servicio ya ha borrado la sesión. Un build
+  olvida el token, porque el servicio ya ha borrado la sesión. El SDK de MCP
+  del servicio antepone «Error executing tool <nombre>: » al texto de cada
+  error de herramienta; el cliente quita ese prefijo exacto, solo si el
+  nombre es el de la herramienta llamada, antes de leer el código. Hasta el
+  2026-11-18 no lo hacía: la web veía siempre `tool_error` y estos textos,
+  y el cierre de sesión por `session_expired`, no se activaban nunca (el
+  servidor falso de los tests no ponía el prefijo; ahora sí). Un build
   por invitación sigue con el texto general de `tool_error`. Lo mismo en
   los paneles de error del mapa y del atlas (al leer el recorrido de una
   ruta), que reciben el modo de la página.

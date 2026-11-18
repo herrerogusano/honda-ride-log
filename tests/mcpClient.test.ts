@@ -248,6 +248,41 @@ describe("answers the client refuses", () => {
     expect(((await failure(client.callTool("get_vehicle_status", {}))) as ToolCallError).code).toBe("tool_error");
   });
 
+  // The exact text the MCP Python SDK (2.2.0) sends for a tool error of the service.
+  const sdkError = (tool: string, code: string) => ({
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, result: { isError: true, content: [{ type: "text", text: `Error executing tool ${tool}: ${code}: MAPIT did not answer in time` }] } }),
+  });
+
+  it.each(["mapit_unavailable", "internal_error", "session_expired", "service_paused", "rate_limited", "session_limit_reached"])(
+    "reads %s behind the SDK's «Error executing tool <name>: » prefix",
+    async (code) => {
+      const { server, client } = await setUp();
+      server.mcpOverride = () => sdkError("list_routes", code);
+      const error = await failure(client.callTool("list_routes", { from_time: "2024-01-01T00:00:00.000Z", to_time: "2024-07-01T00:00:00.000Z" }));
+      expect((error as ToolCallError).code).toBe(code);
+      expect(error.message).not.toMatch(/MAPIT did not answer|Error executing/);
+    },
+  );
+
+  it("takes the prefix off only for the tool that was called", async () => {
+    const { server, client } = await setUp();
+    server.mcpOverride = () => sdkError("get_route_detail", "mapit_unavailable");
+    const error = await failure(client.callTool("list_routes", { from_time: "2024-01-01T00:00:00.000Z", to_time: "2024-07-01T00:00:00.000Z" }));
+    expect((error as ToolCallError).code).toBe("tool_error");
+  });
+
+  it("with the SDK's real text, session_expired ends the open service's session and the token is never sent again", async () => {
+    const { server, session } = await setUp();
+    const client = clientFor(server, session, { publicService: true });
+    server.mcpOverride = () => sdkError("get_vehicle_status", "session_expired");
+    await failure(client.callTool("get_vehicle_status", {}));
+    expect(session.endReason).toBe("expired");
+    server.mcpOverride = null;
+    const before = mcpRequests(server).length;
+    await failure(client.callTool("get_vehicle_status", {}));
+    expect(mcpRequests(server)).toHaveLength(before);
+  });
+
   it("treats isError as an error even when structured content comes with it", async () => {
     const { server, client } = await setUp();
     const result = { isError: true, structuredContent: { battery: 50 }, content: [{ type: "text", text: "invalid_route_id: x" }] };

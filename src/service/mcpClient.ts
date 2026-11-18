@@ -141,11 +141,19 @@ function requestArguments(name: ToolName, args: unknown): Record<string, string>
   return copy;
 }
 
-function toolCode(result: Record<string, unknown>): string {
+/**
+ * The code at the start of a tool error's text. The MCP Python SDK puts
+ * "Error executing tool <name>: " before the service's own text; that exact
+ * prefix is taken off, and only for the tool that was called, before the
+ * code is read. Anything else that is not a code is a generic `tool_error`.
+ */
+function toolCode(result: Record<string, unknown>, tool: string): string {
   const content = result["content"];
   const first = Array.isArray(content) ? (content[0] as unknown) : undefined;
-  const text = typeof first === "object" && first !== null ? (first as Record<string, unknown>)["text"] : undefined;
-  if (typeof text !== "string") return "tool_error";
+  const raw = typeof first === "object" && first !== null ? (first as Record<string, unknown>)["text"] : undefined;
+  if (typeof raw !== "string") return "tool_error";
+  const prefix = `Error executing tool ${tool}: `;
+  const text = raw.startsWith(prefix) ? raw.slice(prefix.length) : raw;
   const code = text.split(":", 1)[0]?.trim() ?? "";
   return SAFE_TOOL_CODE.test(code) ? code : "tool_error";
 }
@@ -156,7 +164,7 @@ function toolCode(result: Record<string, unknown>): string {
  * false): for them the answer must say `isError: false` and carry a
  * non-empty text item, or it is `bad_response`.
  */
-function readEnvelope(payload: unknown, id: number, requireStructured = true): unknown {
+function readEnvelope(payload: unknown, id: number, tool: string, requireStructured = true): unknown {
   if (typeof payload !== "object" || payload === null || Array.isArray(payload)) throw new ServiceError("bad_response", "envelope");
   const envelope = payload as Record<string, unknown>;
   if (envelope["jsonrpc"] !== "2.0" || envelope["id"] !== id) throw new ServiceError("bad_response", "envelope");
@@ -169,7 +177,7 @@ function readEnvelope(payload: unknown, id: number, requireStructured = true): u
   if (typeof result !== "object" || result === null || Array.isArray(result)) throw new ServiceError("bad_response", "result");
   const fields = result as Record<string, unknown>;
   // The code is shown; the service's message is not (it may quote input).
-  if (fields["isError"] === true) throw new ToolCallError(toolCode(fields), "the service reported an error");
+  if (fields["isError"] === true) throw new ToolCallError(toolCode(fields, tool), "the service reported an error");
   if (!requireStructured) {
     // The text is not read, but it must be there: `result: {}` is not a "done".
     const content = fields["content"];
@@ -273,7 +281,7 @@ export function createMcpClient(mcpUrl: string, session: AuthSession, options: M
       throw new ServiceError("bad_response", "json");
     }
     try {
-      return readEnvelope(payload, id, !(ACCOUNT_TOOLS as readonly string[]).includes(name));
+      return readEnvelope(payload, id, name, !(ACCOUNT_TOOLS as readonly string[]).includes(name));
     } catch (error) {
       // The open service deleted the session already: never send this token again.
       if (publicService && error instanceof ToolCallError && error.code === "session_expired") session.end("expired");

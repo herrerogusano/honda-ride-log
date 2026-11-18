@@ -14,6 +14,13 @@ import { generateRider } from "../src/demo/generator";
 import { ToolCallError, type ToolCaller, type ToolName } from "../src/service/contract";
 import type { ServiceConfig } from "../src/service/environment";
 
+/**
+ * The MCP Python SDK (2.2.0, `mcp/server/mcpserver/tools/base.py`) puts this
+ * before the text of every tool error, so the real service answers
+ * "Error executing tool list_routes: mapit_unavailable: ...".
+ */
+export const SDK_PREFIX = (tool: string): string => `Error executing tool ${tool}: `;
+
 /** Synthetic values only: no real deployment. */
 export const TEST_CONFIG: ServiceConfig = Object.freeze({
   mcpUrl: "https://api.example.test/mcp",
@@ -239,7 +246,7 @@ export function createFakeServer(config: ServiceConfig = TEST_CONFIG): FakeServe
     if (config.publicAccess !== null && account.includes(message.params.name)) {
       server.accountCalls.push({ name: message.params.name, arguments: message.params.arguments });
       if (server.accountFailure !== null) {
-        return json(200, { jsonrpc: "2.0", id: message.id, result: { content: [{ type: "text", text: `${server.accountFailure}: no` }], isError: true } });
+        return json(200, { jsonrpc: "2.0", id: message.id, result: { content: [{ type: "text", text: `${SDK_PREFIX(message.params.name)}${server.accountFailure}: no` }], isError: true } });
       }
       // The service's account tools answer with a text, wrapped as FastMCP does for a str result.
       const text = "Hecho.";
@@ -257,7 +264,7 @@ export function createFakeServer(config: ServiceConfig = TEST_CONFIG): FakeServe
       return json(200, {
         jsonrpc: "2.0",
         id: message.id,
-        result: { content: [{ type: "text", text: `${code}: something about the input` }], isError: true },
+        result: { content: [{ type: "text", text: `${SDK_PREFIX(message.params.name)}${code}: something about the input` }], isError: true },
       });
     }
   }
