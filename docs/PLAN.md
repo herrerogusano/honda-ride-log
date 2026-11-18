@@ -940,7 +940,11 @@ Uno solo, en la barra: botones de radio (los años con rutas y «Todo») en un
 control segmentado, con una píldora roja que se desliza bajo el elegido. Las
 flechas del teclado se mueven entre opciones, como en cualquier grupo de
 radio. Con muchos años, la fila se desplaza dentro de su caja y mantiene a la
-vista el elegido. Siguen al periodo exactamente los mismos bloques del
+vista el elegido. En 640 px o menos, el mismo periodo es un menú nativo
+(`<select>`, con la etiqueta «Periodo» para los lectores de pantalla) que
+cabe en la primera fila con la marca y «Salir»; la hoja de estilos enseña
+una forma y oculta la otra (`display: none`), y elegir en cualquiera de las
+dos mueve la otra y cambia el periodo una vez. Siguen al periodo exactamente los mismos bloques del
 apartado 3: las cuatro cifras, los récords, días y horas, los trayectos
 cortos y la tarjeta; cada bloque dice el periodo que enseña.
 
@@ -1877,7 +1881,8 @@ confirmado) y `src/ui/app.ts` (confirmación del borrado), y los fijan
 - En cuanto empieza una herramienta de cuenta, las lecturas que esperaban
   en la cola del cliente se cancelan sin salir (`reauth_required`,
   `signed_out`); las que ya estaban en vuelo terminan.
-- **«Borrar mis datos»**, al lado de «Salir», pide confirmación y llama a
+- **«Borrar mis datos»**, al final del apartado «Privacidad» del pie (solo
+  con una cuenta real, no en la demo), pide confirmación y llama a
   `borrar_mis_datos`; después, lo mismo que «Salir», también si falla. Si
   falla (o la sesión ya había terminado), antes de irse deja una marca
   fija, y al volver del `/logout` la portada dice «No hemos podido
@@ -1896,14 +1901,24 @@ confirmado) y `src/ui/app.ts` (confirmación del borrado), y los fijan
 - Las herramientas de cuenta solo cuentan como hechas si la respuesta dice
   `isError: false` y trae un elemento de texto no vacío; si no, es
   `bad_response` (un `result: {}` ya no pasa por un borrado correcto).
-- En la barra, «Borrar mis datos» y «Salir» van juntos en un grupo
-  («Tu cuenta») separado por una línea fina: «Salir» es texto, como los
-  enlaces de sección, con una línea que crece debajo al pasar el ratón;
-  «Borrar mis datos» lleva un contorno tenue (dibujado dentro de la zona
-  pulsable de 44 px) que se vuelve rojo al pasar el ratón. Con la barra en
-  dos filas (1100 px o menos) el grupo pasa a la segunda, a la derecha de
-  los enlaces, para que el periodo no quede aplastado (antes, a 375 px, se
-  quedaba en 0 px de ancho). La barra del modo por invitación no cambia.
+- En la barra solo queda «Salir», como texto (los enlaces de sección),
+  con una línea que crece debajo al pasar el ratón; igual en los dos
+  modos. «Borrar mis datos» está al final del apartado «Privacidad» del
+  pie, en una frase y como botón con aspecto de enlace (el color de los
+  enlaces de la web, subrayado, zona pulsable de 44 px). La confirmación
+  se abre justo debajo, con el foco en su primer botón; «Cancelar» devuelve
+  el foco a «Borrar mis datos». Antes iban los dos juntos en la barra
+  (grupo «Tu cuenta») y, en un móvil, se comían la segunda fila de la
+  barra: la sacaban de los enlaces de sección.
+- Con la barra en dos filas (1100 px o menos), la primera lleva la marca,
+  el periodo y «Salir», y la segunda los enlaces de sección enteros. En
+  640 px o menos el periodo es un menú compacto («2026 ▾», con «Todo»
+  dentro) y la marca vuelve a enseñar «Ride Log» (antes solo la cuña).
+- En la pantalla previa al login el formulario va en una tarjeta oscura
+  con borde (fondo de superficie, línea fina, relleno), en todas las
+  anchuras: en un móvil la cuña roja del fondo queda detrás de su parte
+  baja, y el botón rojo «Continuar» perdía su borde contra ella. En
+  escritorio la tarjeta queda a la izquierda, lejos de la cuña.
 - El script de Turnstile tiene 15 s para llegar; si no, el formulario dice
   que no se ha podido hacer la comprobación. El elemento `<script>` se
   queda (quitarlo no cancela la petición): un reintento espera sobre el
@@ -2050,9 +2065,9 @@ hace la misma cuenta.
   real de su respuesta (la web no la lee: basta con que no sea un error).
 - Que el control de Turnstile se resuelva con interacción (en la prueba se
   resolvió solo) y en un iPhone.
-- La barra con «Borrar mis datos» y «Salir» con una cuenta en pantalla: se
-  midió forzando los botones visibles en la portada (caben a 320 px, en
-  dos líneas), no con datos reales.
+- La barra con «Salir» y «Borrar mis datos» en el pie con una cuenta real
+  en pantalla: se miró con la demo (forzando el botón del pie), no con
+  datos reales.
 - Que Cloudflare Pages con sus cabeceras (`frame-ancestors`,
   `Cross-Origin-Opener-Policy`) no moleste al control: solo se probó con
   la etiqueta `<meta>`.
