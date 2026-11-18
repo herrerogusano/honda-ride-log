@@ -532,10 +532,16 @@ export function startApp(options: AppOptions): App {
       el("div", { class: "archive-notes" }, map.legend, list.note),
     );
     // The bar's height, for what sticks under it (the map); it changes when the bar wraps.
-    const publishBar = (): void => document.documentElement.style.setProperty("--bar-h", `${Math.round(barHeight())}px`);
+    // The pinned map's height, for the list's own box on narrow screens (it fits under both).
+    const publishBar = (): void => {
+      const root = document.documentElement.style;
+      root.setProperty("--bar-h", `${Math.round(barHeight())}px`);
+      root.setProperty("--map-h", `${Math.round(mapBox.getBoundingClientRect().height)}px`);
+    };
     if (typeof ResizeObserver === "function") {
       const watcher = new ResizeObserver(publishBar);
       watcher.observe(topbar);
+      watcher.observe(mapBox);
       motion.signal.addEventListener("abort", () => watcher.disconnect(), { once: true });
     }
     const page = renderRiderPage(data, scope, { signal: motion.signal, archive, atlas });

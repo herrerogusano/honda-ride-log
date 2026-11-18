@@ -62,8 +62,10 @@ function weekday(ms: number): string {
 export interface RouteListOptions {
   /**
    * Where the visible part of the page starts, in pixels from the top of the
-   * window, when the list is not a box of its own (phones: under the bar and
-   * the pinned map). Used to keep the chosen row in view.
+   * window, when the list is not a box of its own (under the bar and the
+   * pinned map). Used to keep the chosen row in view. Wide screens and an
+   * open list on narrow ones scroll in their own box (src/styles.css), so
+   * this is the fallback for a list the stylesheet left in the page.
    */
   readonly visibleTop?: (() => number) | undefined;
   /** Aborting it stops watching the screen width (the page aborts it when it replaces the view). */
@@ -71,8 +73,9 @@ export interface RouteListOptions {
 }
 
 /**
- * Below this width the list is part of the page, under the pinned map
- * (docs/PLAN.md, section 13), and starts folded behind a button. It must
+ * Below this width the list sits under the pinned map (docs/PLAN.md,
+ * section 13), starts folded behind a button and, open, scrolls in a
+ * shorter box of its own. It must
  * match the `@media (min-width: 1024px)` layout of `.archive` in
  * `src/styles.css`; `tests/routes-fold.test.ts` checks both.
  */
@@ -90,8 +93,9 @@ export interface RouteList {
   readonly note: HTMLElement;
   /**
    * Marks `route` as the chosen one. With `reveal`, its row is brought into
-   * view: inside the list's own box when the list is one (wide screens), or
-   * the page, only as far as needed, when the list is part of the page.
+   * view: inside the list's own box when the list is one (wide screens, and
+   * the open list on narrow ones), or the page, only as far as needed, when
+   * the list is part of the page.
    * A folded list stays folded and nothing moves: the map shows the route,
    * and the row is marked for when the list opens.
    */

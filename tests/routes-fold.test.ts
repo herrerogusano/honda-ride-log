@@ -233,4 +233,74 @@ describe("the stylesheet", () => {
     expect(NARROW_LIST).toBe("(max-width: 1023px)");
     expect(blocks("@media (min-width: 1024px)").some((body) => /\.archive-list \.routes-scroll/.test(body))).toBe(true);
   });
+
+  /** The declarations of `selector` inside a block's text, or null. */
+  const rule = (body: string, selector: string): string | null => {
+    const at = body.indexOf(`${selector} {`);
+    return at < 0 ? null : body.slice(body.indexOf("{", at) + 1, body.indexOf("}", at));
+  };
+  const narrowScreen = (): string => blocks("@media only screen and (max-width: 1023px)").join("\n");
+
+  it("on narrow screens puts the open list's rows in a box of their own, with room around it", () => {
+    const box = rule(narrowScreen(), ".route-list:not(.is-folded) .routes-scroll");
+    expect(box).not.toBeNull();
+    // Its own scroll, a fixed height that fits under the bar and the pinned map, never more than 58svh.
+    expect(box).toMatch(/overflow-y:\s*auto;/);
+    expect(box).toMatch(/height:\s*clamp\(240px,\s*calc\(100svh - var\(--bar-h, 101px\) - var\(--map-h, 360px\) - 40px\),\s*58svh\);/);
+    // At its ends the gesture goes on with the page; the sides stay outside it.
+    expect(box).toMatch(/overscroll-behavior-y:\s*auto;/);
+    expect(box).not.toMatch(/overscroll-behavior[^;]*:\s*(contain|none)/);
+    expect(box).toMatch(/margin-inline:\s*22px;/);
+  });
+
+  it("keeps the box to narrow screens with the list open, and off paper", () => {
+    // Folded, the panel is hidden; wide screens have their own box (`.archive-list .routes-scroll`).
+    const outside = css.replace(/@media (only screen and \(max-width: 1023px\)|\(min-width: 1024px\))\s*\{[\s\S]*?\n\}/g, "");
+    expect(outside).not.toMatch(/\.routes-scroll\s*\{[^}]*overflow-y:\s*auto/);
+    expect(outside).not.toContain(":not(.is-folded) .routes-scroll");
+    expect(blocks("@media (max-width: 1023px)").join("\n")).not.toMatch(/\.routes-scroll/);
+  });
+
+  it("does not pin the map over a folded list, where it covered «Ver las N rutas»", () => {
+    expect(rule(narrowScreen(), ".archive:has(.route-list.is-folded) .archive-map")).toMatch(/position:\s*static;/);
+  });
+});
+
+describe("the open list's box on narrow screens", () => {
+  it("brings the row from «Ruta anterior / siguiente» into view inside the box, never moving the page", () => {
+    const routes = many(30);
+    const list = show(routes);
+    toggle().click();
+    const box = document.querySelector(".routes-scroll") as HTMLElement;
+    // jsdom does not apply the stylesheet: the box is given its overflow and sizes by hand.
+    box.style.overflowY = "auto";
+    Object.defineProperty(box, "scrollHeight", { value: 3000 });
+    Object.defineProperty(box, "clientHeight", { value: 300 });
+    vi.spyOn(box, "getBoundingClientRect").mockReturnValue({ top: 400, bottom: 700 } as DOMRect);
+    const inBox = vi.fn();
+    box.scrollTo = inBox as typeof box.scrollTo;
+    const onPage = vi.fn();
+    vi.stubGlobal("scrollTo", onPage);
+    const last = document.querySelectorAll("tbody tr")[29] as HTMLElement;
+    vi.spyOn(last, "getBoundingClientRect").mockReturnValue({ top: 2900, bottom: 2960 } as DOMRect);
+    list.mark(routes[0] as Route, true);
+    expect(inBox).toHaveBeenCalledTimes(1);
+    expect(onPage).not.toHaveBeenCalled();
+  });
+});
+
+describe("the height of the screen", () => {
+  it("never hides the button when the visible height changes (browser toolbars coming and going)", () => {
+    show(many(3));
+    const original = window.innerHeight;
+    for (const height of [812, 700, 812]) {
+      Object.defineProperty(window, "innerHeight", { value: height, configurable: true });
+      window.dispatchEvent(new Event("resize"));
+      window.dispatchEvent(new Event("scroll"));
+      expect(toggle().hidden).toBe(false);
+      expect(toggle().isConnected).toBe(true);
+      expect(isFolded()).toBe(true);
+    }
+    Object.defineProperty(window, "innerHeight", { value: original, configurable: true });
+  });
 });
