@@ -233,6 +233,66 @@ describe("section links", () => {
   });
 });
 
+describe("back to the top", () => {
+  function startHere(): HTMLElement {
+    const start = document.createElement("div");
+    start.tabIndex = -1;
+    document.body.append(start);
+    return start;
+  }
+
+  it("scrolls smoothly to 0, focuses the start of the page and marks no link, without the address", () => {
+    const { nav, sections, links } = build();
+    const start = startHere();
+    const spy = FakeObserver.all.find((observer) => observer.targets.size === 3) as FakeObserver;
+    setScroll(2500);
+    spy.report(sections[1]?.element as Element, true);
+    expect(nav.current()).toBe("ritmo");
+    const before = location.href;
+    nav.top(start);
+    expect(scrolled).toEqual([{ top: 0, behavior: "smooth" }]);
+    expect(document.activeElement).toBe(start);
+    expect(nav.current()).toBeNull();
+    expect(links.some((link) => link.hasAttribute("aria-current"))).toBe(false);
+    expect(location.href).toBe(before);
+  });
+
+  it("does not let the sections it scrolls past take the mark, and looks again when the scroll ends", () => {
+    const { nav, sections } = build();
+    const start = startHere();
+    const spy = FakeObserver.all.find((observer) => observer.targets.size === 3) as FakeObserver;
+    setScroll(3500);
+    spy.report(sections[2]?.element as Element, true);
+    nav.top(start);
+    spy.report(sections[2]?.element as Element, false);
+    spy.report(sections[1]?.element as Element, true);
+    expect(nav.current()).toBeNull();
+    spy.report(sections[1]?.element as Element, false);
+    setScroll(0);
+    window.dispatchEvent(new Event("scrollend"));
+    expect(nav.current()).toBeNull();
+  });
+
+  it("jumps without smoothness with reduced motion", () => {
+    reduced = true;
+    const { nav } = build();
+    const start = startHere();
+    setScroll(2500);
+    nav.top(start);
+    expect(scrolled).toEqual([{ top: 0, behavior: "instant" }]);
+    expect(document.activeElement).toBe(start);
+  });
+
+  it("does not scroll when the page is already at the top, but still moves the focus", () => {
+    const { nav } = build();
+    const start = startHere();
+    nav.top(start);
+    expect(scrolled).toEqual([]);
+    expect(document.activeElement).toBe(start);
+    expect(nav.current()).toBeNull();
+  });
+});
+
 describe("scroll spy", () => {
   it("marks the section that crosses a line at a third of the screen, and none above the first", () => {
     const { nav, sections, links } = build();

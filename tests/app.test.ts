@@ -311,6 +311,99 @@ describe("one page with numbered sections", () => {
   });
 });
 
+describe("the brand in the bar", () => {
+  /** The brand button, found by its accessible name as a screen reader would. */
+  const brand = (): HTMLButtonElement => {
+    const found = root.querySelector<HTMLButtonElement>('header.topbar h1 button[aria-label="Ride Log, ir arriba"]');
+    if (found === null) throw new Error("no brand button");
+    return found;
+  };
+
+  function watchAddress(): { check: () => void; restore: () => void } {
+    const hashChanges = vi.fn();
+    window.addEventListener("hashchange", hashChanges);
+    const replaced = vi.spyOn(history, "replaceState");
+    const pushed = vi.spyOn(history, "pushState");
+    return {
+      check: () => {
+        expect(hashChanges).not.toHaveBeenCalled();
+        expect(replaced).not.toHaveBeenCalled();
+        expect(pushed).not.toHaveBeenCalled();
+      },
+      restore: () => {
+        window.removeEventListener("hashchange", hashChanges);
+        replaced.mockRestore();
+        pushed.mockRestore();
+      },
+    };
+  }
+
+  it("takes the demo back to the very top, smoothly, with the focus at the start and the demo kept in the address", async () => {
+    mount("#demo");
+    await loaded();
+    const scrolled: ScrollToOptions[] = [];
+    vi.stubGlobal("scrollTo", (options: ScrollToOptions) => void scrolled.push(options));
+    Object.defineProperty(window, "scrollY", { configurable: true, value: 2400 });
+    const address = watchAddress();
+    try {
+      expect(brand().type).toBe("button");
+      // A section link marks its section first; the brand clears the mark.
+      link("Hábitos").click();
+      expect(root.querySelectorAll(".page-nav [aria-current]")).toHaveLength(1);
+      scrolled.length = 0;
+      brand().click();
+      expect(scrolled).toEqual([{ top: 0, behavior: "smooth" }]);
+      expect(document.activeElement).toBe(root.querySelector(".content"));
+      expect(root.querySelectorAll(".page-nav [aria-current]")).toHaveLength(0);
+      expect(location.hash).toBe("#demo");
+      expect(root.querySelector(".demo-banner")?.hasAttribute("hidden")).toBe(false);
+      address.check();
+    } finally {
+      address.restore();
+      // Back to the top for the next test (jsdom starts at 0).
+      Object.defineProperty(window, "scrollY", { configurable: true, value: 0 });
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("jumps without smoothness with reduced motion", async () => {
+    mount("#demo");
+    await loaded();
+    const scrolled: ScrollToOptions[] = [];
+    vi.stubGlobal("scrollTo", (options: ScrollToOptions) => void scrolled.push(options));
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: query.includes("reduce"), media: query }));
+    Object.defineProperty(window, "scrollY", { configurable: true, value: 2400 });
+    try {
+      brand().click();
+      expect(scrolled).toEqual([{ top: 0, behavior: "instant" }]);
+      expect(document.activeElement).toBe(root.querySelector(".content"));
+    } finally {
+      // Back to the top for the next test (jsdom starts at 0).
+      Object.defineProperty(window, "scrollY", { configurable: true, value: 0 });
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("on the landing already at the top, scrolls nothing, leaves the address alone and only moves the focus", () => {
+    mount();
+    const scrolled: ScrollToOptions[] = [];
+    vi.stubGlobal("scrollTo", (options: ScrollToOptions) => void scrolled.push(options));
+    const before = location.href;
+    const address = watchAddress();
+    try {
+      brand().click();
+      expect(scrolled).toEqual([]);
+      expect(document.activeElement).toBe(root.querySelector(".content"));
+      expect(location.href).toBe(before);
+      expect(text()).toContain("Ver la demo");
+      address.check();
+    } finally {
+      address.restore();
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
 describe("Resumen", () => {
   it("shows the figures of the current year by default and of everything on request", async () => {
     mount("#demo");

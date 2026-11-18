@@ -1171,6 +1171,14 @@ dentro de cada sección son `h3` bajo el `h2` de la sección.
   en su símbolo (el nombre sigue para lectores de pantalla).
 - La línea de progreso se pinta con `transform: scaleX` en un fotograma por
   ráfaga de desplazamiento, y solo mientras se desplaza.
+- La marca «Ride Log» de la barra es un botón («Ride Log, ir arriba») que
+  sube la página hasta arriba del todo, en todas las vistas (portada, demo y
+  cuenta), sin tocar la dirección (D-028). Desplaza con suavidad (de golpe con
+  movimiento reducido) y lleva el foco al principio de la página (el
+  contenedor `.content`, `tabindex="-1"`), como los enlaces lo llevan a su
+  sección. Mientras sube, ningún enlace queda marcado; al llegar al héroe,
+  tampoco. Si la página ya está arriba (la portada), no desplaza nada y solo
+  mueve el foco.
 
 ### Selector de periodo
 

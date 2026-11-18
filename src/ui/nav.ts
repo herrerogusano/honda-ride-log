@@ -43,6 +43,27 @@ export interface SectionNav {
   current(): string | null;
   /** Brings a section into view as its link does (the atlas uses it to show «Rutas»). */
   go(id: string): void;
+  /**
+   * Brings the page back to its very top, as the brand in the bar does, and
+   * moves the focus to `focus` without a jump. No link is current while the
+   * page goes up nor once it is there (the hero is above the first section);
+   * a link pressed before is overtaken.
+   */
+  top(focus: HTMLElement): void;
+}
+
+/**
+ * Scrolls the page to its very top (smoothly unless reduced motion asks
+ * otherwise) and moves the focus to `focus` without a jump. The address is
+ * not touched. Returns the behaviour used, or null when the page was already
+ * there and nothing scrolled.
+ */
+export function scrollToTop(focus: HTMLElement): ScrollBehavior | null {
+  focus.focus({ preventScroll: true });
+  if (window.scrollY < 1) return null;
+  const behavior = scrollBehavior();
+  window.scrollTo({ top: 0, behavior });
+  return behavior;
 }
 
 /** Room left between the bar and the section that a link brings up. */
@@ -216,6 +237,25 @@ export function sectionNav(sections: readonly NavSection[], options: NavOptions)
     else arrive(index, mine);
   }
 
+  /** Waiting for the top of the page: the spy holds the "none" mark until the scroll ends, then looks again. */
+  const TOP = -1;
+  function top(focus: HTMLElement): void {
+    press += 1;
+    const mine = press;
+    mark(-1);
+    const behavior = scrollToTop(focus);
+    if (behavior !== "smooth") {
+      heading = null;
+      return;
+    }
+    heading = TOP;
+    whenScrollEnds(() => {
+      if (disposed || mine !== press) return;
+      heading = null;
+      spyUpdate();
+    });
+  }
+
   links.forEach((link, index) => link.addEventListener("click", () => go(index)));
 
   // ---- underline placement ----
@@ -264,5 +304,6 @@ export function sectionNav(sections: readonly NavSection[], options: NavOptions)
     progress,
     current: () => sections[active]?.id ?? null,
     go: (id) => go(sections.findIndex((section) => section.id === id)),
+    top,
   };
 }
