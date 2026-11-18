@@ -17,9 +17,12 @@
  *   trace, no start or end place, no route id, no email and no token, and
  *   hands it back to `restoreAccount` there, which checks it again.
  *
- * The data entry is bound to the token entry: it records the token's expiry
- * and is handed back only while a usable token entry with that same expiry
- * is there; otherwise it is removed. Both go together: whenever the token
+ * The data entry is bound to the token entry: each time a token is saved it
+ * gets a new random `binding` (256 bits, made by the sign-in with Web Crypto,
+ * unrelated to the token), recorded in both entries. The data is kept and
+ * handed back only while a usable token entry with that same binding is
+ * there; otherwise it is removed. Another session's data put under this token
+ * does not match, even with the very same expiry. Both go together: whenever the token
  * entry is removed (the session ends for any reason, a new sign-in, a return
  * from the login, an expired or damaged entry at start) the data entry is
  * removed in the same call. `sessionStorage` belongs to the tab and goes
@@ -40,10 +43,18 @@ export interface TokenStorage {
 export interface SavedSession {
   readonly accessToken: string;
   readonly expiresAtMs: number;
+  /**
+   * Random, made when the token was saved: the account data is kept for this
+   * value alone. Null for an entry saved without one (an older page): its
+   * token works, but no data is kept or handed back for it.
+   */
+  readonly binding: string | null;
 }
 
 const KEY = "ride-log.session";
 const ACCOUNT_KEY = "ride-log.account";
+/** What `randomToken` in src/auth/pkce.ts makes: 43 base64url characters. */
+export const BINDING_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 
 /** The browser's `sessionStorage`, or null if it is missing or blocked. */
 export function browserTokenStorage(): TokenStorage | null {
@@ -55,10 +66,14 @@ export function browserTokenStorage(): TokenStorage | null {
   }
 }
 
-/** Saves the token; whatever data an earlier token left goes, since it is not this session's. */
-export function saveSession(storage: TokenStorage, saved: SavedSession): void {
+/**
+ * Saves the token with a new binding (`BINDING_PATTERN`); whatever data an
+ * earlier token left goes, since it is not this session's.
+ */
+export function saveSession(storage: TokenStorage, saved: SavedSession & { readonly binding: string }): void {
   storage.removeItem(ACCOUNT_KEY);
-  storage.setItem(KEY, JSON.stringify({ token: saved.accessToken, expiresAt: saved.expiresAtMs }));
+  if (!BINDING_PATTERN.test(saved.binding)) throw new TypeError("binding");
+  storage.setItem(KEY, JSON.stringify({ token: saved.accessToken, expiresAt: saved.expiresAtMs, binding: saved.binding }));
 }
 
 /**
@@ -76,7 +91,7 @@ export function readSavedSession(storage: TokenStorage, nowMs: number): SavedSes
   try {
     const value: unknown = JSON.parse(text);
     if (typeof value === "object" && value !== null) {
-      const { token, expiresAt } = value as Record<string, unknown>;
+      const { token, expiresAt, binding } = value as Record<string, unknown>;
       if (
         typeof token === "string" &&
         TOKEN_PATTERN.test(token) &&
@@ -85,7 +100,10 @@ export function readSavedSession(storage: TokenStorage, nowMs: number): SavedSes
         nowMs < expiresAt - EXPIRY_MARGIN_MS &&
         expiresAt - nowMs <= MAX_SESSION_MS
       ) {
-        saved = { accessToken: token, expiresAtMs: expiresAt };
+        const bound = typeof binding === "string" && BINDING_PATTERN.test(binding) ? binding : null;
+        saved = { accessToken: token, expiresAtMs: expiresAt, binding: bound };
+        // No binding, no data: whatever is there was not kept for this token.
+        if (bound === null) storage.removeItem(ACCOUNT_KEY);
       }
     }
   } catch {
@@ -101,37 +119,43 @@ export function clearSavedSession(storage: TokenStorage): void {
   storage.removeItem(ACCOUNT_KEY);
 }
 
-/**
- * Keeps `account` (the plain value of `accountSnapshot`) for the token that
- * expires at `expiresAtMs`, but only while that token is the one stored and
- * still usable at `nowMs`. Returns whether it was kept. A storage that
- * refuses it (quota) throws; the caller drops the entry and goes on.
- */
-export function saveAccount(storage: TokenStorage, expiresAtMs: number, account: unknown, nowMs: number): boolean {
+/** Whether the token stored now, usable at `nowMs`, is the one saved with `binding`. */
+function boundSession(storage: TokenStorage, binding: string, nowMs: number): boolean {
   const session = readSavedSession(storage, nowMs);
-  if (session === null || session.expiresAtMs !== expiresAtMs) {
+  return session !== null && session.binding !== null && session.binding === binding;
+}
+
+/**
+ * Keeps `account` (the plain value of `accountSnapshot`) for the token saved
+ * with `binding`, but only while that token is the one stored and still
+ * usable at `nowMs`. Returns whether it was kept. A storage that refuses it
+ * (quota) throws; the caller drops the entry and goes on.
+ */
+export function saveAccount(storage: TokenStorage, binding: string, account: unknown, nowMs: number): boolean {
+  if (!boundSession(storage, binding, nowMs)) {
     storage.removeItem(ACCOUNT_KEY);
     return false;
   }
-  storage.setItem(ACCOUNT_KEY, JSON.stringify({ expiresAt: expiresAtMs, account }));
+  storage.setItem(ACCOUNT_KEY, JSON.stringify({ binding, account }));
   return true;
 }
 
 /**
- * The account data kept for the token stored now, or null. It is handed
- * back only if a usable token entry is there and the data was kept for that
- * same token (the same expiry); damaged or foreign data is removed. The
- * value is untrusted: src/domain/sanitize.ts checks it before use.
+ * The account data kept for the token saved with `binding`, or null. It is
+ * handed back only if that token entry is the one stored and usable, and the
+ * data was kept with that same binding; damaged or foreign data is removed.
+ * The value is untrusted: src/domain/sanitize.ts checks it before use.
  */
-export function readSavedAccount(storage: TokenStorage, nowMs: number): unknown {
-  const session = readSavedSession(storage, nowMs);
+export function readSavedAccount(storage: TokenStorage, binding: string, nowMs: number): unknown {
+  const bound = boundSession(storage, binding, nowMs);
   const text = storage.getItem(ACCOUNT_KEY);
-  if (session === null || text === null) return null;
+  if (text === null) return null;
   try {
-    const value: unknown = JSON.parse(text);
+    const value: unknown = bound ? JSON.parse(text) : null;
     if (typeof value === "object" && value !== null && !Array.isArray(value)) {
-      const { expiresAt, account } = value as Record<string, unknown>;
-      if (expiresAt === session.expiresAtMs && account !== undefined && account !== null) return account;
+      const saved = value as Record<string, unknown>;
+      const { account } = saved;
+      if (saved["binding"] === binding && account !== undefined && account !== null) return account;
     }
   } catch {
     // Damaged: removed below.

@@ -744,8 +744,10 @@ vez.
   - **Cuarta excepción de almacenamiento: `src/auth/savedSession.ts` puede
     usar `sessionStorage`** (y solo eso; `localStorage`, `document.cookie` y
     el HTML siguen prohibidos en ese archivo) para guardar el token de
-    acceso y su caducidad bajo una clave, `ride-log.session`; esa clave no
-    lleva ninguna ruta, cifra, correo ni identificador. Solo `src/auth/login.ts`
+    acceso y su caducidad bajo una clave, `ride-log.session`, más, desde el
+    2026-11-18, un vínculo aleatorio que liga a este token los datos de la
+    cuenta («Los datos de la cuenta», abajo); esa clave no lleva ninguna
+    ruta, cifra, correo ni identificador. Solo `src/auth/login.ts`
     puede importarlo, y ese archivo no importa el login pendiente, el
     consentimiento ni los contadores (`tests/lint-storage.test.ts`).
     `sessionStorage` es de la pestaña y desaparece al cerrarla. Desde el
@@ -828,21 +830,45 @@ vez.
   `src/auth/login.ts`), en una segunda clave, `ride-log.account`. Se eligió
   ese archivo y no uno nuevo para que el borrado sea el mismo: la función
   que borra el token borra también los datos, en la misma llamada.
-- **Ligados al token:** la entrada lleva la caducidad del token con el que
-  se guardó, y solo se devuelve si hay un token guardado válido con esa
-  misma caducidad; si no, se borra. Guardar un token nuevo borra los datos
-  del anterior. Se guardan al terminar una carga desde el servicio, solo si
-  la sesión sigue abierta y su token es el de la pestaña.
+- **Ligados al token:** cada vez que se guarda un token, la web crea un
+  vínculo aleatorio (`binding`: 32 bytes de Web Crypto en base64url, sin
+  relación con el token) y lo escribe en la entrada del token y en la de
+  los datos. Los datos solo se guardan y se devuelven si el token guardado
+  ahora, válido, lleva ese mismo vínculo; si no, se borran. Así, los datos
+  de otra sesión puestos bajo este token no valen aunque los dos tokens
+  caduquen en el mismo milisegundo (hasta el 2026-11-18 el vínculo era la
+  caducidad, y eso sí pasaba). Ni el token se guarda dos veces ni se guarda
+  nada derivado de él. Un token guardado sin vínculo (por una versión
+  anterior de la web) sigue valiendo para la sesión, pero sin datos. Guardar
+  un token nuevo borra los datos del anterior. Se guardan al terminar una
+  carga desde el servicio, solo si la sesión sigue abierta y su token es el
+  de la pestaña.
 - **Se borran** exactamente en los mismos casos que el token: la sesión
   termina por cualquier motivo (salir, «Borrar mis datos», caducidad por
   reloj, 401, 403, fallo de red, `session_expired`), un login nuevo, la
   vuelta del login (bien o mal) y el arranque con el token caducado o
   dañado. Además, si no corresponden al token guardado o están dañados.
 - **Al recargar** con sesión válida y datos guardados, la página se pinta
-  sin pedir el estado ni la lista. Antes de usarlos, `restoreAccount` (en
-  el saneador) los vuelve a comprobar como entrada no fiable; si algo no
-  cuadra (otra versión, un campo de otro tipo, una distancia negativa), se
-  borran y la carga se hace como siempre, sin error visible. Sin datos
+  al momento con ellos, sin esperar a ninguna llamada. Detrás, la web pide
+  el estado de la moto y sus datos (`get_vehicle_status` y
+  `get_vehicle_details`, las mismas dos llamadas que una carga completa;
+  nunca `list_routes`) y, con la respuesta, actualiza en su sitio el panel
+  «Estado» (batería, último uso, odómetro), el modelo de la portada y el
+  odómetro del mantenimiento, sin redibujar la página, y la copia guardada
+  (desde el 2026-11-18; antes no se volvía a pedir nada y el estado se
+  quedaba el de la entrada toda la sesión). Si esa lectura falla, se queda
+  lo guardado y no se dice nada; si falla solo la de los datos, se quedan el
+  modelo y el kilometraje guardados. Un 401, un 403 o un fallo de red en
+  ella terminan la sesión como cualquier otra petición (y borran token y
+  datos), sin aviso en ese momento: lo dice la siguiente petición. Antes de
+  usar los datos, `restoreAccount` (en el saneador) los vuelve a comprobar
+  como entrada no fiable; si algo no cuadra (otra versión, un campo de otro
+  tipo, una distancia negativa, una fecha que no es un milisegundo entero
+  entre 1970 y el último instante que admite `Date`, como `1e100`), se
+  borran y la carga se hace como siempre, sin error visible. La misma
+  cota de fechas vale a la entrada del servicio: un inicio o un final
+  fuera de ella cuenta como ausente (la ruta sin inicio se salta), y un
+  último contacto fuera de ella, también. Sin datos
   guardados, también como siempre. Si la pestaña no deja guardarlos
   (cuota), no se guarda nada y no se dice nada: la siguiente recarga los
   vuelve a pedir.
@@ -859,13 +885,23 @@ vez.
   no está, cambió o hay dos iguales, el error es
   `detail/unexpected_shape (route_lookup)` con «Reintentar». Coste: la
   primera ruta abierta de cada semestre tras recargar gasta una llamada
-  más; el atlas la cuenta en su estimación. No se amplió ningún sello.
+  más, y en un semestre cortado, una más por ruta. El atlas dice «hasta»
+  cuántas lecturas hará, y esa cifra es un máximo que nunca se queda corto
+  (hasta el 2026-11-18 no contaba las de un milisegundo: con ocho rutas de
+  un semestre cortado contaba una búsqueda y hacía nueve, medido en
+  `tests/saved-account.test.ts` contra la demo): un semestre aún sin leer cuenta
+  su lectura más una de un milisegundo por cada ruta suya, por si viene
+  cortado; uno leído entero no suma nada; uno que vino cortado suma las de
+  un milisegundo que falten. Antes de la primera lectura de un semestre la
+  cifra puede ser mucho mayor que lo que de verdad se hará; desde que se
+  conoce, es exacta. No se amplió ningún sello.
 - **Ningún contador** con sesión, como antes: la recarga con datos
   guardados también tiene token, así que `boot` los sella igual.
 - **Lo que no cambia:** el mapa y el atlas siguen pidiendo la traza al
-  abrir una ruta. Lo que se pinta es lo que había al entrar: una salida
-  hecha después, o el estado nuevo de la moto, no aparecen hasta volver a
-  entrar (como mucho una hora, lo que dura el token).
+  abrir una ruta. La lista de rutas que se pinta es la que había al entrar:
+  una salida hecha después no aparece hasta volver a entrar (como mucho una
+  hora, lo que dura el token). El estado de la moto sí se pide de nuevo en
+  cada recarga (arriba).
 - **Riesgos aceptados:** cualquier script del mismo origen (otra web de
   Pages de la cuenta, ver «Riesgo de origen compartido», o una dependencia
   comprometida) puede leer la lista de rutas y las cifras mientras la
@@ -876,10 +912,12 @@ vez.
   en cada navegador. Duplicar la pestaña copia también estos datos.
 - Tests: `tests/saved-account.test.ts` (el valor, su comprobación, el
   vínculo con el token, la búsqueda en la lista ligera y el tamaño) y
-  `tests/boot.test.ts` (recargar no pide nada y la página, el periodo y la
-  lista quedan igual; el borrado en cada camino; nunca una traza, un punto,
-  un identificador ni el token; datos de otra sesión o dañados se
-  descartan; cuota). Todos en memoria contra el servicio de demo o
+  `tests/boot.test.ts` (recargar solo pide el estado y los datos de la moto,
+  nunca la lista, y la página, el periodo y la lista quedan igual; el estado
+  nuevo se ve y se guarda; si falla, se queda lo guardado sin error; el
+  borrado en cada camino, también con un 403; nunca una traza, un punto, un
+  identificador ni el token; datos de otra sesión, también con la misma
+  caducidad, o dañados se descartan; cuota). Todos en memoria contra el servicio de demo o
   `tests/fakeServer.ts`, no en un navegador ni contra el servicio real.
 
 ### Las peticiones a `/mcp`

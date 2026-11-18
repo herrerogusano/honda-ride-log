@@ -62,7 +62,22 @@ function instantOrNull(value: unknown, path: string): number | null {
   if (calendar.getUTCMonth() !== (month as number) - 1 || calendar.getUTCDate() !== day) return null;
   if ((hour as number) > 23 || (minute as number) > 59 || (second as number) > 59) return null;
   const ms = Date.parse(text);
-  return Number.isNaN(ms) ? null : ms;
+  // The same range a kept copy must be in (`restoreAccount`): from 1970 on.
+  return isInstantMs(ms) ? ms : null;
+}
+
+/** The largest instant a `Date` can hold (ECMAScript: 100 million days after 1970). */
+const MAX_INSTANT_MS = 8.64e15;
+
+/** Whole epoch milliseconds from 1970 to the last instant a `Date` holds: anything else is no date. */
+function isInstantMs(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= MAX_INSTANT_MS;
+}
+
+/** An instant in epoch milliseconds; a number no date can hold (1e100, -1, 0.5) is treated as absent. */
+function instantMsOrNull(value: unknown, path: string): number | null {
+  const number = finiteOrNull(value, path);
+  return number !== null && isInstantMs(number) ? (number === 0 ? 0 : number) : null;
 }
 
 /** A finite number that is not negative; a negative one is treated as absent. */
@@ -174,7 +189,7 @@ export function sanitizeVehicleStatus(raw: unknown): VehicleState {
   return {
     status: labelOrNull(status["status"], "get_vehicle_status.status"),
     batteryPercent: percentOrNull(status["battery"], "get_vehicle_status.battery"),
-    lastCommunicationMs: nonNegativeOrNull(status["last_communication"], "get_vehicle_status.last_communication"),
+    lastCommunicationMs: instantMsOrNull(status["last_communication"], "get_vehicle_status.last_communication"),
     odometer: nonNegativeOrNull(status["odometer"], "get_vehicle_status.odometer"),
   };
 }
@@ -232,13 +247,19 @@ function savedTuple(value: unknown, length: number, path: string): unknown[] {
   return tuple;
 }
 
+/** A kept instant or null; anything else means the copy is not one this page made. */
+function savedInstantOrNull(value: unknown, path: string): number | null {
+  if (value === null) return null;
+  if (!isInstantMs(value)) throw new ShapeError(path, "instant or null");
+  return value;
+}
+
 function savedRoute(raw: unknown, path: string): Route {
   const [start, end, km, average, max, inferred] = savedTuple(raw, 6, path);
-  if (typeof start !== "number" || !Number.isFinite(start) || start < 0 || Number.isNaN(new Date(start).getTime())) {
-    throw new ShapeError(`${path}[0]`, "instant");
-  }
-  const endMs = finiteOrNull(end, `${path}[1]`);
-  if (endMs !== null && endMs < start) throw new ShapeError(`${path}[1]`, "instant not before the start or null");
+  if (!isInstantMs(start)) throw new ShapeError(`${path}[0]`, "instant");
+  // Not just finite: 1e100 is finite and no date (its day and time would read NaN).
+  if (end !== null && (!isInstantMs(end) || end < start)) throw new ShapeError(`${path}[1]`, "instant not before the start or null");
+  const endMs = end;
   const distanceKm = finiteOrNull(km, `${path}[2]`);
   if (distanceKm === null || distanceKm < 0) throw new ShapeError(`${path}[2]`, "non-negative number");
   const ref = Object.freeze({}) as RouteRef;
@@ -268,7 +289,7 @@ export function restoreAccount(raw: unknown): AccountData {
   const vehicle: VehicleState = {
     status: labelOrNull(status, "saved.vehicle[0]"),
     batteryPercent: percentOrNull(battery, "saved.vehicle[1]"),
-    lastCommunicationMs: nonNegativeOrNull(lastCommunication, "saved.vehicle[2]"),
+    lastCommunicationMs: savedInstantOrNull(lastCommunication, "saved.vehicle[2]"),
     odometer: nonNegativeOrNull(odometer, "saved.vehicle[3]"),
   };
   let info: VehicleInfo | null = null;

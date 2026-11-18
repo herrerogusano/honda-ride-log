@@ -53,6 +53,7 @@ import { calendarCaption, calendarView } from "./calendar";
 import { cardContent, cardText, paintCard, splitUnit } from "./card";
 import { barChart } from "./charts";
 import type { RiderData } from "./data";
+import type { VehicleInfo, VehicleState } from "../domain/model";
 import { clear, el, uniqueId } from "./dom";
 import { downloadBlob } from "./download";
 import { hourInsight, weekdayInsight, type Insight } from "./insights";
@@ -122,18 +123,24 @@ function tile(label: string, value: string, note?: string | null): HTMLElement {
  * The vehicle state, as the slanted plate of the hero. The atlas of section
  * «Atlas» uses the same plate (src/ui/atlas/atlasView.ts).
  */
-function statusPlate(data: RiderData): HTMLElement {
-  const { vehicle, info } = data;
-  const lastUse = lastUseMs(data.figures, vehicle);
-  const odometer = vehicle.odometer ?? info?.mileage ?? null;
+function statusPlate(data: RiderData): { readonly element: HTMLElement; update(next: RiderData): void } {
   const id = uniqueId("block");
-  return el(
-    "section",
-    { class: "block plate", attrs: { "aria-labelledby": id } },
-    el("div", { class: "block-head plate-head" }, el("h3", { id }, "Estado"), info?.model ? el("span", { class: "scope" }, info.model) : null),
-    el(
-      "dl",
-      { class: "tiles plate-tiles" },
+  const model = el("span", { class: "scope" });
+  const head = el("div", { class: "block-head plate-head" }, el("h3", { id }, "Estado"));
+  const tiles = el("dl", { class: "tiles plate-tiles" });
+  /** Fills the plate; called again, in place, when a newer state arrives (no entry animation again). */
+  function update(next: RiderData): void {
+    const { vehicle, info } = next;
+    const lastUse = lastUseMs(next.figures, vehicle);
+    const odometer = vehicle.odometer ?? info?.mileage ?? null;
+    // The model is there only when the service gave one.
+    if (info?.model) {
+      model.textContent = info.model;
+      head.append(model);
+    } else {
+      model.remove();
+    }
+    tiles.replaceChildren(
       tile("Batería", vehicle.batteryPercent === null ? "—" : withUnit(formatNumber(vehicle.batteryPercent), "%")),
       tile(
         "Último uso",
@@ -141,9 +148,17 @@ function statusPlate(data: RiderData): HTMLElement {
         lastUse === null ? "Sin rutas ni comunicación registrada" : `a las ${formatTime(lastUse)}`,
       ),
       tile("Odómetro", odometer === null ? "—" : formatWholeKm(odometer)),
-    ),
+    );
+  }
+  update(data);
+  const element = el(
+    "section",
+    { class: "block plate", attrs: { "aria-labelledby": id } },
+    head,
+    tiles,
     el("p", { class: "plate-note" }, "Sin posición: esta web nunca enseña dónde está la moto."),
   );
+  return { element, update };
 }
 
 /** A value with its unit small and red after it: «218,9» + «km». The text stays «218,9 km». */
@@ -565,8 +580,11 @@ function calendarBlock(data: RiderData, period: Period, periodLabel: string): HT
   );
 }
 
-function maintenanceBlock(data: RiderData, scope: StorageScope): HTMLElement {
-  const odometer = data.vehicle.odometer ?? data.info?.mileage ?? null;
+function maintenanceBlock(data: RiderData, scope: StorageScope): { readonly element: HTMLElement; update(next: RiderData): void } {
+  /** Changes when a newer vehicle state arrives (`update`). */
+  let odometer = data.vehicle.odometer ?? data.info?.mileage ?? null;
+  /** What `show` last said, to say it again with a newer odometer. */
+  let shown: [MaintenancePlan | null, string] = [null, ""];
   const intervalId = uniqueId("interval");
   const lastId = uniqueId("last-service");
   const stored = readMaintenance(scope);
@@ -611,6 +629,7 @@ function maintenanceBlock(data: RiderData, scope: StorageScope): HTMLElement {
   }
 
   function show(plan: MaintenancePlan | null, note = "", replay = false): void {
+    shown = [plan, note];
     if (plan === null) {
       figure.hidden = true;
       result.textContent = note || "Escribe los dos números para saber cuánto falta.";
@@ -673,7 +692,13 @@ function maintenanceBlock(data: RiderData, scope: StorageScope): HTMLElement {
   });
   show(stored);
 
-  return block(
+  const update = (next: RiderData): void => {
+    const newer = next.vehicle.odometer ?? next.info?.mileage ?? null;
+    if (newer === odometer) return;
+    odometer = newer;
+    show(...shown);
+  };
+  const element = block(
     "Mantenimiento",
     null,
     el(
@@ -685,6 +710,7 @@ function maintenanceBlock(data: RiderData, scope: StorageScope): HTMLElement {
     form,
     result,
   );
+  return { element, update };
 }
 
 function cardBlock(data: RiderData, period: Period, periodLabel: string, signal: AbortSignal): HTMLElement {
@@ -825,24 +851,26 @@ export function heroTitle(id: string, lines: readonly string[]): HTMLElement {
   return title;
 }
 
-function hero(data: RiderData): HTMLElement {
+function hero(data: RiderData): { readonly element: HTMLElement; update(next: RiderData): void } {
   const id = uniqueId("hero");
-  return el(
+  const eyebrow = el("p", { class: "eyebrow hero-eyebrow" });
+  const plate = statusPlate(data);
+  const element = el(
     "section",
     { class: "hero", attrs: { "aria-labelledby": id } },
     el(
       "div",
       { class: "hero-grid" },
-      el(
-        "div",
-        { class: "hero-copy" },
-        el("p", { class: "eyebrow hero-eyebrow" }, `${data.info?.model ?? "Tu moto"} · Ride Log`),
-        heroTitle(id, ["Una moto.", "Cada", "trazo."]),
-        heroLead(data),
-      ),
-      statusPlate(data),
+      el("div", { class: "hero-copy" }, eyebrow, heroTitle(id, ["Una moto.", "Cada", "trazo."]), heroLead(data)),
+      plate.element,
     ),
   );
+  const update = (next: RiderData): void => {
+    eyebrow.textContent = `${next.info?.model ?? "Tu moto"} · Ride Log`;
+    plate.update(next);
+  };
+  eyebrow.textContent = `${data.info?.model ?? "Tu moto"} · Ride Log`;
+  return { element, update };
 }
 
 export interface PageSection {
@@ -860,6 +888,8 @@ export interface RiderPage {
   readonly footer: HTMLElement;
   /** The period selector, for the top bar; null for an account without rides. */
   readonly period: HTMLElement | null;
+  /** Shows a newer vehicle state in place (after a reload painted the kept one). */
+  showVehicle(vehicle: VehicleState, info: VehicleInfo | null): void;
 }
 
 export interface RiderPageOptions {
@@ -920,9 +950,11 @@ export function renderRiderPage(data: RiderData, scope: StorageScope, options: R
   }
   if (options.archive !== undefined) section("rutas", "Rutas", ["El archivo", "de salidas"], options.archive);
   if (options.atlas !== undefined && !empty) section("atlas", "Atlas", ["Tus rutas,", "en capas"], options.atlas.element);
-  section("taller", "Taller", ["A punto"], el("div", { class: "grid-2 grid-taller" }, maintenanceBlock(data, scope), empty ? null : slots.card));
+  const maintenance = maintenanceBlock(data, scope);
+  section("taller", "Taller", ["A punto"], el("div", { class: "grid-2 grid-taller" }, maintenance.element, empty ? null : slots.card));
 
-  const page = { hero: hero(data), footer: footer(data) };
+  const heroPart = hero(data);
+  const page = { hero: heroPart.element, footer: footer(data) };
   // Everything that never changes is revealed once, before the slots are filled,
   // so that no observer keeps watching a block a period change has removed.
   for (const part of [page.hero, ...sections.map((one) => one.element), page.footer]) reveal(part, { signal });
@@ -990,5 +1022,12 @@ export function renderRiderPage(data: RiderData, scope: StorageScope, options: R
       );
   draw(true);
 
-  return { ...page, sections, period: control?.element ?? null };
+  /** A newer vehicle state: the plate, the hero's model and the maintenance odometer change in place; nothing else is drawn again. */
+  function showVehicle(vehicle: VehicleState, info: VehicleInfo | null): void {
+    const next = { ...data, vehicle, info };
+    heroPart.update(next);
+    maintenance.update(next);
+  }
+
+  return { ...page, sections, period: control?.element ?? null, showVehicle };
 }

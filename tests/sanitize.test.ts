@@ -87,6 +87,9 @@ describe("vehicle sanitizers", () => {
       lastCommunicationMs: 0,
     });
     expect(sanitizeVehicleDetails({ mileage: 0 }).mileage).toBe(0);
+    // A last communication no date can hold, or between milliseconds, is absent, never a date of NaN.
+    for (const instant of [1e100, 8.64e15 + 1, 1000.5]) expect(sanitizeVehicleStatus({ last_communication: instant }).lastCommunicationMs).toBeNull();
+    expect(sanitizeVehicleStatus({ last_communication: 8.64e15 }).lastCommunicationMs).toBe(8.64e15);
     // JSON can carry -0: it is kept as 0, never as -0 (which Intl writes "-0").
     expect(Object.is(sanitizeVehicleStatus({ odometer: -0 }).odometer, 0)).toBe(true);
     expect(Object.is(sanitizeVehicleDetails({ mileage: -0 }).mileage, 0)).toBe(true);
@@ -211,10 +214,12 @@ describe("route list sanitizer", () => {
         { ...sample, route_id: "rt-DEMO-k", started_at: "2026-02-30T10:00:00.000Z" },
         { ...sample, route_id: "rt-DEMO-l", started_at: "2026-03-01T24:00:00.000Z" },
         { ...sample, route_id: "rt-DEMO-m", started_at: "2026-13-01T10:00:00.000Z" },
+        // Before 1970: no date a kept copy would take back (src/domain/sanitize.ts, `restoreAccount`).
+        { ...sample, route_id: "rt-DEMO-p", started_at: "1969-12-31T23:59:59.000Z" },
       ]),
     );
     expect(page.routes).toEqual([]);
-    expect(page.skipped).toBe(3);
+    expect(page.skipped).toBe(4);
     const valid = sanitizeRouteList(
       listOf([
         { ...sample, route_id: "rt-DEMO-n", started_at: "2024-02-29T23:59:59.000Z", ended_at: null },

@@ -116,23 +116,33 @@ function forgetSaved(deps: AuthDeps): void {
   }
 }
 
-/** The expiry of each session made here: the account data is kept for that token alone. */
-const expiries = new WeakMap<AuthSession, number>();
+/**
+ * The binding of each session made here (src/auth/savedSession.ts): the
+ * account data is kept for that token entry alone. Absent when the token is
+ * not in the tab (or was saved without one).
+ */
+const bindings = new WeakMap<AuthSession, string>();
 
 /**
  * A session for this token that also lives in the tab's sessionStorage, so a
  * reload keeps it, and leaves it the moment it ends for any reason.
+ * `binding` is the one read back with the token on a reload (null for none).
  */
-function keptSession(accessToken: string, expiresAtMs: number, deps: AuthDeps, store: boolean): AuthSession {
+function keptSession(accessToken: string, expiresAtMs: number, deps: AuthDeps, store: boolean, binding: string | null = null): AuthSession {
   const session = createSession(accessToken, expiresAtMs);
-  expiries.set(session, expiresAtMs);
   if (store) {
     const storage = tokenStorageOf(deps);
     try {
-      if (storage !== null) saveSession(storage, { accessToken, expiresAtMs });
+      if (storage !== null) {
+        const fresh = randomToken(deps.crypto);
+        saveSession(storage, { accessToken, expiresAtMs, binding: fresh });
+        bindings.set(session, fresh);
+      }
     } catch {
       // Storage full or blocked: the session works, a reload asks to sign in again.
     }
+  } else if (binding !== null) {
+    bindings.set(session, binding);
   }
   session.onEnd(() => forgetSaved(deps));
   return session;
@@ -153,7 +163,7 @@ export function resumeSession(config: ServiceConfig | null, deps: AuthDeps): Aut
   } catch {
     return null;
   }
-  return saved === null ? null : keptSession(saved.accessToken, saved.expiresAtMs, deps, false);
+  return saved === null ? null : keptSession(saved.accessToken, saved.expiresAtMs, deps, false, saved.binding);
 }
 
 /**
@@ -166,12 +176,12 @@ export function resumeSession(config: ServiceConfig | null, deps: AuthDeps): Aut
  * before.
  */
 export function keepAccountData(session: AuthSession, deps: AuthDeps, account: unknown): void {
-  const expiresAtMs = expiries.get(session);
+  const binding = bindings.get(session);
   const storage = tokenStorageOf(deps);
   if (storage === null) return;
   try {
-    if (expiresAtMs === undefined || session.endReason !== null) clearSavedAccount(storage);
-    else saveAccount(storage, expiresAtMs, account, deps.now());
+    if (binding === undefined || session.endReason !== null) clearSavedAccount(storage);
+    else saveAccount(storage, binding, account, deps.now());
   } catch {
     try {
       clearSavedAccount(storage);
@@ -187,16 +197,11 @@ export function keepAccountData(session: AuthSession, deps: AuthDeps, account: u
  * for another token is removed and gives null.
  */
 export function keptAccountData(session: AuthSession, deps: AuthDeps): unknown {
-  const expiresAtMs = expiries.get(session);
+  const binding = bindings.get(session);
   const storage = tokenStorageOf(deps);
-  if (storage === null || expiresAtMs === undefined || session.endReason !== null) return null;
+  if (storage === null || binding === undefined || session.endReason !== null) return null;
   try {
-    const stored = readSavedSession(storage, deps.now());
-    if (stored === null || stored.expiresAtMs !== expiresAtMs) {
-      clearSavedAccount(storage);
-      return null;
-    }
-    return readSavedAccount(storage, deps.now());
+    return readSavedAccount(storage, binding, deps.now());
   } catch {
     return null;
   }

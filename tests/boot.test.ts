@@ -247,7 +247,7 @@ describe("a build with a service", () => {
     // The pending login was used once and is gone; the tab keeps the token
     // and its expiry, and the account data bound to that expiry.
     expect([...(storage?.items.keys() ?? [])].sort()).toEqual([ACCOUNT_KEY, SAVED_KEY]);
-    expect(Object.keys(JSON.parse(storage?.items.get(SAVED_KEY) ?? "{}") as object).sort()).toEqual(["expiresAt", "token"]);
+    expect(Object.keys(JSON.parse(storage?.items.get(SAVED_KEY) ?? "{}") as object).sort()).toEqual(["binding", "expiresAt", "token"]);
     // Nor in the title.
     expect(document.title).not.toContain(token);
   });
@@ -400,8 +400,8 @@ describe("a reload keeps the session (docs/PLAN.md, section 10, «El token»)", 
     expect(navigations).toHaveLength(1);
     expect(signOutButton().hidden).toBe(false);
     expect(root.querySelector<HTMLElement>(".demo-banner")?.hidden).toBe(true);
-    // The account data kept in the tab paints the page: nothing is asked.
-    expect(mcpRequests()).toBe(before);
+    // The account data kept in the tab paints the page; only the vehicle is asked for again, behind it.
+    await vi.waitFor(() => expect(mcpRequests()).toBe(before + 2));
     // Opening a route still asks the service, with the same token.
     await holdATrace();
     const calls = server.requests.filter((one) => one.url === CONFIG.mcpUrl).slice(before);
@@ -505,7 +505,16 @@ describe("a reload paints the account data kept in the tab (docs/PLAN.md, sectio
   /** The same synthetic rider the fake server answers with (tests/fakeServer.ts). */
   const rider = generateRider({ seed: 7, nowMs: Date.parse("2026-07-01T00:00:00Z") });
 
-  it("asks for neither the vehicle nor the route list, and the page, the period and the list work the same", async () => {
+  /** Reloads, and waits until the vehicle read behind the painted page has been answered and shown. */
+  async function reloadAndRefresh(): Promise<void> {
+    const from = mcpRequests();
+    await reload();
+    await loaded();
+    await vi.waitFor(() => expect(toolsSince(from)).toEqual(["get_vehicle_status", "get_vehicle_details"]));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  it("asks for nothing but the vehicle, never the route list, and the page, the period and the list work the same", async () => {
     await signedIn();
     await loaded();
     const shown = content();
@@ -515,20 +524,22 @@ describe("a reload paints the account data kept in the tab (docs/PLAN.md, sectio
     const before = mcpRequests();
     await reload();
     await loaded();
-    expect(toolsSince(before)).toEqual([]);
+    // Painted at once, from the tab.
+    expect(rows()).toBe(listed);
+    await vi.waitFor(() => expect(toolsSince(before)).toEqual(["get_vehicle_status", "get_vehicle_details"]));
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(rows()).toBe(listed);
     expect(rows()).toBeGreaterThan(10);
     expect(content()).toBe(shown);
     choosePeriod("all");
     expect(content()).toBe(allShown);
-    expect(toolsSince(before)).toEqual([]);
+    expect(toolsSince(before)).toEqual(["get_vehicle_status", "get_vehicle_details"]);
   });
 
   it("finds a kept route again with one light read per semester, then asks for its trace", async () => {
     await signedIn();
     await loaded();
-    await reload();
-    await loaded();
+    await reloadAndRefresh();
     const before = mcpRequests();
     const buttons = root.querySelectorAll<HTMLElement>(".row-button");
     buttons[0]?.click();
@@ -575,25 +586,92 @@ describe("a reload paints the account data kept in the tab (docs/PLAN.md, sectio
     expect(coordinates.size).toBeGreaterThan(100);
     for (const value of coordinates) expect(kept).not.toContain(value);
     for (const word of ["route_id", "geojson", "registration", "vin", "position", "email", "token"]) expect(kept).not.toContain(word);
-    const value = JSON.parse(kept) as { expiresAt: number; account: Record<string, unknown> };
-    expect(Object.keys(value).sort()).toEqual(["account", "expiresAt"]);
+    const value = JSON.parse(kept) as { binding: string; account: Record<string, unknown> };
+    expect(Object.keys(value).sort()).toEqual(["account", "binding"]);
+    expect(value.binding).toBe((JSON.parse(storage?.items.get(SAVED_KEY) ?? "{}") as { binding: string }).binding);
     expect(Object.keys(value.account).sort()).toEqual(["info", "routes", "skipped", "v", "vehicle"]);
     const routes = value.account["routes"] as unknown[][];
     expect(routes.every((one) => one.length === 6 && one.every((field) => field === null || ["number", "boolean"].includes(typeof field)))).toBe(true);
     expect((value.account["vehicle"] as unknown[]).length).toBe(4);
   });
 
+  it("discards data another sign-in kept for a token with the very same expiry", async () => {
+    await signedIn();
+    await loaded();
+    const other = storage?.items.get(ACCOUNT_KEY) ?? "";
+    const otherExpiry = (JSON.parse(storage?.items.get(SAVED_KEY) ?? "{}") as { expiresAt: number }).expiresAt;
+    // A second sign-in in the same tab at the same moment: a new token that expires at the same millisecond.
+    await startLogin(CONFIG, deps());
+    const back = new URL(server.approve(navigations[navigations.length - 1] ?? ""));
+    mounted?.dispose();
+    await start(SERVICE, back.pathname + back.search);
+    await loaded();
+    expect(server.issuedTokens).toHaveLength(2);
+    expect((JSON.parse(storage?.items.get(SAVED_KEY) ?? "{}") as { expiresAt: number }).expiresAt).toBe(otherExpiry);
+    await vi.waitFor(() => expect(storage?.items.has(ACCOUNT_KEY)).toBe(true));
+    const mine = storage?.items.get(ACCOUNT_KEY) ?? "";
+    // The first session's data put back under the second token.
+    storage?.items.set(ACCOUNT_KEY, other);
+    const before = mcpRequests();
+    await reload();
+    await loaded();
+    expect(toolsSince(before)).toContain("list_routes");
+    await vi.waitFor(() => expect(storage?.items.get(ACCOUNT_KEY)).toBe(mine));
+    expect(mine).not.toBe(other);
+  });
+
+  it("asks for the vehicle in the background, never the route list, and shows and keeps what it says", async () => {
+    await signedIn();
+    await loaded();
+    const battery = (): string => {
+      const term = [...root.querySelectorAll(".plate dt")].find((one) => one.textContent === "Batería");
+      return term?.parentElement?.querySelector(".tile-value")?.textContent ?? "";
+    };
+    expect(battery()).not.toBe("");
+    expect(battery()).not.toContain("13");
+    // The service now says the battery is at 13 %.
+    server.mcpOverride = (request) => {
+      const message = JSON.parse(request.body) as { id: number; params: { name: string } };
+      if (message.params.name !== "get_vehicle_status") return null;
+      const status = { ...rider.status, battery: 13 };
+      return { body: JSON.stringify({ jsonrpc: "2.0", id: message.id, result: { content: [{ type: "text", text: JSON.stringify(status) }], structuredContent: status, isError: false } }) };
+    };
+    const before = mcpRequests();
+    await reload();
+    await loaded();
+    await vi.waitFor(() => expect(battery()).toContain("13"));
+    expect(toolsSince(before)).toEqual(["get_vehicle_status", "get_vehicle_details"]);
+    await vi.waitFor(() => expect((JSON.parse(storage?.items.get(ACCOUNT_KEY) ?? "{}") as { account: { vehicle: unknown[] } }).account.vehicle[1]).toBe(13));
+  });
+
+  it("keeps what was kept, with no error, when the background read of the vehicle fails", async () => {
+    await signedIn();
+    await loaded();
+    const kept = storage?.items.get(ACCOUNT_KEY) ?? "";
+    const shown = content();
+    server.mcpOverride = () => ({ status: 503, body: "{}" });
+    const before = mcpRequests();
+    await reload();
+    await loaded();
+    await vi.waitFor(() => expect(toolsSince(before)).toContain("get_vehicle_status"));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(root.querySelector('[role="alert"]')).toBeNull();
+    expect(content()).toBe(shown);
+    expect(storage?.items.get(ACCOUNT_KEY)).toBe(kept);
+    expect(toolsSince(before)).not.toContain("list_routes");
+  });
+
   it("discards data kept for another token, loads from the service and keeps this session's", async () => {
     await signedIn();
     await loaded();
-    const kept = JSON.parse(storage?.items.get(ACCOUNT_KEY) ?? "{}") as { expiresAt: number; account: unknown };
-    storage?.items.set(ACCOUNT_KEY, JSON.stringify({ ...kept, expiresAt: kept.expiresAt - 1 }));
+    const kept = JSON.parse(storage?.items.get(ACCOUNT_KEY) ?? "{}") as { binding: string; account: unknown };
+    storage?.items.set(ACCOUNT_KEY, JSON.stringify({ ...kept, binding: `${kept.binding.slice(1)}x` }));
     const before = mcpRequests();
     await reload();
     await loaded();
     expect(toolsSince(before)).toContain("list_routes");
     expect(toolsSince(before)).toContain("get_vehicle_status");
-    expect((JSON.parse(storage?.items.get(ACCOUNT_KEY) ?? "{}") as { expiresAt: number }).expiresAt).toBe(kept.expiresAt);
+    expect((JSON.parse(storage?.items.get(ACCOUNT_KEY) ?? "{}") as { binding: string }).binding).toBe(kept.binding);
   });
 
   it.each([
@@ -655,6 +733,11 @@ describe("a reload paints the account data kept in the tab (docs/PLAN.md, sectio
       };
       root.querySelectorAll<HTMLElement>(".row-button")[1]?.click();
       await vi.waitFor(() => expect(root.querySelector(".map-status [role='alert']")).not.toBeNull());
+    }],
+    ["a 403", async () => {
+      server.mcpOverride = () => ({ status: 403, body: "{}" });
+      root.querySelectorAll<HTMLElement>(".row-button")[1]?.click();
+      await vi.waitFor(() => expect(root.querySelector(".map-status [role='alert']")?.textContent).toContain("forbidden"));
     }],
     ["a reload with the token expired", async () => {
       server.clock.now += 3_600_000 - 60_000;

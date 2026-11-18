@@ -19,7 +19,7 @@ import { loadingStage, type LoadingStage } from "./loadingStage";
 import { createMapView, type MapFactory, type MapView } from "./mapView";
 import { sectionNav } from "./nav";
 import { createRouteList } from "./routesView";
-import { heroTitle, promises, renderRiderPage } from "./summary";
+import { heroTitle, promises, renderRiderPage, type RiderPage } from "./summary";
 import { createTraceStore, type TraceStore } from "./traceStore";
 
 /**
@@ -493,7 +493,8 @@ export function startApp(options: AppOptions): App {
   }
 
 
-  function showLoaded(data: RiderData, caller: ToolCaller, warnings: readonly string[], stage: LoadingStage): void {
+  /** Draws the page; gives back how to show a newer vehicle state on it in place. */
+  function showLoaded(data: RiderData, caller: ToolCaller, warnings: readonly string[], stage: LoadingStage): RiderPage["showVehicle"] {
     const scope: StorageScope = data.demo ? "demo" : "account";
     const motion = new AbortController();
     // A failed trace that needs a new sign-in offers it, never a retry.
@@ -575,6 +576,41 @@ export function startApp(options: AppOptions): App {
     // The loading stage becomes the page: its wedge wipes over the hero and settles on the hero's wedge.
     stage.handOff(page.hero, motion.signal);
     publishBar();
+    return page.showVehicle;
+  }
+
+  /**
+   * Reads the vehicle's state and details behind a page painted from the
+   * tab, shows them in place and hands them on with the kept routes (to keep
+   * the copy up to date). A failed read changes nothing and says nothing: the
+   * kept state stays on screen. A sign-in problem still ends the session the
+   * usual way (src/service/mcpClient.ts), and the next request says so.
+   */
+  async function refreshVehicle(
+    caller: ToolCaller,
+    saved: AccountData,
+    showVehicle: RiderPage["showVehicle"],
+    current: () => boolean,
+    onLoaded: LoadOptions["onLoaded"],
+  ): Promise<void> {
+    let vehicle: VehicleState;
+    try {
+      vehicle = await loadVehicleState(caller);
+    } catch (error) {
+      if (error instanceof LoadError || !current()) return;
+      throw error;
+    }
+    if (!current()) return;
+    let info = saved.info;
+    try {
+      info = await loadVehicleInfo(caller);
+    } catch (error) {
+      // Model and mileage are extras: the kept ones stay.
+      if (!(error instanceof LoadError) && current()) throw error;
+    }
+    if (!current()) return;
+    showVehicle(vehicle, info);
+    onLoaded?.({ vehicle, info, routes: saved.routes, skipped: saved.skipped });
   }
 
   async function load(caller: ToolCaller, loadOptions: LoadOptions): Promise<void> {
@@ -607,10 +643,14 @@ export function startApp(options: AppOptions): App {
 
     const saved = loadOptions.demo ? null : (loadOptions.saved ?? null);
     if (saved !== null) {
-      // A reload of a signed-in tab: what the sign-in loaded, without a single call.
+      // A reload of a signed-in tab: what the sign-in loaded, painted at once.
       loading.abort();
       const routes = { routes: saved.routes, skipped: saved.skipped, requests: 0 };
-      showLoaded(buildRiderData(saved.vehicle, saved.info, routes, false, now()), caller, [], stage);
+      const showVehicle = showLoaded(buildRiderData(saved.vehicle, saved.info, routes, false, now()), caller, [], stage);
+      // The vehicle changes between reloads (battery, last use): it is asked
+      // for again behind the page, with the same two calls as a full load.
+      // The route list is not.
+      await refreshVehicle(caller, saved, showVehicle, current, loadOptions.onLoaded);
       return;
     }
 
