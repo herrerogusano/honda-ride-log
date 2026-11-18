@@ -9,6 +9,7 @@
  */
 import type { Route, RouteRef, UntrimmedTrace, VehicleInfo, VehicleState } from "../domain/model";
 import {
+  needsRouteLookup,
   sanitizeRouteList,
   sanitizeRouteTrace,
   sanitizeVehicleDetails,
@@ -232,12 +233,90 @@ export function loadAllRoutes(
   });
 }
 
+/** What the loader needs of a route to ask for its trace. */
+export type TracedRoute = Pick<Route, "ref" | "startMs" | "distanceKm">;
+
+/**
+ * Routes restored from the tab (`needsRouteLookup`) carry no service id: it
+ * is never stored (docs/PLAN.md, section 10, «Los datos de la cuenta»). To
+ * ask for one of their traces the loader reads the light list again, once
+ * per period and per client, and takes the route that starts at the same
+ * millisecond with the same km. The period is the route's natural UTC
+ * semester, so an atlas of many routes costs one more read per semester,
+ * not per route; a semester cut at the service's limit falls back to a
+ * window of one millisecond around that start (`from_time` inclusive,
+ * `to_time` exclusive). The routes found keep their own sealed refs; the
+ * ids stay behind them in src/domain/sanitize.ts.
+ */
+const lookups = new WeakMap<ToolCaller, Map<string, Promise<ReadonlyMap<string, RouteRef | null> | null>>>();
+
+const lookupKey = (route: Pick<Route, "startMs" | "distanceKm">): string => `${route.startMs}|${route.distanceKm}`;
+
+function semesterOf(startMs: number): readonly [number, number] {
+  const date = new Date(startMs);
+  const year = date.getUTCFullYear();
+  return date.getUTCMonth() < 6 ? [Date.UTC(year, 0, 1), Date.UTC(year, 6, 1)] : [Date.UTC(year, 6, 1), Date.UTC(year + 1, 0, 1)];
+}
+
+/** The routes of one period by start and km (null for a key two routes share), or null if the answer was cut. */
+function periodRefs(caller: ToolCaller, fromMs: number, toMs: number): Promise<ReadonlyMap<string, RouteRef | null> | null> {
+  let byPeriod = lookups.get(caller);
+  if (byPeriod === undefined) {
+    byPeriod = new Map();
+    lookups.set(caller, byPeriod);
+  }
+  const key = `${fromMs}-${toMs}`;
+  const known = byPeriod.get(key);
+  if (known !== undefined) return known;
+  const asked = (async () => {
+    const page = sanitizeRouteList(
+      await caller.callTool("list_routes", { from_time: new Date(fromMs).toISOString(), to_time: new Date(toMs).toISOString() }),
+    );
+    if (page.truncated) return null;
+    const refs = new Map<string, RouteRef | null>();
+    for (const route of page.routes) {
+      const id = lookupKey(route);
+      refs.set(id, refs.has(id) ? null : route.ref);
+    }
+    return refs;
+  })();
+  byPeriod.set(key, asked);
+  // A failed read is asked again next time.
+  asked.catch(() => byPeriod.delete(key));
+  return asked;
+}
+
+/** How many light reads finding these routes would add now (the atlas says what a build costs). */
+export function routeLookupReads(caller: ToolCaller, routes: readonly TracedRoute[]): number {
+  const byPeriod = lookups.get(caller);
+  const periods = new Set<string>();
+  for (const route of routes) {
+    if (!needsRouteLookup(route.ref)) continue;
+    const [fromMs, toMs] = semesterOf(route.startMs);
+    const key = `${fromMs}-${toMs}`;
+    if (byPeriod?.has(key) !== true) periods.add(key);
+  }
+  return periods.size;
+}
+
+async function serviceRef(caller: ToolCaller, route: TracedRoute): Promise<RouteRef> {
+  const [fromMs, toMs] = semesterOf(route.startMs);
+  const semester = await periodRefs(caller, fromMs, toMs);
+  const found = semester !== null ? semester.get(lookupKey(route)) : (await periodRefs(caller, route.startMs, route.startMs + 1))?.get(lookupKey(route));
+  // Gone from the service, changed, or two routes alike: nothing to ask for.
+  if (found === undefined || found === null) throw new LoadError("detail", "unexpected_shape", "route_lookup");
+  return found;
+}
+
 /**
  * Asks for one route's trace. The result is sealed: only the trim function
- * in `src/domain/trim.ts` can read its lines.
+ * in `src/domain/trim.ts` can read its lines. A route restored from the tab
+ * is first found again in the light list (`serviceRef`).
  */
-export function loadRouteTrace(caller: ToolCaller, ref: RouteRef): Promise<UntrimmedTrace> {
-  return step("detail", async () =>
-    sanitizeRouteTrace(await caller.callTool("get_route_detail", { route_id: serviceRouteId(ref) })),
-  );
+export function loadRouteTrace(caller: ToolCaller, route: TracedRoute): Promise<UntrimmedTrace> {
+  return step("detail", async () => {
+    // A route loaded in this page is asked for at once, in the same turn.
+    const ref = needsRouteLookup(route.ref) ? await serviceRef(caller, route) : route.ref;
+    return sanitizeRouteTrace(await caller.callTool("get_route_detail", { route_id: serviceRouteId(ref) }));
+  });
 }

@@ -55,7 +55,14 @@ technical facts.
   `src/analytics/tracker.ts`; and `src/auth/savedSession.ts` may use
   `sessionStorage` (and only `sessionStorage`) for the access token and its
   expiry, so a reload keeps the session, imported only by
-  `src/auth/login.ts` and removed when the session ends. No visit counter
+  `src/auth/login.ts` and removed when the session ends; in a second entry,
+  bound to that token and removed with it, the same file keeps the
+  account data as `src/domain/sanitize.ts` makes it (`accountSnapshot`:
+  route dates, km, durations, speeds and inferred flag, and the vehicle's
+  battery, odometer, last use, model and mileage), so a reload paints
+  without asking the service. Never a trace, a start or end place, a route
+  id (`RouteRef` stays sealed: the loader finds a kept route again in the
+  light list), an email or the token in that entry. No visit counter
   loads in a page load that holds that token (`src/boot.ts` seals them).
   The token goes nowhere else (not `localStorage`, the address, the title,
   the console, the counters or an error). A change that needs another exception opens it for a single

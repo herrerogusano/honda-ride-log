@@ -11,13 +11,20 @@
 import type { Route, RouteRef } from "../domain/model";
 import { screenTrace, type ScreenTrace } from "../domain/trim";
 import type { ToolCaller } from "../service/contract";
-import { LoadError, loadRouteTrace } from "../service/loader";
+import { LoadError, loadRouteTrace, routeLookupReads } from "../service/loader";
 
 export interface TraceStore {
   /** The trace of a route already read, without asking anything. */
   known(ref: RouteRef): ScreenTrace | undefined;
   /** Whether asking for this route would cost nothing new: it is known or already on its way. */
   has(ref: RouteRef): boolean;
+  /**
+   * Light list reads that asking for these routes would add first: routes
+   * restored from the tab after a reload are found again in the list, one
+   * read per semester (src/service/loader.ts). Zero for routes loaded from
+   * the service in this page.
+   */
+  lookupReads(routes: readonly Route[]): number;
   /** The trace: from memory, from a request on its way, or from one new request. */
   get(route: Route): Promise<ScreenTrace>;
   /** Calls `listener` each time a new trace is kept (the atlas updates what a build would cost). */
@@ -43,13 +50,14 @@ export function createTraceStore(caller: ToolCaller): TraceStore {
   return {
     known: (ref) => traces.get(ref),
     has: (ref) => traces.has(ref) || pending.has(ref),
+    lookupReads: (routes) => routeLookupReads(caller, routes.filter((route) => !traces.has(route.ref) && !pending.has(route.ref))),
     get(route) {
       const known = traces.get(route.ref);
       if (known !== undefined) return Promise.resolve(known);
       let request = pending.get(route.ref);
       if (request === undefined) {
         const mine = round;
-        request = loadRouteTrace(caller, route.ref)
+        request = loadRouteTrace(caller, route)
           .then((detail) => {
             // Only the lines for the screen are kept; the sealed detail is dropped here.
             const lines = screenTrace(detail);

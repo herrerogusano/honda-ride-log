@@ -132,7 +132,7 @@ async function harness(): Promise<Harness> {
   const rec = recorder();
   const view = createMapView(data, caller, { signIn: null }, () => rec.surface);
   document.body.replaceChildren(view.element, view.legend);
-  return { view, data, calls, rec, trimmed: async (route) => screenTrace(await loadRouteTrace(service, route.ref)).lines };
+  return { view, data, calls, rec, trimmed: async (route) => screenTrace(await loadRouteTrace(service, route)).lines };
 }
 
 const longest = (routes: readonly Route[]): Route => routes.reduce((a, b) => (b.distanceKm > a.distanceKm ? b : a));
@@ -380,7 +380,7 @@ describe("the trace draws itself on the map", () => {
     const h = await harness();
     const short = h.data.routes.find((route) => route.distanceKm >= 0.3 && route.distanceKm <= 0.8) as Route;
     expect(short).toBeDefined();
-    const untrimmed = await loadRouteTrace(createDemoService(rider), short.ref);
+    const untrimmed = await loadRouteTrace(createDemoService(rider), short);
     expect(trimTrace(untrimmed).lines).toEqual([]);
     h.view.open(short);
     await vi.waitFor(() => expect(h.rec.shows).toHaveLength(1));

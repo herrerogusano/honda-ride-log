@@ -55,6 +55,21 @@ export interface VehicleInfo {
   readonly mileage: number | null;
 }
 
+/**
+ * What a load of the account brings, kept in the tab so a reload paints it
+ * at once (docs/PLAN.md, section 10, «Los datos de la cuenta»). Routes
+ * restored from there carry a `RouteRef` with no service id behind it: the
+ * loader finds the id again with a light `list_routes` read when a trace is
+ * asked for.
+ */
+export interface AccountData {
+  readonly vehicle: VehicleState;
+  readonly info: VehicleInfo | null;
+  /** Oldest first, short routes included. */
+  readonly routes: readonly Route[];
+  readonly skipped: number;
+}
+
 /** `[latitude, longitude]`, the order Leaflet expects. */
 export type LatLng = readonly [number, number];
 

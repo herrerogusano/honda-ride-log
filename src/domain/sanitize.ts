@@ -8,7 +8,7 @@
  * mistyped field we depend on raises `ShapeError`, whose message names the
  * field path and the expected type but never includes a value.
  */
-import type { LatLng, Route, RouteListPage, RouteRef, TraceLine, UntrimmedTrace, VehicleInfo, VehicleState } from "./model";
+import type { AccountData, LatLng, Route, RouteListPage, RouteRef, TraceLine, UntrimmedTrace, VehicleInfo, VehicleState } from "./model";
 
 export class ShapeError extends Error {
   readonly path: string;
@@ -186,6 +186,103 @@ export function sanitizeVehicleDetails(raw: unknown): VehicleInfo {
     model: labelOrNull(details["model"], "get_vehicle_details.model"),
     mileage: nonNegativeOrNull(details["mileage"], "get_vehicle_details.mileage"),
   };
+}
+
+/**
+ * Refs of routes restored from the tab (`restoreAccount`). There is no
+ * service id behind them, here or anywhere: `serviceRouteId` refuses them.
+ */
+const restoredRefs = new WeakSet<RouteRef>();
+
+/**
+ * Whether this route came back from the tab and so has no service id yet:
+ * the loader has to find it again with a light `list_routes` read before it
+ * can ask for the trace. Says nothing about the id itself.
+ */
+export function needsRouteLookup(ref: RouteRef): boolean {
+  return restoredRefs.has(ref);
+}
+
+/** Version of the value `accountSnapshot` makes; another one is discarded. */
+const SNAPSHOT_VERSION = 1;
+/** Far above any real history; a bigger list is not this web's. */
+const MAX_SAVED_ROUTES = 100_000;
+
+/**
+ * The account data as a plain JSON value to keep in the tab (docs/PLAN.md,
+ * section 10, «Los datos de la cuenta»). Each field is copied by name, so
+ * nothing else can ride along: no `RouteRef` (and so no route id), no trace,
+ * no start or end place, no email, no token. A route is
+ * `[startMs, endMs, distanceKm, averageSpeed, maxSpeed, hasInferredSegments]`.
+ */
+export function accountSnapshot(data: AccountData): unknown {
+  const { vehicle, info } = data;
+  return {
+    v: SNAPSHOT_VERSION,
+    vehicle: [vehicle.status, vehicle.batteryPercent, vehicle.lastCommunicationMs, vehicle.odometer],
+    info: info === null ? null : [info.model, info.mileage],
+    skipped: data.skipped,
+    routes: data.routes.map((route) => [route.startMs, route.endMs, route.distanceKm, route.averageSpeed, route.maxSpeed, route.hasInferredSegments]),
+  };
+}
+
+function savedTuple(value: unknown, length: number, path: string): unknown[] {
+  const tuple = asArray(value, path);
+  if (tuple.length !== length) throw new ShapeError(path, `array of ${length}`);
+  return tuple;
+}
+
+function savedRoute(raw: unknown, path: string): Route {
+  const [start, end, km, average, max, inferred] = savedTuple(raw, 6, path);
+  if (typeof start !== "number" || !Number.isFinite(start) || start < 0 || Number.isNaN(new Date(start).getTime())) {
+    throw new ShapeError(`${path}[0]`, "instant");
+  }
+  const endMs = finiteOrNull(end, `${path}[1]`);
+  if (endMs !== null && endMs < start) throw new ShapeError(`${path}[1]`, "instant not before the start or null");
+  const distanceKm = finiteOrNull(km, `${path}[2]`);
+  if (distanceKm === null || distanceKm < 0) throw new ShapeError(`${path}[2]`, "non-negative number");
+  const ref = Object.freeze({}) as RouteRef;
+  restoredRefs.add(ref);
+  return {
+    ref,
+    startMs: start,
+    endMs,
+    durationS: endMs === null ? null : (endMs - start) / 1000,
+    distanceKm,
+    averageSpeed: nonNegativeOrNull(average, `${path}[3]`),
+    maxSpeed: nonNegativeOrNull(max, `${path}[4]`),
+    hasInferredSegments: boolOrNull(inferred, `${path}[5]`),
+  };
+}
+
+/**
+ * The account data kept in the tab, checked again as untrusted input (the
+ * tab's storage can be edited or damaged). Anything unexpected raises
+ * `ShapeError` and the caller loads from the service as before. The routes
+ * get new `RouteRef`s with no id behind them (`needsRouteLookup`).
+ */
+export function restoreAccount(raw: unknown): AccountData {
+  const saved = asObject(raw, "saved");
+  if (saved["v"] !== SNAPSHOT_VERSION) throw new ShapeError("saved.v", `${SNAPSHOT_VERSION}`);
+  const [status, battery, lastCommunication, odometer] = savedTuple(saved["vehicle"], 4, "saved.vehicle");
+  const vehicle: VehicleState = {
+    status: labelOrNull(status, "saved.vehicle[0]"),
+    batteryPercent: percentOrNull(battery, "saved.vehicle[1]"),
+    lastCommunicationMs: nonNegativeOrNull(lastCommunication, "saved.vehicle[2]"),
+    odometer: nonNegativeOrNull(odometer, "saved.vehicle[3]"),
+  };
+  let info: VehicleInfo | null = null;
+  if (saved["info"] !== null) {
+    const [model, mileage] = savedTuple(saved["info"], 2, "saved.info");
+    info = { model: labelOrNull(model, "saved.info[0]"), mileage: nonNegativeOrNull(mileage, "saved.info[1]") };
+  }
+  const skipped = saved["skipped"];
+  if (typeof skipped !== "number" || !Number.isInteger(skipped) || skipped < 0) throw new ShapeError("saved.skipped", "non-negative integer");
+  const rawRoutes = asArray(saved["routes"], "saved.routes");
+  if (rawRoutes.length > MAX_SAVED_ROUTES) throw new ShapeError("saved.routes", `at most ${MAX_SAVED_ROUTES} routes`);
+  const routes = rawRoutes.map((route, index) => savedRoute(route, `saved.routes[${index}]`));
+  routes.sort((a, b) => a.startMs - b.startMs);
+  return { vehicle, info, routes, skipped };
 }
 
 function sanitizePosition(raw: unknown, path: string): LatLng {

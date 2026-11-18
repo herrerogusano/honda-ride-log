@@ -554,7 +554,9 @@ export function createAtlasView(data: RiderData, initialPeriod: Period, options:
   }
 
   function writeCost(): void {
-    const reads = chosen.filter((route) => !traces.has(route.ref)).length;
+    const missing = chosen.filter((route) => !traces.has(route.ref));
+    // After a reload, routes kept in the tab are first found again in the light list.
+    const reads = missing.length + traces.lookupReads(missing);
     if (context === null) cost.textContent = "Este navegador no puede dibujar el atlas: no se hace ninguna lectura.";
     else if (chosen.length === 0) cost.textContent = "Elige otro periodo en la barra para apilar sus rutas.";
     else if (reads === 0) cost.textContent = "Todas sus trazas ya están en memoria: no hará ninguna lectura al servicio.";

@@ -76,6 +76,28 @@ describe("browser storage rules", () => {
     },
   );
 
+  it.each(["src/main.ts", "src/boot.ts", "src/ui/app.ts", "src/ui/summary.ts", "src/domain/sanitize.ts", "src/service/loader.ts", "src/ui/traceStore.ts", "src/analytics/tracker.ts"])(
+    "bans reaching the kept account data from %s, with a query or a fragment too",
+    async (file) => {
+      for (const from of ["./auth/savedSession", "../auth/savedSession.ts", "./savedSession.ts?x", "./savedSession.ts#x", "./savedSession?x#x", "./savedSession#x"]) {
+        const code = `import { readSavedAccount, saveAccount, clearSavedAccount } from "${from}";\nexport const r = [readSavedAccount, saveAccount, clearSavedAccount];\n`;
+        expect(await errorsIn(file, code)).toEqual(["@typescript-eslint/no-restricted-imports"]);
+      }
+    },
+  );
+
+  it("keeps the saved-session file away from the route id, the traces and their store, with a query or a fragment too", async () => {
+    for (const suffix of ["", "?x", "#x"]) {
+      const code =
+        `import { serviceRouteId, untrimmedLines, sensitivePlaces } from "../domain/sanitize.ts${suffix}";\n` +
+        `import { screenTrace } from "../domain/trim${suffix}";\n` +
+        `import { createTraceStore } from "../ui/traceStore${suffix}";\n` +
+        "export const x = [serviceRouteId, untrimmedLines, sensitivePlaces, screenTrace, createTraceStore];\n";
+      // One error per sealed name: three from the sanitizer, the screen trace, the store.
+      expect(await errorsIn("src/auth/savedSession.ts", code)).toEqual(Array(5).fill("no-restricted-imports"));
+    }
+  });
+
   it("lets only the sign-in flow import the stored token", async () => {
     const code = 'import { readSavedSession } from "./savedSession";\nexport const r = readSavedSession;\n';
     expect(await errorsIn("src/auth/login.ts", code)).toEqual([]);

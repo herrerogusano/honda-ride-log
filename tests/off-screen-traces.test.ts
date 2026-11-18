@@ -68,7 +68,7 @@ describe("what leaves the screen carries no trace", () => {
     // The store the map and the atlas share, really holding the whole traces.
     const store = createTraceStore(service);
     for (const route of routes.slice(0, 40)) {
-      const trace = await loadRouteTrace(service, route.ref);
+      const trace = await loadRouteTrace(service, route);
       points.push(...untrimmedLines(trace).flatMap((line) => line.points));
       expect(screenTrace(trace).lines.length).toBeGreaterThan(0);
       await store.get(route);
