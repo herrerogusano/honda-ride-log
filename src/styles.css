@@ -256,6 +256,26 @@ code {
   white-space: nowrap;
 }
 
+/* The brand is a button that takes the page back to its top; it looks as the plain brand did. */
+.brand-top {
+  display: flex;
+  align-items: center;
+  gap: inherit;
+  /* A finger-sized target; the bar is taller than this, so nothing moves. */
+  min-height: 44px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  /* A button does not inherit these by default: the brand keeps the heading's look. */
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  white-space: inherit;
+  cursor: pointer;
+}
+
 .brand b {
   color: var(--red-hi);
   font-weight: 700;

@@ -17,7 +17,7 @@ import { clear, el, uniqueId } from "./dom";
 import { errorText } from "./errors";
 import { loadingStage, type LoadingStage } from "./loadingStage";
 import { createMapView, type MapFactory, type MapView } from "./mapView";
-import { sectionNav } from "./nav";
+import { scrollToTop, sectionNav, type SectionNav } from "./nav";
 import { createRouteList } from "./routesView";
 import { heroTitle, promises, renderRiderPage, type RiderPage } from "./summary";
 import { createTraceStore, type TraceStore } from "./traceStore";
@@ -126,6 +126,8 @@ export function startApp(options: AppOptions): App {
   /** The atlas of the view on screen and the traces it shares with the map; released with the view. */
   let activeAtlas: AtlasView | null = null;
   let activeTraces: TraceStore | null = null;
+  /** The section links of the view on screen, if it has them; the brand asks them to go to the top. */
+  let activeNav: SectionNav | null = null;
   /**
    * Motion and listeners of the view on screen (counts, reveals, the section
    * links, the scroll spy, the progress bar); aborted when another view
@@ -332,7 +334,22 @@ export function startApp(options: AppOptions): App {
       el(
         "div",
         { class: "bar-brand" },
-        el("h1", { class: "brand" }, el("span", { class: "brand-mark", attrs: { "aria-hidden": "true" } }), el("b", {}, "Ride"), el("span", { class: "brand-word" }, " Log")),
+        el(
+          "h1",
+          { class: "brand" },
+          // A button, not a link: the address fragment is reserved for `#demo` (decision D-028).
+          el(
+            "button",
+            {
+              class: "brand-top",
+              attrs: { type: "button", "aria-label": "Ride Log, ir arriba" },
+              on: { click: goTop },
+            },
+            el("span", { class: "brand-mark", attrs: { "aria-hidden": "true" } }),
+            el("b", {}, "Ride"),
+            el("span", { class: "brand-word" }, " Log"),
+          ),
+        ),
         demoBadge,
       ),
       navSlot,
@@ -349,6 +366,12 @@ export function startApp(options: AppOptions): App {
   root.append(topbar, banner, content);
 
   const barHeight = (): number => topbar.getBoundingClientRect().height;
+
+  /** The brand in the bar: back to the very top of the page, with the focus at its start. */
+  function goTop(): void {
+    if (activeNav !== null) activeNav.top(content);
+    else scrollToTop(content);
+  }
 
   /** Stops what the view on screen runs: its map, its motion, its observers and listeners. */
   function stopView(): void {
@@ -368,6 +391,7 @@ export function startApp(options: AppOptions): App {
   /** Stops the view on screen and takes its parts out of the bar. */
   function releaseView(): void {
     stopView();
+    activeNav = null;
     clear(navSlot);
     clear(periodSlot);
     topbar.querySelector(".nav-progress")?.remove();
@@ -560,6 +584,7 @@ export function startApp(options: AppOptions): App {
     }
     const page = renderRiderPage(data, scope, { signal: motion.signal, archive, atlas });
     const nav = sectionNav(page.sections, { signal: motion.signal, offset: barHeight });
+    activeNav = nav;
     navSlot.append(nav.element);
     topbar.prepend(nav.progress);
     topbar.classList.add("has-nav");

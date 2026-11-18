@@ -134,9 +134,9 @@ async function signedIn(address = ""): Promise<App> {
 const text = (): string => document.body.textContent ?? "";
 /** The whole page as markup, attributes included. */
 const page = (): string => new XMLSerializer().serializeToString(document);
-/** Labels of the buttons that can be seen (not inside something hidden). */
+/** Labels of the buttons that can be seen (not inside something hidden), but the brand of the bar (back to the top), which every view has. */
 const buttons = (within: ParentNode = document): string[] =>
-  [...within.querySelectorAll("button")].filter((one) => one.closest("[hidden]") === null).map((one) => one.textContent ?? "");
+  [...within.querySelectorAll("button:not(.brand-top)")].filter((one) => one.closest("[hidden]") === null).map((one) => one.textContent ?? "");
 function button(label: string, within: ParentNode = document): HTMLButtonElement {
   const found = [...within.querySelectorAll("button")].find((one) => one.textContent === label);
   if (found === undefined) throw new Error(`no button ${label}`);
