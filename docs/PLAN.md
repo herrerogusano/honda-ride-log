@@ -85,20 +85,33 @@ Concretado en `src/domain/stats.ts`:
    falta, el kilometraje de los datos del vehículo). Sin posición.
 2. **Cuatro cifras** del año elegido (por defecto el actual, con selector de
    año y «Todo»): km, salidas, horas en marcha (suma de duraciones conocidas)
-   y la comparación del mes en curso (el mes del reloj de hoy; km de los dos
-   y la diferencia). Con un año Y, ese mes de Y frente al mismo mes de Y − 1.
-   Con «Todo», ese mes del año en curso frente a la media del mismo mes en
-   los años anteriores que el historial cubre: un mes está en el historial
-   desde el mes de la primera ruta (incluido), y un mes cubierto sin salidas
-   cuenta 0 km. Un mes anterior a la primera ruta no se compara como 0: la
-   cifra lo dice («Tu historial empieza en noviembre de 2025: no hay
-   noviembre de 2024 con que comparar.»). `monthComparison` en
-   `src/domain/stats.ts`.
+   y la comparación del mes en curso (el mes del reloj de hoy). La cifra
+   grande es la diferencia en km con signo («−180 km», «+45 km»), del mismo
+   color que las demás; debajo, los km de los dos. Con un año Y, ese mes de
+   Y frente al mismo mes de Y − 1. Con «Todo», ese mes del año en curso
+   frente a la media del mismo mes en los años anteriores que el historial
+   cubre. La comparación es justa: si el mes aún no ha terminado, cuentan
+   los mismos días en todos los años, del 1 al día de hoy (en un mes más
+   corto, hasta su último día); si ya terminó (un año pasado elegido), mes
+   entero contra mes entero. Unos días de un año están en el historial si
+   la primera ruta empieza antes de que acaben, y unos días cubiertos sin
+   salidas cuentan 0 km. Unos días anteriores a la primera ruta no se
+   comparan como 0: la cifra enseña una raya y lo dice («Tu historial empieza
+   en noviembre de 2025: no hay noviembre de 2024 con que comparar.»). La
+   diferencia sale de los dos km ya redondeados, para que cuadre con lo
+   escrito. Textos, con el 18 de noviembre: «Noviembre, frente a 2025» y
+   «Del 1 al 18 de noviembre: 94 km este año, 274 km en 2025»; con un año
+   pasado, «Noviembre de 2025, frente a 2024» y «Noviembre entero: 326 km en
+   2025, 862 km en 2024»; con «Todo», «Noviembre, frente a tu media» y «Del
+   1 al 18 de noviembre: 94 km este año; media de 250 km en 2024 y 2025».
+   `monthComparison` en `src/domain/stats.ts`.
 3. **Km por mes comparando años**: barras agrupadas, 12 meses, una serie por
-   año: el año elegido (con «Todo», el año en curso), aunque no tenga rutas,
-   y los dos últimos años anteriores a él con rutas. El elegido va en rojo
-   (`--red-hi`), el anterior más cercano en marfil (`--bar-prev`) y el más
-   antiguo en azul acero (`--bar-old`); los tres pasan de 3:1 sobre el fondo
+   año: siempre los tres años más recientes con rutas, elijas lo que elijas.
+   El elegido (con «Todo», el año en curso) va en rojo (`--red-hi`), aunque
+   no tenga rutas; si no está entre esos tres, sustituye al más antiguo de
+   ellos, y nunca hay más de tres series. Los otros dos van por orden fijo:
+   el más reciente en marfil (`--bar-prev`) y el más antiguo en azul acero
+   (`--bar-old`); los tres pasan de 3:1 sobre el fondo
    (`tests/contrast.test.ts`). Un mes sin rutas es una barra vacía, no un
    hueco en el eje.
 4. **Hábitos**: salidas por día de la semana y salidas por hora de salida
@@ -134,7 +147,8 @@ Vistas de estas mismas cifras (ninguna definición nueva):
   (km del periodo entre sus salidas, las dos cifras de 01 Resumen) y las dos
   partes de los trayectos cortos, en cifras grandes.
 - **Mes frente a mes** enseña la diferencia en km con signo en grande y las
-  dos barras: la misma comparación que la cuarta cifra, con el mismo periodo.
+  dos barras: la misma comparación que la cuarta cifra, con el mismo periodo
+  y los mismos días.
   Sin nada con que comparar, una raya, la frase de la cifra y una sola
   barra.
 
@@ -1117,7 +1131,7 @@ saneador, el recorte, el login o el servicio.
 
 | Parte | Qué cambia |
 |---|---|
-| 02 Ritmo | Récords con la unidad pequeña y roja. «Mes frente a mes»: la diferencia en km con signo, enorme, y las dos barras. Km por mes: cada mes es una columna que responde al ratón, al dedo y al teclado (una parada de tabulador, ← → Inicio Fin; nombre accesible con las cifras) y escribe sus cifras en una línea bajo el gráfico; el año elegido va en rojo y los dos anteriores con rutas en marfil y azul acero. |
+| 02 Ritmo | Récords con la unidad pequeña y roja. «Mes frente a mes»: la diferencia en km con signo, enorme, y las dos barras. Km por mes: cada mes es una columna que responde al ratón, al dedo y al teclado (una parada de tabulador, ← → Inicio Fin; nombre accesible con las cifras) y escribe sus cifras en una línea bajo el gráfico; siempre los tres años más recientes con rutas: el elegido en rojo (si es más antiguo, sustituye al más antiguo de los tres) y los otros dos, el más reciente en marfil y el más antiguo en azul acero. |
 | 03 Hábitos | Calendario de actividad (apartado 3) con su leyenda, su pie y su tabla por mes; cada celda tiene nombre accesible (fecha, km, salidas) y se recorre con flechas (↑ ↓ un día, ← → una semana; una parada por año). En móviles se desplaza dentro de su caja, con el borde difuminado y «Desliza para ver el año entero →»; nunca la página. Las celdas aparecen columna a columna (el retraso se reparte para que un año entero no pase de `--dur-hero`). Días y horas: columnas como las de Ritmo, el pico en rojo vivo y el resto en `--red-mid` (3,09:1 sobre el fondo; antes `--red-dim`, 2,2:1) y la frase bajo cada uno. «En números» en lugar de «Trayectos cortos». |
 | 06 Taller | El mantenimiento dice su respuesta además en una cifra grande («Te faltan / Te has pasado» y los km) con una barra de la parte del intervalo recorrida, que se llena al aparecer y al guardar. La frase de siempre sigue siendo la línea `role="status"`; la cifra lleva `aria-hidden`. Mismos dos números, mismo almacenamiento. |
 | Tarjeta | Con el aspecto de la web: fondo casi negro, cuña roja inclinada, etiquetas numeradas en rojo, Barlow Condensed para título y cifras, Manrope para las etiquetas, unidades en rojo; 2160 × 2160 px (dibujada al doble). Espera a `document.fonts.load` de sus cuatro caras; si fallan o tardan más de 3 s, dibuja con las de reserva. Si la vista cambia antes, no dibuja. El botón de descarga se activa al terminar de dibujar. La vista previa escala con el ancho y aparece con un fundido. |

@@ -80,15 +80,21 @@ export interface MonthComparison {
   readonly month: number;
   /** "year" with a chosen year, "average" with the whole history (even when `baseline` is null). */
   readonly against: "year" | "average";
+  /**
+   * The last day of the month that is compared, 1 to 31. While the month is
+   * in progress it is today: days 1 to today in every year. Once it is over,
+   * the whole month (in a shorter month of another year, its last day).
+   */
+  readonly throughDay: number;
   readonly km: number;
-  /** What `km` is compared with, or null when the history does not reach back to any such month. */
+  /** What `km` is compared with, or null when the history does not reach back to any such days. */
   readonly baseline: MonthBaseline | null;
   /** `km` minus the baseline, or null without one. */
   readonly differenceKm: number | null;
-  /** True when the month shown is the current one, not yet over. */
+  /** True when the month shown is the current one, not yet over: only its first `throughDay` days count. */
   readonly inProgress: boolean;
-  /** Year and month of the first route of the history, or null without routes. */
-  readonly historyStart: { readonly year: number; readonly month: number } | null;
+  /** Local midnight of the day of the first route of the history, or null without routes. */
+  readonly historyStartMs: number | null;
 }
 
 /**
@@ -96,33 +102,39 @@ export interface MonthComparison {
  * the local clock. With a year Y it is that month of Y against the same month
  * of Y − 1. With the whole history it is that month of the current year
  * against the mean of the same month in every earlier year that the history
- * covers (a month counts from the month of the first route on; a covered
- * month without rides counts as 0 km). A month before the first route is not
- * in the history: it is never compared as 0, the baseline is null instead.
+ * covers (a covered month without rides counts as 0 km).
+ *
+ * The comparison is fair: while the month is in progress, every year counts
+ * only days 1 to today of it (in a shorter month, up to its last day); once
+ * it is over, the whole month against the whole month. The days of a year
+ * are covered when the first route of the history starts before their end:
+ * days that all come before the first route are not in the history, they are
+ * never compared as 0, they are left out (no baseline when nothing is left).
  */
 export function monthComparison(routes: readonly Route[], nowMs: number, period: Period): MonthComparison {
   const now = new Date(nowMs);
   const month = now.getMonth();
   const year = period === "all" ? now.getFullYear() : period;
+  const inProgress = year === now.getFullYear();
+  const throughDay = inProgress ? now.getDate() : 31;
+  const lastDay = (y: number): number => Math.min(throughDay, new Date(y, month + 1, 0).getDate());
   const kmOf = new Map<number, number>();
   let firstMs = Infinity;
   for (const route of routes) {
     firstMs = Math.min(firstMs, route.startMs);
     const start = new Date(route.startMs);
-    if (start.getMonth() !== month) continue;
+    if (start.getMonth() !== month || start.getDate() > lastDay(start.getFullYear())) continue;
     kmOf.set(start.getFullYear(), (kmOf.get(start.getFullYear()) ?? 0) + route.distanceKm);
   }
-  const first = Number.isFinite(firstMs) ? new Date(firstMs) : null;
-  const historyStart = first === null ? null : { year: first.getFullYear(), month: first.getMonth() };
-  const covered = (y: number): boolean =>
-    historyStart !== null && y * 12 + month >= historyStart.year * 12 + historyStart.month;
+  // The end of the compared days of a year: local midnight after its last one.
+  const covered = (y: number): boolean => firstMs < new Date(y, month, lastDay(y) + 1).getTime();
   const km = kmOf.get(year) ?? 0;
   let baseline: MonthBaseline | null = null;
   if (period !== "all") {
     if (covered(year - 1)) baseline = { kind: "year", year: year - 1, km: kmOf.get(year - 1) ?? 0 };
-  } else if (historyStart !== null) {
+  } else if (Number.isFinite(firstMs)) {
     const years: number[] = [];
-    for (let y = historyStart.year; y < year; y += 1) if (covered(y)) years.push(y);
+    for (let y = new Date(firstMs).getFullYear(); y < year; y += 1) if (covered(y)) years.push(y);
     if (years.length > 0) {
       const sum = years.reduce((total, y) => total + (kmOf.get(y) ?? 0), 0);
       baseline = { kind: "average", years, km: sum / years.length };
@@ -132,11 +144,12 @@ export function monthComparison(routes: readonly Route[], nowMs: number, period:
     year,
     month,
     against: period === "all" ? "average" : "year",
+    throughDay: lastDay(year),
     km,
     baseline,
     differenceKm: baseline === null ? null : km - baseline.km,
-    inProgress: year === now.getFullYear(),
-    historyStart,
+    inProgress,
+    historyStartMs: Number.isFinite(firstMs) ? dayStartMs(localDay(firstMs)) : null,
   };
 }
 
@@ -147,13 +160,15 @@ export interface MonthlySeries {
 }
 
 /**
- * Km per month for the chart of section «Ritmo», oldest year first: `year`
- * (always, even without routes) and the `maxYears − 1` latest years before
- * it that have routes. Years after `year` are left out.
+ * Km per month for the chart of section «Ritmo», oldest year first: the
+ * `maxYears` latest years with routes, whatever `year` is, and `year`
+ * always (even without routes). When `year` is not among them it takes the
+ * place of the oldest of them, so there are never more than `maxYears`.
  */
 export function kmByMonth(routes: readonly Route[], year: number, maxYears = 3): MonthlySeries[] {
-  const earlier = yearsWithRoutes(routes).filter((one) => one < year);
-  const years = [year, ...earlier].slice(0, Math.max(1, maxYears)).reverse();
+  const count = Math.max(1, maxYears);
+  const latest = yearsWithRoutes(routes).slice(0, count);
+  const years = (latest.includes(year) ? latest : [...latest.slice(0, count - 1), year]).sort((a, b) => a - b);
   const series = new Map(years.map((year) => [year, new Array<number>(12).fill(0)]));
   for (const route of routes) {
     const start = new Date(route.startMs);

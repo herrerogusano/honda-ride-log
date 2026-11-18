@@ -207,11 +207,19 @@ describe("phase 4 rules", () => {
   });
 });
 
-describe("streak tiles", () => {
-  it("share two grid rows with the tiles beside them, so the figures line up whatever the title length", () => {
-    const tile = rule(".tiles-4 .tile");
+describe("rows of figures with a title above", () => {
+  // The readout of section 01, and the small figures of the state and the streaks.
+  it.each([".readout .m", ".tiles .tile"])("%s shares two grid rows with the tiles beside it, so the figures line up whatever the title length", (selector) => {
+    const tile = rule(selector);
     expect(declaration(tile, "display")).toBe("grid");
     expect(declaration(tile, "grid-row")).toBe("span 2");
     expect(declaration(tile, "grid-template-rows")).toBe("subgrid");
+    // A size container has layout containment, and then a grid is never a subgrid.
+    expect(declaration(tile, "container-type")).toBeUndefined();
+    expect(declaration(tile, "contain")).toBeUndefined();
+  });
+
+  it("sizes the readout figure to its value, not to the tile", () => {
+    expect(declaration(rule(".readout dd"), "container-type")).toBe("inline-size");
   });
 });
