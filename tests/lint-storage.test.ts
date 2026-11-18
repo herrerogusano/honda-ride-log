@@ -1,7 +1,8 @@
-// Checks the three storage exceptions with the repository's own ESLint
+// Checks the four storage exceptions with the repository's own ESLint
 // configuration: localStorage only in src/storage/maintenance.ts (phase 2)
 // and in src/storage/consent.ts (with document.cookie, docs/PLAN.md section
-// 16), sessionStorage only in src/auth/pendingLogin.ts (phase 3), and each
+// 16), sessionStorage only in src/auth/pendingLogin.ts (phase 3) and in
+// src/auth/savedSession.ts (the access token, docs/PLAN.md section 10), and each
 // file still banned from the others' storage and from the HTML sinks. The
 // maintenance file's own cases are in tests/units.test.ts.
 import { ESLint } from "eslint";
@@ -19,7 +20,7 @@ describe("browser storage rules", () => {
     expect(await errorsIn("src/auth/pendingLogin.ts", "export const s = sessionStorage;\nexport const t = window.sessionStorage;\n")).toEqual([]);
   });
 
-  it.each(["src/auth/login.ts", "src/auth/session.ts", "src/service/mcpClient.ts", "src/main.ts", "src/storage/maintenance.ts", "src/ui/app.ts"])("bans sessionStorage in %s", async (file) => {
+  it.each(["src/auth/login.ts", "src/auth/session.ts", "src/boot.ts", "src/service/mcpClient.ts", "src/main.ts", "src/storage/maintenance.ts", "src/ui/app.ts", "src/analytics/tracker.ts"])("bans sessionStorage in %s", async (file) => {
     expect(await errorsIn(file, "export const s = sessionStorage;\nexport const t = window.sessionStorage;\n")).toEqual([
       "no-restricted-globals",
       "no-restricted-properties",
@@ -56,8 +57,43 @@ describe("browser storage rules", () => {
       .sort();
   }
 
+  it("lets the saved-session file use sessionStorage for the token, and nothing else", async () => {
+    expect(await errorsIn("src/auth/savedSession.ts", "export const s = sessionStorage;\nexport const t = window.sessionStorage;\n")).toEqual([]);
+    expect(await errorsIn("src/auth/savedSession.ts", "export const a = localStorage;\nexport const c = document.cookie;\ndocument.body.innerHTML = '';\n")).toEqual([
+      "no-restricted-globals",
+      "no-restricted-properties",
+      "no-restricted-properties",
+    ]);
+  });
+
+  it.each(["src/main.ts", "src/boot.ts", "src/auth/session.ts", "src/auth/pendingLogin.ts", "src/service/mcpClient.ts", "src/ui/app.ts", "src/analytics/tracker.ts", "src/storage/consent.ts", "vite.config.ts"])(
+    "bans importing the stored token from %s",
+    async (file) => {
+      for (const from of ["./auth/savedSession", "../auth/savedSession.ts", "./savedSession.ts?raw"]) {
+        const code = `import { readSavedSession } from "${from}";\nexport const r = readSavedSession;\n`;
+        expect(await errorsIn(file, code)).toEqual(["@typescript-eslint/no-restricted-imports"]);
+      }
+    },
+  );
+
+  it("lets only the sign-in flow import the stored token", async () => {
+    const code = 'import { readSavedSession } from "./savedSession";\nexport const r = readSavedSession;\n';
+    expect(await errorsIn("src/auth/login.ts", code)).toEqual([]);
+  });
+
+  it("keeps the saved-session file away from the pending login, the consent and the counters", async () => {
+    const code =
+      'import { savePendingLogin } from "./pendingLogin";\nimport { readConsent } from "../storage/consent";\nimport { createTracker } from "../analytics/tracker";\nexport const x = [savePendingLogin, readConsent, createTracker];\n';
+    expect(await errorsIn("src/auth/savedSession.ts", code)).toEqual([
+      "@typescript-eslint/no-restricted-imports",
+      "@typescript-eslint/no-restricted-imports",
+      "@typescript-eslint/no-restricted-imports",
+    ]);
+  });
+
   it.each([
     ["src/auth/pendingLogin.ts", ["sessionStorage"]],
+    ["src/auth/savedSession.ts", ["sessionStorage"]],
     ["src/storage/maintenance.ts", ["localStorage"]],
     ["src/storage/consent.ts", ["localStorage", "cookie"]],
   ])("bans in %s everything banned elsewhere except %s", async (file, lifted) => {

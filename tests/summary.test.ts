@@ -567,7 +567,8 @@ describe("Resumen, notes and empty account", () => {
       "Esta web no cuenta las visitas.",
       "Nunca se muestran la matrícula, el bastidor, el concesionario ni la posición actual de la moto.",
       "Los mapas enseñan cada ruta entera, solo en tu pantalla, sobre un plano que se pide a OpenStreetMap. La tarjeta para compartir y las descargas no llevan recorridos.",
-      "Al salir, la web olvida tus datos. En este navegador solo quedan los dos números del mantenimiento, si los guardas.",
+      "Al salir, la web olvida tus datos y tu acceso. En este navegador solo quedan los dos números del mantenimiento, si los guardas.",
+      "El acceso se guarda en esta pestaña hasta que la cierras o caduca.",
     ]);
     expect(page.footer.tagName).toBe("FOOTER");
     // Since the whole trace is drawn on screen (docs/PLAN.md, section 4), no promise may speak of a trim.

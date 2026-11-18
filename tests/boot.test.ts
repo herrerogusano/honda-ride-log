@@ -30,6 +30,9 @@ class MemoryStorage implements StorageLike {
   }
 }
 
+/** The one entry that src/auth/savedSession.ts keeps in the tab. */
+const SAVED_KEY = "ride-log.session";
+
 // jsdom serves the page at http://localhost:3000/; the login sends the browser back there.
 const CONFIG: ServiceConfig = Object.freeze({ ...TEST_CONFIG, redirectUri: "http://localhost:3000/" });
 const SERVICE: ServiceEnvironment = Object.freeze({ kind: "service", config: CONFIG });
@@ -239,8 +242,11 @@ describe("a build with a service", () => {
     // The token is in no attribute nor text of the page, nor in the address.
     expect(page()).not.toContain(token);
     expect(location.href).not.toContain(token);
-    // The pending login was used once and is gone.
-    expect(storage?.items.size).toBe(0);
+    // The pending login was used once and is gone; the tab keeps the token and its expiry only.
+    expect([...(storage?.items.keys() ?? [])]).toEqual([SAVED_KEY]);
+    expect(Object.keys(JSON.parse(storage?.items.get(SAVED_KEY) ?? "{}") as object).sort()).toEqual(["expiresAt", "token"]);
+    // Nor in the title.
+    expect(document.title).not.toContain(token);
   });
 
   it("ignores #demo on the way back from the login and takes it out of the address", async () => {
@@ -373,6 +379,83 @@ async function holdATrace(): Promise<void> {
   root.querySelector<HTMLElement>(".row-button")?.click();
   await vi.waitFor(() => expect(held()).toHaveLength(1));
 }
+
+describe("a reload keeps the session (docs/PLAN.md, section 10, «El token»)", () => {
+  /** Leaves the signed-in page and loads it again at `address`, with only the tab's storage carried over. */
+  async function reload(address = "/"): Promise<App> {
+    mounted?.dispose();
+    return start(SERVICE, address);
+  }
+
+  it("loads the account again with the same token, without going to the login", async () => {
+    await signedIn();
+    await loaded();
+    const token = server.issuedTokens[0] ?? "";
+    const before = mcpRequests();
+    await reload();
+    await loaded();
+    expect(navigations).toHaveLength(1);
+    expect(signOutButton().hidden).toBe(false);
+    expect(root.querySelector<HTMLElement>(".demo-banner")?.hidden).toBe(true);
+    const calls = server.requests.filter((one) => one.url === CONFIG.mcpUrl).slice(before);
+    expect(calls.length).toBeGreaterThan(2);
+    for (const call of calls) expect(call.headers.get("authorization")).toBe(`Bearer ${token}`);
+    expect(server.issuedTokens).toHaveLength(1);
+    expect(page()).not.toContain(token);
+    expect(location.href).not.toContain(token);
+    expect(document.title).not.toContain(token);
+  });
+
+  it("never lets #demo in the reloaded address replace the account", async () => {
+    await signedIn();
+    await loaded();
+    await reload("/#demo");
+    await loaded();
+    expect(root.querySelector<HTMLElement>(".demo-banner")?.hidden).toBe(true);
+  });
+
+  it("does not sign in with a kept token that expired, and removes it", async () => {
+    await signedIn();
+    await loaded();
+    const before = mcpRequests();
+    server.clock.now += 3_600_000 - 60_000;
+    await reload();
+    expect(buttons()).toEqual(["Entrar", "Ver la demo"]);
+    expect(signOutButton().hidden).toBe(true);
+    expect(storage?.items.size).toBe(0);
+    expect(mcpRequests()).toBe(before);
+  });
+
+  it("forgets the kept token on «Salir», so the next reload shows the landing", async () => {
+    await signedIn();
+    await loaded();
+    signOutButton().click();
+    expect(storage?.items.size).toBe(0);
+    await reload();
+    expect(buttons()).toEqual(["Entrar", "Ver la demo"]);
+  });
+
+  it("forgets it when the clock ends the session in the page", async () => {
+    await signedIn();
+    await loaded();
+    const timer = expiryTimers[expiryTimers.length - 1];
+    server.clock.now += timer?.delayMs ?? 0;
+    timer?.run();
+    expect(storage?.items.size).toBe(0);
+  });
+
+  it("forgets it when the service no longer takes the token, also after a reload", async () => {
+    await signedIn();
+    await loaded();
+    await reload();
+    await loaded();
+    expect(storage?.items.size).toBe(1);
+    server.mcpOverride = () => ({ status: 401, body: "{}" });
+    root.querySelectorAll<HTMLElement>(".row-button")[1]?.click();
+    await vi.waitFor(() => expect(root.querySelector(".map-status [role='alert']")?.textContent).toContain("reauth_required (unauthorized)"));
+    expect(storage?.items.size).toBe(0);
+  });
+});
 
 describe("the whole traces leave memory when the session ends (docs/PLAN.md, section 4)", () => {
   it("on «Salir»", async () => {
@@ -533,7 +616,7 @@ describe("visit counters (docs/PLAN.md, section 17)", () => {
     seen = [];
   });
 
-  it("start only after the return from the login is out of the address, then count the sign-in", async () => {
+  it("are sealed before they start in the page that came back from the login, with the address already clean", async () => {
     const landing = await start(SERVICE);
     button("Entrar").click();
     await vi.waitFor(() => expect(navigations).toHaveLength(1));
@@ -542,7 +625,8 @@ describe("visit counters (docs/PLAN.md, section 17)", () => {
     landing.dispose();
     analyticsUnderTest = recorder();
     await start(SERVICE, back.pathname + back.search);
-    expect(seen).toEqual(["start ", "login "]);
+    // That page holds a token (and soon the account): no sign-in is counted.
+    expect(seen).toEqual(["seal ", "start "]);
   });
 
   it("start after a failed return too, without counting a sign-in", async () => {
@@ -578,13 +662,11 @@ describe("visit counters (docs/PLAN.md, section 17)", () => {
     expect((window as unknown as { dataLayer?: unknown }).dataLayer).toBeUndefined();
   });
 
-  it("never hand Google Analytics the login code, even where the browser keeps no arrival address", async () => {
+  it("load none in the page that came back from the login even where the browser keeps no arrival address", async () => {
     const landing = await start(SERVICE);
     button("Entrar").click();
     await vi.waitFor(() => expect(navigations).toHaveLength(1));
     const back = new URL(server.approve(navigations[0] ?? ""));
-    const code = back.searchParams.get("code") ?? "";
-    expect(code).not.toBe("");
     landing.dispose();
     writeConsent("granted", Date.now());
     analyticsUnderTest = createTracker(
@@ -593,12 +675,45 @@ describe("visit counters (docs/PLAN.md, section 17)", () => {
     );
     await start(SERVICE, back.pathname + back.search);
     await loaded();
-    const scripts = [...document.head.querySelectorAll("script")].map((one) => one.src);
-    expect(scripts).toEqual(["https://static.cloudflareinsights.com/beacon.min.js", "https://www.googletagmanager.com/gtag/js?id=G-TEST1234"]);
-    const sent = JSON.stringify((window as unknown as { dataLayer: IArguments[] }).dataLayer.map((one) => [...one]));
-    expect(sent).toContain('"login"');
-    expect(sent).toContain('"page_location":"http://localhost:3000/"');
-    expect(sent).not.toContain(code);
-    expect(sent).not.toMatch(/code=|state=|#/);
+    expect(document.head.querySelectorAll("script")).toHaveLength(0);
+    expect((window as unknown as { dataLayer?: unknown }).dataLayer).toBeUndefined();
+  });
+
+  it("load none in a reload with a token kept in the tab, whatever the answer to the cookies, and none after the reload either", async () => {
+    await signedIn();
+    await loaded();
+    mounted?.dispose();
+    writeConsent("granted", Date.now());
+    const counters = createTracker(
+      { cloudflareToken: "0123456789abcdef0123456789abcdef", googleMeasurementId: "G-TEST1234" },
+      { arrival: () => "http://localhost:3000/" },
+    );
+    analyticsUnderTest = counters;
+    await start(SERVICE, "/");
+    await loaded();
+    // Accepting again in this page changes nothing.
+    counters.grant();
+    expect(document.head.querySelectorAll("script")).toHaveLength(0);
+    expect((window as unknown as { dataLayer?: unknown }).dataLayer).toBeUndefined();
+    // Once the rider signs out, the next page load has no token: the counters may start there.
+    signOutButton().click();
+    expect(storage?.items.size).toBe(0);
+    mounted?.dispose();
+    analyticsUnderTest = createTracker(
+      { cloudflareToken: "0123456789abcdef0123456789abcdef", googleMeasurementId: "G-TEST1234" },
+      { arrival: () => "http://localhost:3000/" },
+    );
+    await start(SERVICE, "/");
+    expect(document.head.querySelectorAll("script")).toHaveLength(2);
+  });
+
+  it("start as before in a reload whose kept token has expired", async () => {
+    await signedIn();
+    await loaded();
+    mounted?.dispose();
+    server.clock.now += 3_600_000;
+    analyticsUnderTest = recorder();
+    await start(SERVICE, "/");
+    expect(seen).toEqual(["start "]);
   });
 });

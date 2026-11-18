@@ -40,7 +40,7 @@ las decisiones anotadas aquí.
 | Pila | Vite y TypeScript estricto, sin framework. Leaflet como única dependencia de ejecución. Gráficos en SVG a mano. Vitest y ESLint. |
 | Rutas de menos de 300 m | Se excluyen de todo (lista, mapa y cifras) y se dice cuántas son en una nota. Cambiarlo es una línea: `SHORT_ROUTES_COUNT_IN_FIGURES` en `src/config.ts` (y su test en `tests/units.test.ts`). |
 | Periodo del Resumen | Las cifras son del año elegido, por defecto el actual, con opción «Todo». Se cambia con `SUMMARY_DEFAULT_PERIOD` en `src/config.ts`. |
-| Almacenamiento | El token de acceso vive en una variable y nada más. El verificador de PKCE y el `state` van a `sessionStorage` solo durante la ida y vuelta al login y se borran al volver. El token de renovación se descarta. En `localStorage` solo va lo que el usuario escribe para el mantenimiento y su respuesta al aviso de cookies (`src/storage/consent.ts`, que además puede borrar las cookies de Google Analytics). |
+| Almacenamiento | El token de acceso vive en una variable y, con su caducidad, en `sessionStorage` de la pestaña para que recargar no saque de la cuenta (desde el 2026-11-18, decisión del propietario; antes, solo en memoria; apartado 10, «El token»). El verificador de PKCE y el `state` van a `sessionStorage` solo durante la ida y vuelta al login y se borran al volver. El token de renovación se descarta. En `localStorage` solo va lo que el usuario escribe para el mantenimiento y su respuesta al aviso de cookies (`src/storage/consent.ts`, que además puede borrar las cookies de Google Analytics). |
 | Llamadas | Sin sesión MCP: una petición por herramienta, en serie (como mucho de 2 en 2). |
 | Proceso | PR pequeñas contra `main`, CI en verde y revisión independiente antes de fusionar. |
 
@@ -233,9 +233,9 @@ color, foco visible y zonas de pulsación de 44 px como mínimo.
 | Nunca identificadores de ruta en pantalla ni en exportaciones | El identificador vive detrás de un `RouteRef` opaco y sin campos; solo `serviceRouteId` lo recupera, y ESLint solo deja importar esa función desde `src/service/` (donde va la petición de detalle; `tests/lint-seals.test.ts`). Serializar una ruta no lo incluye. |
 | En la pantalla de quien ha entrado (el mapa de «04 Rutas» y el atlas), la traza entera; todo lo que pueda salir de esa pantalla, sin trazas o recortado 400 m al inicio y al final | Desde el 2026-11-18 (ver «Trazas enteras en pantalla», abajo). `screenTrace` en `src/domain/trim.ts` entrega las líneas enteras, sin los dos puntos sueltos de inicio y final; ESLint solo deja importarla desde `src/ui/traceStore.ts`, el almacén que comparten el mapa y el atlas. `trimTrace` (mismo archivo, `TRIM_METERS` en `src/domain/privacy.ts`) sigue siendo el recorte para cualquier salida que algún día lleve trazas: **nada a menos de 401 m en línea recta del inicio ni del final** (ver «Cómo quedó el recorte»); el radio no es un parámetro. Hoy ninguna salida lleva trazas (`tests/off-screen-traces.test.ts`). El saneador devuelve un `UntrimmedTrace` sellado, sin campos legibles; sus líneas solo salen con `untrimmedLines` y los dos puntos de inicio y final con `sensitivePlaces`, y ESLint solo deja importar esas dos funciones desde `src/domain/trim.ts` (`tests/lint-seals.test.ts`). |
 | Ocultar rutas de menos de 300 m | `hideShortRoutes` en `src/domain/privacy.ts`. |
-| Token solo en memoria | Ver «Almacenamiento» en el apartado 2. ESLint prohíbe `localStorage`, `sessionStorage` y `document.cookie` en todo el código, con tres excepciones de un único archivo cada una (la tercera, `src/storage/consent.ts`, en el apartado 17). **`src/storage/maintenance.ts` puede usar `localStorage`** (y solo `localStorage`) para guardar los dos números del mantenimiento que escribe el usuario, con una clave para la cuenta y otra para la demo. **`src/auth/pendingLogin.ts` puede usar `sessionStorage`** (y solo `sessionStorage`) para el login a medio hacer y, en el servicio abierto, una marca fija de borrado no confirmado (apartado 18), y solo lo importa `src/auth/login.ts` (apartado 10). `tests/units.test.ts` y `tests/lint-storage.test.ts` comprueban que cada excepción vale para su archivo y para ningún otro, que cada uno sigue teniendo prohibido el almacenamiento del otro y que las listas de prohibiciones no se separan. |
+| El token, en memoria y en la pestaña (hasta el 2026-11-18, solo en memoria) | Ver «Almacenamiento» en el apartado 2. ESLint prohíbe `localStorage`, `sessionStorage` y `document.cookie` en todo el código, con cuatro excepciones de un único archivo cada una (la tercera, `src/storage/consent.ts`, en el apartado 17; la cuarta, `src/auth/savedSession.ts`, en el apartado 10, «El token»: **puede usar `sessionStorage`**, y solo eso, para el token de acceso y su caducidad, y solo lo importa `src/auth/login.ts`). **`src/storage/maintenance.ts` puede usar `localStorage`** (y solo `localStorage`) para guardar los dos números del mantenimiento que escribe el usuario, con una clave para la cuenta y otra para la demo. **`src/auth/pendingLogin.ts` puede usar `sessionStorage`** (y solo `sessionStorage`) para el login a medio hacer y, en el servicio abierto, una marca fija de borrado no confirmado (apartado 18), y solo lo importa `src/auth/login.ts` (apartado 10). `tests/units.test.ts` y `tests/lint-storage.test.ts` comprueban que cada excepción vale para su archivo y para ningún otro, que cada uno sigue teniendo prohibido el almacenamiento del otro y que las listas de prohibiciones no se separan. |
 | Sin terceros salvo las teselas de OpenStreetMap y dos contadores de visitas (apartado 17): Cloudflare Web Analytics y, solo si el visitante acepta, Google Analytics. A ninguno se le envía una ruta, una cifra, un identificador ni la dirección completa; con `analytics.config.json` vacío no se carga ninguno | Política de seguridad de contenido en `csp.config.json`; los orígenes de cada contador se añaden solo si tiene valor. `scripts/check-dist.mjs` rompe el build si la página que genera Vite no lleva exactamente esa política, o si detecta código en línea o recursos de otro origen; `tests/csp.test.ts` fija su texto. Es una red contra errores propios hecha con expresiones regulares, no un analizador de HTML: no protege contra quien edite `dist/` a mano, y no tiene tests propios. |
-| Los datos viven solo en el navegador y solo durante la sesión | Nada se guarda salvo los dos números de mantenimiento y la respuesta al aviso de cookies (tercera excepción: **`src/storage/consent.ts` puede usar `localStorage`**, y `document.cookie` solo para borrar las de Google Analytics; apartado 17). |
+| Los datos viven solo en el navegador y solo durante la sesión | Nada se guarda salvo los dos números de mantenimiento, la respuesta al aviso de cookies y, con la sesión abierta, el token de acceso en la pestaña (cuarta excepción, apartado 10; ninguna ruta, cifra ni correo) (tercera excepción: **`src/storage/consent.ts` puede usar `localStorage`**, y `document.cookie` solo para borrar las de Google Analytics; apartado 17). |
 
 ### Trazas enteras en pantalla
 
@@ -634,8 +634,10 @@ primeras se cambian con una línea en `src/config.ts`.
 7. Los años del gráfico de km por mes se distinguen por color y posición; la
    leyenda, la tabla y el texto al pasar el ratón dan lo mismo sin color. El
    contraste entre los tres colores es bajo.
-8. El acceso vive solo en la memoria de la pestaña: al recargar hay que
-   volver a entrar.
+8. El acceso se guarda en la pestaña hasta que se cierra o caduca (una hora
+   como mucho): recargar no saca de la cuenta, pero una pestaña nueva tiene que
+   entrar por su cuenta (apartado 10, «El token»). Hasta el 2026-11-18 vivía
+   solo en memoria y recargar obligaba a volver a entrar.
 9. Todas las webs de Pages de la cuenta comparten el origen (apartado 10,
    «Riesgo de origen compartido»).
 10. El nombre lleva una marca comercial y la web usa una API no oficial. Si
@@ -651,7 +653,8 @@ página. Lo comprobado y lo no comprobado está en el apartado 16.
 | `environments.config.json` | Ajustes por modo de Vite: `development` (`npm run dev`), `production` (`npm run build`) y `demo` (sin servicio). |
 | `src/service/environment.ts` | Valida una entrada de ese archivo; da «solo demo» o la configuración del servicio. |
 | `src/auth/pkce.ts` | Verificador, reto S256 y `state`. |
-| `src/auth/pendingLogin.ts` | El único archivo con `sessionStorage`. |
+| `src/auth/pendingLogin.ts` | `sessionStorage` para el login a medio hacer. |
+| `src/auth/savedSession.ts` | `sessionStorage` para el token de acceso y su caducidad (desde el 2026-11-18). |
 | `src/auth/session.ts` | El token de acceso, en una variable cerrada. |
 | `src/auth/login.ts` | Ida al login, vuelta, canje del código y cierre de sesión. |
 | `src/service/mcpClient.ts` | El `ToolCaller` real. |
@@ -703,8 +706,9 @@ no una conexión: no la gobierna `connect-src`, y `form-action` sigue en
 
 ### Almacenamiento: la excepción de ESLint
 
-`src/auth/pendingLogin.ts` es el único archivo que puede usar
-`sessionStorage`, y solo `src/auth/login.ts` puede importarlo (dos reglas en
+`src/auth/pendingLogin.ts` puede usar `sessionStorage` (el otro archivo que
+puede, `src/auth/savedSession.ts`, está en «El token»), y solo
+`src/auth/login.ts` puede importarlo (dos reglas en
 `eslint.config.js`, comprobadas en `tests/lint-storage.test.ts`; la segunda
 evita que otro módulo llegue a `sessionStorage` a través de sus funciones).
 `src/auth/login.ts` tampoco lo entrega: `browserDeps()` no lleva el
@@ -731,8 +735,48 @@ vez.
 ### El token
 
 - Vive en una variable cerrada de `createSession`; no es una propiedad, así
-  que registrar o serializar la sesión no lo muestra. No se guarda en ningún
-  sitio.
+  que registrar o serializar la sesión no lo muestra.
+- **Sobrevive a una recarga** (desde el 2026-11-18). Motivo: decisión del
+  propietario, por comodidad: recargar la página obligaba a volver a entrar.
+  Antes la regla era «el token solo en memoria».
+  - **Cuarta excepción de almacenamiento: `src/auth/savedSession.ts` puede
+    usar `sessionStorage`** (y solo eso; `localStorage`, `document.cookie` y
+    el HTML siguen prohibidos en ese archivo) para guardar el token de
+    acceso y su caducidad bajo una clave, `ride-log.session`, y nada más:
+    ninguna ruta, cifra, correo ni identificador. Solo `src/auth/login.ts`
+    puede importarlo, y ese archivo no importa el login pendiente, el
+    consentimiento ni los contadores (`tests/lint-storage.test.ts`).
+    `sessionStorage` es de la pestaña y desaparece al cerrarla.
+  - Se guarda al canjear el código. Se borra cuando la sesión termina por
+    cualquier motivo (salir, «Borrar mis datos», caducidad por reloj, 401,
+    403, fallo de red tras entrar, `session_expired` del servicio abierto),
+    al empezar un login nuevo, al volver del login (bien o mal) y al
+    arrancar si ya caducó, está dañado o dice durar más de un día. Si la
+    pestaña no deja guardarlo, la sesión sigue en memoria y recargar pide
+    entrar otra vez.
+  - Al arrancar sin vuelta del login, `resumeSession` lo lee: si vale (con
+    el mismo margen de 60 segundos), la página entra sin pasar por el
+    login, en los dos modos (por invitación y abierto, también con
+    `#entrar` o `#demo` en la dirección), y carga la cuenta como tras un
+    login, con el mismo temporizador de caducidad.
+  - **Ningún contador de visitas en una carga de página con sesión**, nueva
+    o recuperada: `boot` llama a `seal()` antes de `start()`, así que ni
+    Cloudflare ni Google se cargan en esa carga, ni aunque el visitante
+    haya aceptado las cookies o acepte después. Desde este cambio también
+    en la página que vuelve del login sin dirección de llegada (antes, en
+    ese caso, se cargaban y contaban `login`). Tests en
+    `tests/boot.test.ts` y `tests/public-boot.test.ts`.
+  - El token no va a la dirección, al título, a `console`, a los contadores
+    ni a los errores (tests de la página y del login).
+  - **Riesgos aceptados:** cualquier script que corra en la página (o en
+    otra web del mismo origen, ver «Riesgo de origen compartido») puede
+    leer el token mientras dure, hasta una hora. Lo mitigan la política de
+    seguridad estricta (sin código en línea ni scripts de otros orígenes
+    salvo los contadores) y que ningún contador se cargue con sesión.
+    Quien use esa pestaña durante esa hora ve los datos de la cuenta sin
+    contraseña, también tras recargar. Duplicar la pestaña copia su
+    `sessionStorage` y con él el acceso (comportamiento del navegador, sin
+    comprobar en cada uno).
 - Se deja de usar 60 segundos antes de caducar y nunca se le da más de un
   día de vida aunque el login diga otra cosa.
 - Sin renovación. Cognito devuelve también un token de renovación y uno de
@@ -1618,14 +1662,17 @@ la política es exactamente la de antes (test):
   puede parar** (Cloudflare no tiene interruptor), y no está comprobado
   que quitar uno pendiente impida que el navegador lo ejecute; desde el
   2026-11-17 el token de Cloudflare está puesto. Toda sesión con
-  cuenta empieza así, y el token solo vive en esa carga, de modo que
-  **ningún contador comparte página con los datos de una cuenta**: solo con
-  la portada y la demo.
+  cuenta empieza así, y desde el 2026-11-18 una carga con un token guardado
+  en la pestaña (una recarga con la sesión abierta, apartado 10, «El
+  token») o recién canjeado sella los contadores antes de `start()`, de
+  modo que **ningún contador comparte página con los datos de una cuenta**
+  ni con el token: solo con la portada y la demo.
 - Eventos: la visita (`page_view`) y `demo_open`, sin parámetros nuestros.
   Ningún identificador, ruta, cifra ni fragmento puede ir en ellos (test
   con igualdad exacta de todo lo que se deja a Google). El evento `login`
-  sigue en la lista, pero con este login nunca se envía (ver el punto
-  anterior); contarlo exigiría guardar algo entre cargas, que no se hace.
+  sigue en la lista, pero nunca se envía: la carga que vuelve del login
+  tiene sesión y sella los contadores (desde el 2026-11-18 `boot` ya no lo
+  pide).
 - A Google se le da la dirección como origen y ruta, sin consulta ni
   fragmento (`page_location`), la página anterior solo como origen
   (`page_referrer`), el título fijo «Ride Log», y `allow_google_signals` y

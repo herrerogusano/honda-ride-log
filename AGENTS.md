@@ -42,7 +42,7 @@ technical facts.
   `csp.config.json`; changing it needs a written reason in `docs/PLAN.md`
   and a matching change in `tests/csp.test.ts`.
 - No `innerHTML` or other HTML-string sinks, no inline scripts, styles or
-  handlers. No browser storage and no cookies, with three one-file
+  handlers. No browser storage and no cookies, with four one-file
   exceptions recorded in `docs/PLAN.md`: `src/storage/maintenance.ts` may
   use `localStorage` (and only `localStorage`) for the two service-interval
   numbers the user types; `src/auth/pendingLogin.ts` may use
@@ -52,8 +52,13 @@ technical facts.
   to its sign-out page), imported only by `src/auth/login.ts`; and `src/storage/consent.ts` may use
   `localStorage` for the answer to the cookie notice and `document.cookie`
   only to delete Google Analytics' cookies, imported only by
-  `src/analytics/tracker.ts`.
-  Never a token. A change that needs another exception opens it for a single
+  `src/analytics/tracker.ts`; and `src/auth/savedSession.ts` may use
+  `sessionStorage` (and only `sessionStorage`) for the access token and its
+  expiry, so a reload keeps the session, imported only by
+  `src/auth/login.ts` and removed when the session ends. No visit counter
+  loads in a page load that holds that token (`src/boot.ts` seals them).
+  The token goes nowhere else (not `localStorage`, the address, the title,
+  the console, the counters or an error). A change that needs another exception opens it for a single
   file, records it there and in `tests/lint-storage.test.ts`.
   (ESLint and `scripts/check-dist.mjs` catch the common forms; they are a
   net, not a proof).
