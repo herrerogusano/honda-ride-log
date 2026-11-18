@@ -21,7 +21,7 @@ Una web estática en la que cada persona invitada entra con su cuenta de MAPIT
 - Se publica en Cloudflare Pages: `https://my-ride-log.pages.dev/`
   (apartado 17). Hasta el 2026-11-18 también se publicaba, por invitación,
   en GitHub Pages (`https://herrerogusano.github.io/honda-ride-log/`); esa
-  dirección sirve ahora solo una página que redirige a la nueva.
+  publicación está desactivada y la dirección ya no sirve nada.
 - Proyecto personal, sin relación con Honda ni con MAPIT.
 
 ## 2. Decisiones tomadas
@@ -580,8 +580,7 @@ política de seguridad de contenido, tal como se publicará: `npm run build`,
 | `vite.config.ts` | Build, ruta base de cada publicación (GitHub Pages o Cloudflare Pages), inyección de la política y `_headers`. |
 | `analytics.config.json`, `src/analytics/`, `src/storage/consent.ts` | Contadores de visitas, aviso de cookies y la respuesta guardada (apartado 17). |
 | `scripts/check-dist.mjs` | Comprobaciones de publicación sobre `dist/index.html`. |
-| `gh-pages-redirect/` | La página que sirve GitHub Pages: solo redirige a `https://my-ride-log.pages.dev/` (apartado 17, «Dos publicaciones»). Fuera del build de Vite; la comprueba `tests/gh-pages-redirect.test.ts`. |
-| `.github/workflows/` | `ci.yml` (construye los modos `production` y `cloudflare`), `pages.yml` (sube `gh-pages-redirect/` tal cual a GitHub Pages cuando cambia `main`, sin construir nada) y `cloudflare-pages.yml` (publica el modo `cloudflare` en Cloudflare Pages cuando cambia `main`; apartado 17). |
+| `.github/workflows/` | `ci.yml` (construye los modos `production` y `cloudflare`) y `cloudflare-pages.yml` (publica el modo `cloudflare` en Cloudflare Pages cuando cambia `main`; apartado 17). GitHub Pages está desactivado desde el 2026-11-18. |
 
 Reglas:
 
@@ -1711,20 +1710,9 @@ apartado 4:
 | `cloudflare` | Cloudflare Pages, proyecto `my-ride-log` (`cloudflare-pages.yml`) | `npm run build:cloudflare` | `/` | el servicio abierto de producción (apartado 18, «Abrir producción») | los de `analytics.config.json`: Cloudflare Web Analytics (token público del sitio `my-ride-log.pages.dev`) y Google Analytics (identificador público `G-JVB68585NG`) | sí |
 
 - **Desde el 2026-11-18 solo hay una web publicada, la de Cloudflare
-  Pages.** `pages.yml` ya no construye la app: sube tal cual la carpeta
-  `gh-pages-redirect/` (fuera del build de Vite) a GitHub Pages, para que
-  los enlaces guardados a `https://herrerogusano.github.io/honda-ride-log/`
-  no se rompan. Esa carpeta tiene `index.html` y un `404.html` idéntico
-  (GitHub Pages sirve el segundo en cualquier ruta que no existe), con:
-  `<meta http-equiv="refresh">` a `https://my-ride-log.pages.dev/`, un
-  enlace visible a la misma dirección, `<link rel="canonical">`, una
-  política `default-src 'none'; base-uri 'none'; form-action 'none'` en
-  `<meta>` y `referrer` `no-referrer`. Sin scripts, sin estilos y sin
-  terceros. Redirige siempre a la raíz: no reenvía ni la consulta ni el
-  fragmento, que podrían llevar el `code` y el `state` de un login antiguo.
-  `tests/gh-pages-redirect.test.ts` lee la página y `pages.yml` y lo
-  comprueba en la CI. Sigue publicando solo desde `main` y con el repo
-  público.
+  Pages.** La publicación en GitHub Pages (`pages.yml`) se quitó y Pages
+  está desactivado en el repositorio: `https://herrerogusano.github.io/honda-ride-log/`
+  ya no sirve nada, sin redirección.
 - El modo `production` y su entrada de `environments.config.json` no
   cambian: el código por invitación sigue ahí y la CI lo construye y
   comprueba (`npm run build`), pero no se publica en ninguna parte.
@@ -1987,12 +1975,6 @@ antes de `start()`. Habría que elegir entre:
 
 ### Qué no se ha comprobado
 
-- La página de redirección de GitHub Pages (`gh-pages-redirect/`) solo está
-  comprobada como texto por `tests/gh-pages-redirect.test.ts`. Sin ver en
-  un navegador que la redirección salte con la política `default-src
-  'none'`, que una ruta antigua con `?code=…&state=…` o `#demo` acabe en la
-  raíz limpia, ni que GitHub Pages sirva `404.html` en las rutas que no
-  existen.
 - Nada contra cuentas reales: en el navegador los identificadores eran
   inventados. Ni que Cloudflare Pages lea `_headers` como esperamos
   (`vite preview` no envía esas cabeceras, así que `frame-ancestors` no se
