@@ -62,7 +62,8 @@ technical facts.
   `sensitivePlaces`. The whole trace is drawn on the signed-in rider's
   screen only (owner's decision, `docs/PLAN.md` section 4): it leaves
   `src/domain/trim.ts` through `screenTrace`, which only
-  `src/ui/traceStore.ts` (the map and the atlas) may import. Anything that
+  `src/ui/traceStore.ts` may import; that store is sealed too (only
+  `src/ui/app.ts`, `src/ui/mapView.ts` and `src/ui/atlas/atlasView.ts`). Anything that
   can leave the screen (share card, downloads, images, analytics) carries
   no trace, or `trimTrace` if it ever must; never `screenTrace`.
 - Runtime dependencies: Leaflet only. Charts are hand-written SVG.

@@ -49,6 +49,30 @@ describe("privacy seals", () => {
     }
   }, 30_000);
 
+  // The store then holds whole traces, so it is sealed too: only the page
+  // that owns it (src/ui/app.ts), the map and the atlas may import it.
+  it("let only the page, the map and the atlas reach the store of whole traces", async () => {
+    const store = (from: string): string => `import { createTraceStore } from "${from}";\nexport const x = createTraceStore;\n`;
+    const storeType = (from: string): string => `import type { TraceStore } from "${from}";\nexport type X = TraceStore;\n`;
+    expect(await importErrors(store("./traceStore"), "src/ui/app.ts")).toBe(0);
+    expect(await importErrors(store("./traceStore"), "src/ui/mapView.ts")).toBe(0);
+    expect(await importErrors(storeType("../traceStore"), "src/ui/atlas/atlasView.ts")).toBe(0);
+    for (const file of ["src/ui/card.ts", "src/ui/summary.ts", "src/ui/download.ts", "src/ui/routesView.ts", "src/main.ts"]) {
+      expect(await importErrors(store(file === "src/main.ts" ? "./ui/traceStore" : "./traceStore"), file)).toBe(1);
+      expect(await importErrors(storeType(file === "src/main.ts" ? "./ui/traceStore.ts" : "./traceStore.ts"), file)).toBe(1);
+    }
+    expect(await importErrors(store("../ui/traceStore"), "src/domain/csv.ts")).toBe(1);
+    expect(await importErrors(store("../ui/traceStore"), "src/analytics/tracker.ts")).toBe(1);
+    expect(await importErrors(store("../ui/traceStore"), "src/service/loader.ts")).toBe(1);
+    expect(await importErrors(store("../ui/traceStore"), "src/domain/trim.ts")).toBe(1);
+    expect(await importErrors(store("../traceStore"), "src/ui/atlas/render.ts")).toBe(1);
+    // The three allowed files still may not open the sealed detail or the screen lines themselves.
+    for (const file of ["src/ui/app.ts", "src/ui/mapView.ts"]) {
+      expect(await importErrors(use("screenTrace", "../domain/trim"), file)).toBe(1);
+      expect(await importErrors(use("untrimmedLines", "../domain/sanitize"), file)).toBe(1);
+    }
+  }, 30_000);
+
   it("let only the service code open a route reference", async () => {
     expect(await importErrors(use("serviceRouteId", "../domain/sanitize"), "src/service/loader.ts")).toBe(0);
     expect(await importErrors(use("serviceRouteId", "./sanitize"), "src/domain/trim.ts")).toBe(1);

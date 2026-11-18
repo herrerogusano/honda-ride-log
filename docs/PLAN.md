@@ -265,8 +265,10 @@ recorte»).
   - Los sellos de `untrimmedLines` y `sensitivePlaces` siguen en
     `src/domain/trim.ts`. La salida nueva es un sello más: `screenTrace` solo
     se importa desde `src/ui/traceStore.ts`; ni la tarjeta, ni las descargas,
-    ni las analíticas, ni el propio código del mapa pueden importarla
-    (`tests/lint-seals.test.ts`).
+    ni las analíticas, ni el propio código del mapa pueden importarla. Y
+    como ese almacén guarda trazas enteras, también está sellado: solo lo
+    importan `src/ui/app.ts`, `src/ui/mapView.ts` y
+    `src/ui/atlas/atlasView.ts` (`tests/lint-seals.test.ts`).
   - La demo no cambia: sus trayectos cortos de 320 a 780 m, que antes
     enseñaban la traza oculta, ahora se dibujan enteros.
   - La cabeza que va delante del trazo mientras se dibuja empieza en el

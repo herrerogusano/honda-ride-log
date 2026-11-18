@@ -49,6 +49,14 @@ const SCREEN_SEAL = {
   importNames: ["screenTrace"],
   message: "screenTrace is only for the trace store of the map and the atlas, src/ui/traceStore.ts: whatever leaves the screen gets no whole trace (docs/PLAN.md, privacy).",
 };
+/**
+ * The store holds those whole traces, so it is sealed as a module: only the
+ * page that owns it (src/ui/app.ts), the map and the atlas may import it.
+ */
+const STORE_SEAL = {
+  regex: "(^|/)traceStore(\\.[cm]?[jt]s)?$",
+  message: "The trace store holds whole traces: only src/ui/app.ts, src/ui/mapView.ts and src/ui/atlas/atlasView.ts may import it (docs/PLAN.md, privacy).",
+};
 
 export default tseslint.config(
   { ignores: ["dist/", "node_modules/", "coverage/"] },
@@ -79,20 +87,24 @@ export default tseslint.config(
           message: "No import.meta.glob: it loads modules past the import rules that guard the privacy seals.",
         },
       ],
-      "no-restricted-imports": ["error", { patterns: [ROUTE_ID_SEAL, TRACE_SEAL, PLACES_SEAL, SCREEN_SEAL] }],
+      "no-restricted-imports": ["error", { patterns: [ROUTE_ID_SEAL, TRACE_SEAL, PLACES_SEAL, SCREEN_SEAL, STORE_SEAL] }],
     },
   },
   {
     files: ["src/service/**"],
-    rules: { "no-restricted-imports": ["error", { patterns: [TRACE_SEAL, PLACES_SEAL, SCREEN_SEAL] }] },
+    rules: { "no-restricted-imports": ["error", { patterns: [TRACE_SEAL, PLACES_SEAL, SCREEN_SEAL, STORE_SEAL] }] },
   },
   {
     files: ["src/domain/trim.ts"],
-    rules: { "no-restricted-imports": ["error", { patterns: [ROUTE_ID_SEAL] }] },
+    rules: { "no-restricted-imports": ["error", { patterns: [ROUTE_ID_SEAL, STORE_SEAL] }] },
   },
   {
     files: ["src/ui/traceStore.ts"],
     rules: { "no-restricted-imports": ["error", { patterns: [ROUTE_ID_SEAL, TRACE_SEAL, PLACES_SEAL] }] },
+  },
+  {
+    files: ["src/ui/app.ts", "src/ui/mapView.ts", "src/ui/atlas/atlasView.ts"],
+    rules: { "no-restricted-imports": ["error", { patterns: [ROUTE_ID_SEAL, TRACE_SEAL, PLACES_SEAL, SCREEN_SEAL] }] },
   },
   {
     // Storage exception 1 (docs/PLAN.md, "Privacidad"): this file may use
