@@ -124,6 +124,27 @@ export interface RoutesProgress {
 export const MAX_HISTORY_YEARS = 30;
 
 /**
+ * Service codes after which the same period is asked once more: MAPIT did
+ * not answer in time, or the service failed inside. Never the session, rate,
+ * pause or availability codes, and never an error of this web.
+ */
+export const RETRY_CODES: readonly string[] = ["mapit_unavailable", "internal_error"];
+/** Wait before asking the same period again. */
+export const RETRY_DELAY_MS = 1_000;
+/**
+ * At most this many repeated requests in one load, whatever the number of
+ * periods, so a bad day for MAPIT cannot eat the session's call budget.
+ */
+export const MAX_RETRIES_PER_LOAD = 2;
+
+export interface RoutesLoadOptions {
+  /** Only for tests: the wait before a repeated request. */
+  readonly sleep?: (ms: number) => Promise<void>;
+}
+
+const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
  * Reads the whole route history by natural semesters (UTC), from the current
  * one backwards, one request at a time. A semester the service cuts at its
  * limit is split in half and read again. Stops at the first whole past
@@ -133,13 +154,19 @@ export const MAX_HISTORY_YEARS = 30;
  * `stillWanted` is asked before every request: when it answers false (the
  * user left, or another load replaced this one) nothing more is requested
  * and the load ends with a `cancelled` error.
+ *
+ * A period whose request fails with one of `RETRY_CODES` is asked once more
+ * after `RETRY_DELAY_MS`, at most `MAX_RETRIES_PER_LOAD` times per load. If
+ * that fails too, the load fails as before: no partial history is shown.
  */
 export function loadAllRoutes(
   caller: ToolCaller,
   nowMs: number,
   onProgress?: (progress: RoutesProgress) => void,
   stillWanted: () => boolean = () => true,
+  options: RoutesLoadOptions = {},
 ): Promise<RoutesLoad> {
+  const sleep = options.sleep ?? wait;
   return step("routes", async () => {
     // Without a usable clock there is no "current semester" to start from.
     if (Number.isNaN(new Date(nowMs).getTime())) throw new LoadError("routes", "unknown", "InvalidClock");
@@ -147,16 +174,28 @@ export function loadAllRoutes(
     const seen = new Set<string>();
     let skipped = 0;
     let requests = 0;
+    let retries = 0;
+
+    async function ask(fromMs: number, toMs: number): Promise<unknown> {
+      const args = { from_time: new Date(fromMs).toISOString(), to_time: new Date(toMs).toISOString() };
+      try {
+        return await caller.callTool("list_routes", args);
+      } catch (error) {
+        const again = error instanceof ToolCallError && RETRY_CODES.includes(error.code) && retries < MAX_RETRIES_PER_LOAD;
+        if (!again) throw error;
+        retries += 1;
+        await sleep(RETRY_DELAY_MS);
+        if (!stillWanted()) throw new LoadError("routes", "cancelled", null);
+        requests += 1;
+        // Once: a second failure of the same period ends the load.
+        return await caller.callTool("list_routes", args);
+      }
+    }
 
     async function readPeriod(fromMs: number, toMs: number): Promise<number> {
       if (!stillWanted()) throw new LoadError("routes", "cancelled", null);
       requests += 1;
-      const page = sanitizeRouteList(
-        await caller.callTool("list_routes", {
-          from_time: new Date(fromMs).toISOString(),
-          to_time: new Date(toMs).toISOString(),
-        }),
-      );
+      const page = sanitizeRouteList(await ask(fromMs, toMs));
       if (page.truncated) {
         // Cut at the service's limit: the answer is dropped and the period
         // is read again in two halves.

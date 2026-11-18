@@ -671,6 +671,46 @@ describe("leaving the account", () => {
     await vi.waitFor(() => expect(form()).not.toBeNull());
     expect(navigations).toEqual([]);
   });
+
+  /** The service's answer as the MCP Python SDK words a tool error. */
+  const sdkToolError = (code: string) => (request: { body: string }) => {
+    const message = JSON.parse(request.body) as { id: number; params: { name: string } };
+    const text = `Error executing tool ${message.params.name}: ${code}: MAPIT did not answer in time`;
+    return { body: JSON.stringify({ jsonrpc: "2.0", id: message.id, result: { content: [{ type: "text", text }], isError: true } }) };
+  };
+
+  it("with the SDK's real text, session_expired ends the session: «Volver a entrar», and «Salir» sends nothing with the old token", async () => {
+    server.mcpOverride = sdkToolError("session_expired");
+    await signedIn();
+    await vi.waitFor(() => expect(visibleButtons()).toContain("Volver a entrar"));
+    expect(text()).toContain("Tu sesión ha terminado: dura menos de una hora y después se borra sola. Vuelve a entrar.");
+    expect(text()).not.toMatch(/Error executing|MAPIT did not answer/);
+    server.mcpOverride = null;
+    button("Salir").click();
+    await vi.waitFor(() => expect(navigations).toHaveLength(1));
+    expect(server.accountCalls).toEqual([]);
+    expect(new URL(navigations[0] ?? "").pathname).toBe("/logout");
+  });
+
+  it("no code or text of the service reaches the visit counters, even with no arrival address to go by", async () => {
+    server.mcpOverride = sdkToolError("mapit_unavailable");
+    await openForm();
+    fill();
+    submit();
+    await vi.waitFor(() => expect(navigations).toHaveLength(1));
+    const back = new URL(server.approve(navigations[0] ?? ""));
+    mounted?.dispose();
+    // The page the login sends back to is a new page load, with a new counter. Without an
+    // arrival address (the worst case) its counters start once the address is clean.
+    writeConsent("granted", server.clock.now);
+    counters = createTracker(GOOGLE_ONLY, { arrival: () => null, signal: listening.signal, now: () => server.clock.now });
+    await start(PUBLIC, back.pathname + back.search);
+    await vi.waitFor(() => expect(text()).toContain("/tool_error (mapit_unavailable)"));
+    const sent = JSON.stringify(((window as unknown as { dataLayer?: IArguments[] }).dataLayer ?? []).map((one) => [...one]));
+    // The counter is there (worst case) and still gets nothing of the service.
+    expect(sent).toContain('"config"');
+    expect(sent).not.toMatch(/mapit_unavailable|tool_error|Error executing|MAPIT did not answer|No se han podido/);
+  });
 });
 
 describe("no visit counter shares a page with the email (docs/PLAN.md, section 18)", () => {

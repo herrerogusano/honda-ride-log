@@ -9,7 +9,7 @@ import type { StorageLike } from "../src/auth/pendingLogin";
 import { createSession, EXPIRY_MARGIN_MS, type AuthSession } from "../src/auth/session";
 import { sanitizeRouteList, sanitizeRouteTrace, sanitizeVehicleStatus, serviceRouteId } from "../src/domain/sanitize";
 import { ToolCallError, type ToolCaller, type ToolName } from "../src/service/contract";
-import { ALLOWED_TOOLS, createMcpClient, ServiceError, type McpClientOptions } from "../src/service/mcpClient";
+import { ALLOWED_TOOLS, createMcpClient, SERVICE_TOOL_CODES, ServiceError, type McpClientOptions } from "../src/service/mcpClient";
 import { createFakeServer, TEST_CONFIG, type FakeServer } from "./fakeServer";
 
 async function signIn(server: FakeServer): Promise<AuthSession> {
@@ -246,6 +246,70 @@ describe("answers the client refuses", () => {
     const { server, client } = await setUp();
     server.mcpOverride = () => ({ body: JSON.stringify({ jsonrpc: "2.0", id: 1, result: { isError: true, content: [{ type: "text", text }] } }) });
     expect(((await failure(client.callTool("get_vehicle_status", {}))) as ToolCallError).code).toBe("tool_error");
+  });
+
+  // The exact text the MCP Python SDK (2.2.0) sends for a tool error of the service.
+  const sdkError = (tool: string, code: string) => ({
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, result: { isError: true, content: [{ type: "text", text: `Error executing tool ${tool}: ${code}: MAPIT did not answer in time` }] } }),
+  });
+
+  it.each(["mapit_unavailable", "internal_error", "session_expired", "service_paused", "rate_limited", "session_limit_reached"])(
+    "reads %s behind the SDK's «Error executing tool <name>: » prefix",
+    async (code) => {
+      const { server, client } = await setUp();
+      server.mcpOverride = () => sdkError("list_routes", code);
+      const error = await failure(client.callTool("list_routes", { from_time: "2024-01-01T00:00:00.000Z", to_time: "2024-07-01T00:00:00.000Z" }));
+      expect((error as ToolCallError).code).toBe(code);
+      expect(error.message).not.toMatch(/MAPIT did not answer|Error executing/);
+    },
+  );
+
+  it.each([
+    ["private_rider", true],
+    ["unknown_code", true],
+    ["private_rider", false],
+    ["unknown_code", false],
+  ])("does not take %s, a word the service never sends, for a code (SDK prefix: %s)", async (code, prefixed) => {
+    const { server, client } = await setUp();
+    const text = `${prefixed ? "Error executing tool list_routes: " : ""}${code}: something`;
+    server.mcpOverride = () => ({ body: JSON.stringify({ jsonrpc: "2.0", id: 1, result: { isError: true, content: [{ type: "text", text }] } }) });
+    const error = await failure(client.callTool("list_routes", { from_time: "2024-01-01T00:00:00.000Z", to_time: "2024-07-01T00:00:00.000Z" }));
+    expect((error as ToolCallError).code).toBe("tool_error");
+  });
+
+  it("reads every code of the closed list, and the list is exactly the service's", async () => {
+    expect([...SERVICE_TOOL_CODES].sort()).toEqual([
+      "authentication_failed", "credential_store_failed", "delete_failed", "distance_unavailable", "duplicate_route_conflict",
+      "internal_error", "invalid_date_range", "invalid_response", "invalid_route_id", "invalid_route_timestamp",
+      "logout_failed", "mapit_request_failed", "mapit_unavailable", "not_found", "numeric_overflow",
+      "pagination_unsupported", "period_too_large", "rate_limited", "response_too_large", "route_limit_exceeded",
+      "route_outside_requested_interval", "service_paused", "service_unavailable", "session_expired", "session_limit_reached",
+      "tenant_provider_failed", "tenant_unauthorized", "vehicle_not_found",
+    ]);
+    for (const code of SERVICE_TOOL_CODES) {
+      const { server, client } = await setUp();
+      server.mcpOverride = () => sdkError("get_vehicle_status", code);
+      expect(((await failure(client.callTool("get_vehicle_status", {}))) as ToolCallError).code).toBe(code);
+    }
+  });
+
+  it("takes the prefix off only for the tool that was called", async () => {
+    const { server, client } = await setUp();
+    server.mcpOverride = () => sdkError("get_route_detail", "mapit_unavailable");
+    const error = await failure(client.callTool("list_routes", { from_time: "2024-01-01T00:00:00.000Z", to_time: "2024-07-01T00:00:00.000Z" }));
+    expect((error as ToolCallError).code).toBe("tool_error");
+  });
+
+  it("with the SDK's real text, session_expired ends the open service's session and the token is never sent again", async () => {
+    const { server, session } = await setUp();
+    const client = clientFor(server, session, { publicService: true });
+    server.mcpOverride = () => sdkError("get_vehicle_status", "session_expired");
+    await failure(client.callTool("get_vehicle_status", {}));
+    expect(session.endReason).toBe("expired");
+    server.mcpOverride = null;
+    const before = mcpRequests(server).length;
+    await failure(client.callTool("get_vehicle_status", {}));
+    expect(mcpRequests(server)).toHaveLength(before);
   });
 
   it("treats isError as an error even when structured content comes with it", async () => {
