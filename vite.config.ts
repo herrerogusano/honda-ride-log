@@ -127,7 +127,8 @@ export default defineConfig(({ command, mode, isPreview }) => {
   const { raw: rawAnalytics, analytics } = analyticsFor(mode);
   const host = hostFor(mode);
   return {
-    // `production` is published at https://<user>.github.io/honda-ride-log/
+    // `production` is built for https://<user>.github.io/honda-ride-log/
+    // (no longer published there: GitHub Pages serves gh-pages-redirect/)
     // and `cloudflare` at the root of its pages.dev address (each previewed
     // the same way). The dev server serves at the root, because the login
     // sends the browser back to exactly http://localhost:5173/ (port fixed,
