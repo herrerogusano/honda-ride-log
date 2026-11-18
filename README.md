@@ -3,11 +3,12 @@
 Web estática para ver las estadísticas de tus propias rutas en moto, a partir
 de tu cuenta de MAPIT (la app que localiza la moto).
 
-**Verla:** <https://herrerogusano.github.io/honda-ride-log/> · con datos de
-ejemplo, sin cuenta: <https://herrerogusano.github.io/honda-ride-log/#demo>
+**Verla:** <https://my-ride-log.pages.dev/> · con datos de ejemplo, sin
+cuenta: <https://my-ride-log.pages.dev/#demo>
 
 Proyecto personal, sin relación con Honda ni con MAPIT. Usa una interfaz no
-oficial y funciona solo por invitación.
+oficial de MAPIT: usarla con tu cuenta es decisión tuya, y MAPIT podría
+bloquear o cancelar cuentas según sus condiciones.
 
 ## Qué enseña
 
@@ -28,41 +29,60 @@ Una sola página, oscura, con seis secciones:
 - **Taller**: cuánto falta para la próxima revisión y una tarjeta con tus
   cifras para compartir.
 
+## Cómo se entra
+
+Con tu correo y tu contraseña de MAPIT, sin invitación, mientras queden
+plazas (el servicio admite un número limitado de personas). Antes de entrar,
+Cloudflare comprueba que no eres un robot. La contraseña se escribe en la
+página de acceso del servicio, no en esta web. Si no quedan plazas, la demo
+sigue abierta para todo el mundo.
+
+La copia antigua en <https://herrerogusano.github.io/honda-ride-log/> sigue
+publicada y solo deja entrar a las personas invitadas.
+
 ## Privacidad
 
-- No hay servidor propio. Tus rutas, tus cifras y los datos de tu moto se
-  quedan en tu navegador: no se envían a nadie más que al servicio del que
-  se leen.
-- Terceros: las teselas del mapa, a OpenStreetMap, y en la copia publicada
-  en Cloudflare Pages hasta dos contadores de visitas. Cloudflare Web
-  Analytics cuenta la visita sin cookies. Google Analytics solo se carga si
-  aceptas en el aviso de cookies, y cuenta la visita y si abres la demo; si
-  rechazas, no se carga. Se puede cambiar de opinión al final de la página.
-  Ninguno se carga en la página a la que vuelves tras iniciar sesión ni
-  en ninguna que recargues con la sesión abierta, y ninguno recibe tus rutas, tus cifras ni la dirección completa de la
+- Esta web no tiene servidor propio. Tus rutas, tus cifras y los datos de tu
+  moto se leen y se calculan en tu navegador: no se envían a nadie más que
+  al servicio del que se leen.
+- El servicio guarda, mientras estás dentro, tu sesión de MAPIT cifrada y tu
+  usuario de acceso, y los borra al salir o, si no sales, antes de una hora.
+  Para contar plazas guarda una huella de tu correo (no el correo), que
+  caduca un año después de tu última entrada o se borra al momento con
+  «Borrar mis datos». El aviso completo está en la pantalla de entrada.
+- Solo se leen tus datos de MAPIT; nunca se cambian.
+- Terceros: las teselas del mapa, a OpenStreetMap; la comprobación
+  anti-robots de Cloudflare al entrar; y hasta dos contadores de visitas.
+  Cloudflare Web Analytics cuenta la visita sin cookies. Google Analytics
+  solo se carga si aceptas en el aviso de cookies, y cuenta la visita y si
+  abres la demo; si rechazas, no se carga. Se puede cambiar de opinión al
+  final de la página. Ninguno se carga en la página a la que vuelves tras
+  iniciar sesión ni en ninguna que recargues con la sesión abierta, y
+  ninguno recibe tus rutas, tus cifras ni la dirección completa de la
   página.
-- Los datos se leen y se calculan en tu navegador y no se guardan. Lo único
-  que se recuerda, en tu navegador, son los dos números de mantenimiento que
-  tú escribas y tu respuesta al aviso de cookies; con la sesión abierta,
-  también el acceso, en esa pestaña.
+- Lo único que se recuerda en tu navegador son los dos números de
+  mantenimiento que tú escribas y tu respuesta al aviso de cookies; con la
+  sesión abierta, también el acceso y la lista de rutas, en esa pestaña,
+  hasta que la cierras o caduca (una hora como mucho). Salir o «Borrar mis
+  datos» lo borran.
 - Nunca se muestran la matrícula, el bastidor, el concesionario ni la
   posición actual de la moto.
 - El mapa y el atlas dibujan cada ruta entera, solo en tu pantalla y sin
   marcas de inicio o de fin: una captura enseña dónde empieza y acaba. La
   tarjeta para compartir y las descargas no llevan recorridos. Las rutas de
   menos de 300 m se ocultan.
-- La contraseña la pide la página de login del servicio, no esta web. El
-  acceso se guarda en esta pestaña hasta que la cierras o caduca (una hora
-  como mucho): recargar no te saca; salir o «Borrar mis datos» lo borran.
+- Para cualquier petición sobre tus datos, abre una incidencia en
+  <https://github.com/herrerogusano/honda-ride-log/issues> (es pública: no
+  escribas en ella tu correo ni datos de tu cuenta).
 
 ## Estado
 
-- La web está completa y publicada, con el acceso con cuenta activado para
-  las personas invitadas. Sin invitación solo se puede ver la demo.
-- El acceso con cuenta se ha probado de verdad contra el entorno de pruebas
-  del servicio, desde un ordenador. El resto de comprobaciones son tests
-  automáticos contra datos de ejemplo y un servidor falso, y un navegador
-  Chromium a ocho anchos de pantalla (de 320 a 2560 px).
+- La web está completa y publicada, con el acceso abierto desde el 17 de
+  noviembre de 2026.
+- El acceso con cuenta se ha probado a mano contra el servicio, desde un
+  ordenador. El resto de comprobaciones son tests automáticos contra datos
+  de ejemplo y un servidor falso, y un navegador Chromium a varios anchos de
+  pantalla (de 320 a 2560 px).
 - Las distancias y las velocidades son las que entrega el servicio, que
   avisa de que sus unidades están sin confirmar.
 
@@ -85,6 +105,15 @@ npm run build      # typecheck + build para GitHub Pages en dist/ + comprobacion
 npm run build:cloudflare  # lo mismo para Cloudflare Pages, con dist/_headers
 ```
 
-Las reglas para quien toque el código (personas o agentes) están en
-[`AGENTS.md`](AGENTS.md). Las fuentes Barlow Condensed y Manrope se sirven
-desde el propio sitio, con licencia SIL Open Font License.
+Sin configuración local, `npm run dev` solo enseña la demo. Las reglas para
+quien toque el código (personas o agentes) están en [`AGENTS.md`](AGENTS.md).
+
+## Licencia
+
+El código se publica con licencia [MIT](LICENSE): puedes usarlo, cambiarlo y
+redistribuirlo manteniendo el aviso de copyright. Las fuentes Barlow
+Condensed y Manrope se sirven desde el propio sitio con su licencia SIL Open
+Font License, en [`src/assets/fonts/`](src/assets/fonts/).
+
+Honda y MAPIT son marcas de sus respectivos dueños. Este proyecto no está
+afiliado a ninguno de los dos ni cuenta con su aprobación.
