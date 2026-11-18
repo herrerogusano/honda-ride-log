@@ -14,8 +14,14 @@ export type EndReason = "expired" | "unauthorized" | "forbidden" | "network" | "
 /** Runs `run` once after `delayMs`; the returned function cancels it. Tests pass their own. */
 export type Schedule = (run: () => void, delayMs: number) => () => void;
 
-const defaultSchedule: Schedule = (run, delayMs) => {
-  const id = setTimeout(run, delayMs);
+/**
+ * Longest delay `setTimeout` honours (2^31 − 1 ms, about 24.8 days); browsers
+ * run a longer one at once. The expiry check asks again when it fires early.
+ */
+export const MAX_TIMER_DELAY_MS = 2_147_483_647;
+
+export const defaultSchedule: Schedule = (run, delayMs) => {
+  const id = setTimeout(run, Math.min(delayMs, MAX_TIMER_DELAY_MS));
   return () => clearTimeout(id);
 };
 

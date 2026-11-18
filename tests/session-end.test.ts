@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { createSession, EXPIRY_MARGIN_MS, type EndReason, type Schedule } from "../src/auth/session";
+import { describe, expect, it, vi } from "vitest";
+import { createSession, defaultSchedule, EXPIRY_MARGIN_MS, MAX_TIMER_DELAY_MS, type EndReason, type Schedule } from "../src/auth/session";
 import { createDemoService } from "../src/demo/fakeService";
 import { generateRider } from "../src/demo/generator";
 import { loadAllRoutes } from "../src/service/loader";
@@ -62,6 +62,22 @@ describe("the end of a session", () => {
     session.end("signed_out");
     expect(timers[1]?.cancelled).toBe(true);
     expect(heard).toEqual(["signed_out"]);
+  });
+});
+
+describe("the real timer", () => {
+  it("never hands setTimeout a delay longer than it honours, so a far expiry does not fire at once", () => {
+    const spy = vi.spyOn(globalThis, "setTimeout");
+    try {
+      const cancel = defaultSchedule(() => undefined, 40 * 86_400_000);
+      cancel();
+      expect(spy.mock.calls[0]?.[1]).toBe(MAX_TIMER_DELAY_MS);
+      const cancelShort = defaultSchedule(() => undefined, 5_000);
+      cancelShort();
+      expect(spy.mock.calls[1]?.[1]).toBe(5_000);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 
