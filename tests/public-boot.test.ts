@@ -762,16 +762,69 @@ describe("leaving the account", () => {
     await vi.waitFor(() => expect(navigations).toHaveLength(1));
     const back = new URL(server.approve(navigations[0] ?? ""));
     mounted?.dispose();
-    // The page the login sends back to is a new page load, with a new counter. Without an
-    // arrival address (the worst case) its counters start once the address is clean.
+    // The page the login sends back to is a new page load, with a new counter. Even without
+    // an arrival address (the worst case) it holds a token, so its counters never start.
     writeConsent("granted", server.clock.now);
     counters = createTracker(GOOGLE_ONLY, { arrival: () => null, signal: listening.signal, now: () => server.clock.now });
     await start(PUBLIC, back.pathname + back.search);
     await vi.waitFor(() => expect(text()).toContain("/tool_error (mapit_unavailable)"));
-    const sent = JSON.stringify(((window as unknown as { dataLayer?: IArguments[] }).dataLayer ?? []).map((one) => [...one]));
-    // The counter is there (worst case) and still gets nothing of the service.
-    expect(sent).toContain('"config"');
-    expect(sent).not.toMatch(/mapit_unavailable|tool_error|Error executing|MAPIT did not answer|No se han podido/);
+    expect(counterScripts()).toEqual([]);
+    expect(dataLayer()).toBeUndefined();
+  });
+
+  it("a reload keeps the session: the account again with the same token, no screen before the login, no counter", async () => {
+    await signedIn();
+    await vi.waitFor(() => expect(visibleButtons()).toContain("Borrar mis datos"));
+    const token = server.issuedTokens[0] ?? "";
+    const before = server.requests.length;
+    mounted?.dispose();
+    writeConsent("granted", server.clock.now);
+    counters = createTracker(SYNTHETIC_COUNTERS, { arrival: () => "http://localhost:3000/", signal: listening.signal, now: () => server.clock.now });
+    await start(PUBLIC, "/");
+    await vi.waitFor(() => expect(visibleButtons()).toContain("Borrar mis datos"));
+    const after = server.requests.slice(before);
+    // No /estado, no pass, no login: only the account's tools, with the same token.
+    expect(after.every((one) => one.url === CONFIG.mcpUrl)).toBe(true);
+    for (const one of after) expect(one.headers.get("authorization")).toBe(`Bearer ${token}`);
+    expect(navigations).toEqual([]);
+    expect(widgets).toHaveLength(1);
+    counters.grant();
+    expect(counterScripts()).toEqual([]);
+    expect(dataLayer()).toBeUndefined();
+  });
+
+  it("a reload at #entrar with a kept session loads the account, not the screen before the login", async () => {
+    await signedIn();
+    await vi.waitFor(() => expect(visibleButtons()).toContain("Salir"));
+    mounted?.dispose();
+    await start(PUBLIC, `/${ENTER_FRAGMENT}`);
+    await vi.waitFor(() => expect(visibleButtons()).toContain("Borrar mis datos"));
+    expect(emailField()).toBeNull();
+  });
+
+  it.each([
+    ["«Salir»", () => button("Salir").click()],
+    ["«Borrar mis datos»", () => {
+      button("Borrar mis datos").click();
+      [...root.querySelectorAll<HTMLButtonElement>(".delete-confirm button")].find((one) => one.textContent === "Borrar mis datos")?.click();
+    }],
+  ])("%s forgets the token kept in the tab before leaving", async (_name, leave) => {
+    await signedIn();
+    await vi.waitFor(() => expect(visibleButtons()).toContain("Borrar mis datos"));
+    expect(storageForTab.items.size).toBe(1);
+    leave();
+    await vi.waitFor(() => expect(navigations).toHaveLength(1));
+    expect(storageForTab.items.size).toBe(0);
+  });
+
+  it("session_expired from the service forgets the token kept in the tab", async () => {
+    await signedIn();
+    await holdATrace();
+    expect(storageForTab.items.size).toBe(1);
+    server.mcpOverride = sdkToolError("session_expired");
+    root.querySelectorAll<HTMLButtonElement>(".routes-table tbody tr .row-button")[1]?.click();
+    await vi.waitFor(() => expect(root.querySelector(".archive-map .error")).not.toBeNull());
+    expect(storageForTab.items.size).toBe(0);
   });
 });
 

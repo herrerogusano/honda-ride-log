@@ -411,11 +411,13 @@ describe("atlas errors of the open service", () => {
     await settle();
     expect([...document.querySelectorAll(".atlas .error button")].map((button) => button.textContent)).toEqual(["Volver a entrar"]);
     document.body.replaceChildren();
-    // The invitation build keeps the general text and its retry.
+    // The invitation build keeps the general text and its retry, except for an ended session.
     await harness({ answer: (n) => (n === 1 ? new ToolCallError(code, "x") : undefined) });
     await press(".atlas-build");
     await settle();
-    expect([...document.querySelectorAll(".atlas .error button")].map((button) => button.textContent)).toEqual(["Reintentar"]);
+    expect([...document.querySelectorAll(".atlas .error button")].map((button) => button.textContent)).toEqual([
+      code === "session_expired" ? "Volver a entrar" : "Reintentar",
+    ]);
   });
 });
 

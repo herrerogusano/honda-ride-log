@@ -2,11 +2,15 @@ import js from "@eslint/js";
 import tseslint from "typescript-eslint";
 
 const STORAGE =
-  "Browser storage is banned (docs/PLAN.md, privacy). Three one-file exceptions: src/storage/maintenance.ts may use localStorage for the two service-interval numbers, src/auth/pendingLogin.ts may use sessionStorage for the PKCE verifier and the state, and src/storage/consent.ts may use localStorage for the cookie-notice answer (and document.cookie to delete Google Analytics' cookies). Never the access token.";
+  "Browser storage is banned (docs/PLAN.md, privacy). Four one-file exceptions: src/storage/maintenance.ts may use localStorage for the two service-interval numbers, src/auth/pendingLogin.ts may use sessionStorage for the PKCE verifier and the state, src/storage/consent.ts may use localStorage for the cookie-notice answer (and document.cookie to delete Google Analytics' cookies), and src/auth/savedSession.ts may use sessionStorage for the access token and its expiry. The token goes nowhere else.";
 const HTML = "Build DOM nodes instead: data must never be parsed as HTML and the CSP forbids inline code.";
 const PENDING_LOGIN_STORAGE = "Only the sign-in flow (src/auth/login.ts) may reach sessionStorage through src/auth/pendingLogin.ts (docs/PLAN.md, section 10).";
 const CONSENT_STORAGE = "Only the visit counters (src/analytics/tracker.ts) may reach localStorage and cookies through src/storage/consent.ts (docs/PLAN.md, section 17).";
 const PENDING_LOGIN_IMPORT = { regex: "(^|/)pendingLogin(\\.[cm]?[jt]s)?([?#].*)?$", message: PENDING_LOGIN_STORAGE };
+const SAVED_SESSION_IMPORT = {
+  regex: "(^|/)savedSession(\\.[cm]?[jt]s)?([?#].*)?$",
+  message: "Only the sign-in flow (src/auth/login.ts) may reach the stored access token through src/auth/savedSession.ts (docs/PLAN.md, section 10).",
+};
 const COUNTERS_IMPORT = {
   regex: "(^|/)analytics/(tracker|consentNotice)(\\.[cm]?[jt]s)?([?#].*)?$",
   message: "Third-party counters are started from src/main.ts only (docs/PLAN.md, section 17).",
@@ -156,8 +160,20 @@ export default tseslint.config(
     },
   },
   {
+    // Storage exception 4 (docs/PLAN.md, section 10, "El token"): this file
+    // may use sessionStorage, for the access token and its expiry so that a
+    // reload keeps the session, and only sessionStorage. localStorage, cookies
+    // and the HTML sinks stay banned (tests/lint-storage.test.ts).
+    files: ["src/auth/savedSession.ts"],
+    rules: {
+      "no-restricted-globals": ["error", LOCAL_STORAGE_GLOBAL],
+      "no-restricted-properties": ["error", LOCAL_STORAGE_PROPERTY, COOKIE_PROPERTY, ...HTML_PROPERTIES],
+    },
+  },
+  {
     // ...and only the sign-in flow may import that file, so no other module
-    // can reach sessionStorage through its helpers. A separate rule id, so the
+    // can reach sessionStorage through its helpers; the same for the stored
+    // token (src/auth/savedSession.ts). A separate rule id, so the
     // seal rules above stay untouched.
     // The same for the cookie-notice answer: only the visit counters may
     // import src/storage/consent.ts. And the code that loads third-party
@@ -165,19 +181,27 @@ export default tseslint.config(
     // started from src/main.ts alone, so a page entry that must stay free of
     // them (a sign-in document, docs/PLAN.md section 17) gets none by accident.
     files: ["**/*.{js,mjs,cjs,ts,mts,cts}"],
-    ignores: ["src/auth/login.ts", "src/auth/pendingLogin.ts", "src/analytics/**", "src/storage/consent.ts", "src/main.ts", "tests/**"],
-    rules: { "@typescript-eslint/no-restricted-imports": ["error", { patterns: [PENDING_LOGIN_IMPORT, CONSENT_IMPORT, COUNTERS_IMPORT] }] },
+    ignores: ["src/auth/login.ts", "src/auth/pendingLogin.ts", "src/auth/savedSession.ts", "src/analytics/**", "src/storage/consent.ts", "src/main.ts", "tests/**"],
+    rules: { "@typescript-eslint/no-restricted-imports": ["error", { patterns: [PENDING_LOGIN_IMPORT, SAVED_SESSION_IMPORT, CONSENT_IMPORT, COUNTERS_IMPORT] }] },
   },
   {
-    files: ["src/auth/login.ts", "src/auth/pendingLogin.ts"],
+    files: ["src/auth/login.ts"],
     rules: { "@typescript-eslint/no-restricted-imports": ["error", { patterns: [CONSENT_IMPORT, COUNTERS_IMPORT] }] },
   },
   {
+    files: ["src/auth/pendingLogin.ts"],
+    rules: { "@typescript-eslint/no-restricted-imports": ["error", { patterns: [SAVED_SESSION_IMPORT, CONSENT_IMPORT, COUNTERS_IMPORT] }] },
+  },
+  {
+    files: ["src/auth/savedSession.ts"],
+    rules: { "@typescript-eslint/no-restricted-imports": ["error", { patterns: [PENDING_LOGIN_IMPORT, CONSENT_IMPORT, COUNTERS_IMPORT] }] },
+  },
+  {
     files: ["src/main.ts", "src/analytics/**"],
-    rules: { "@typescript-eslint/no-restricted-imports": ["error", { patterns: [PENDING_LOGIN_IMPORT, CONSENT_IMPORT] }] },
+    rules: { "@typescript-eslint/no-restricted-imports": ["error", { patterns: [PENDING_LOGIN_IMPORT, SAVED_SESSION_IMPORT, CONSENT_IMPORT] }] },
   },
   {
     files: ["src/analytics/tracker.ts", "src/storage/consent.ts"],
-    rules: { "@typescript-eslint/no-restricted-imports": ["error", { patterns: [PENDING_LOGIN_IMPORT] }] },
+    rules: { "@typescript-eslint/no-restricted-imports": ["error", { patterns: [PENDING_LOGIN_IMPORT, SAVED_SESSION_IMPORT] }] },
   },
 );

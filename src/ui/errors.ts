@@ -64,7 +64,7 @@ export const MAINTENANCE_TEXT = "El servicio está en pausa. Vuelve más tarde."
 /**
  * Tool error codes of the open service (docs/PLAN.md, section 18), read only
  * in a build for it: an invitation build keeps the general text of
- * `tool_error`.
+ * `tool_error`, except for `session_expired` (below).
  */
 const PUBLIC_TOOL_CODES: Readonly<Record<string, { readonly text: string; readonly action: ErrorAction }>> = {
   service_paused: { text: MAINTENANCE_TEXT, action: "retry" },
@@ -74,9 +74,18 @@ const PUBLIC_TOOL_CODES: Readonly<Record<string, { readonly text: string; readon
   service_unavailable: { text: "El servicio no está disponible ahora mismo. Prueba de nuevo dentro de un rato.", action: "retry" },
 };
 
+/**
+ * Tool error codes read in an invitation build. Only `session_expired`: the
+ * client has forgotten the token, so a retry would fail the same way.
+ */
+const INVITATION_TOOL_CODES: Readonly<Record<string, { readonly text: string; readonly action: ErrorAction }>> = {
+  session_expired: { text: "Tu sesión ha terminado. Vuelve a entrar.", action: "sign_in" },
+};
+
 export function errorText(error: LoadError, publicService = false): ErrorText {
   const code = error.detail;
-  const special = publicService && error.kind === "tool_error" && code !== null && Object.hasOwn(PUBLIC_TOOL_CODES, code) ? PUBLIC_TOOL_CODES[code] : undefined;
+  const codes = publicService ? PUBLIC_TOOL_CODES : INVITATION_TOOL_CODES;
+  const special = error.kind === "tool_error" && code !== null && Object.hasOwn(codes, code) ? codes[code] : undefined;
   const kind = special ?? KIND[error.kind];
   return {
     title: STEP_TEXT[error.step],

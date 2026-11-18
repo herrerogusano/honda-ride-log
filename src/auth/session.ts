@@ -1,13 +1,21 @@
 /**
- * The signed-in state: the access token, in a closure variable and nowhere
- * else (docs/PLAN.md, "Almacenamiento"). It is not a property, so logging,
- * serializing or spreading a session does not reveal it. There is no refresh:
- * when the token expires or the service rejects it, the session ends and the
- * user signs in again.
+ * The signed-in state: the access token, in a closure variable (docs/PLAN.md,
+ * "Almacenamiento"). It is not a property, so logging, serializing or
+ * spreading a session does not reveal it. The only other copy is the one
+ * src/auth/savedSession.ts keeps in the tab's `sessionStorage` so that a
+ * reload keeps the rider signed in; src/auth/login.ts removes it when the
+ * session ends. There is no refresh: when the token expires or the service
+ * rejects it, the session ends and the user signs in again.
  */
 
 /** Stop using a token this long before it expires, to absorb clock skew and latency. */
 export const EXPIRY_MARGIN_MS = 60_000;
+
+/** Never trust a token to live longer than a day, whatever the login or the stored copy says. */
+export const MAX_SESSION_MS = 86_400_000;
+
+/** JWT characters; a Cognito access token is about 1 KB. */
+export const TOKEN_PATTERN = /^[A-Za-z0-9\-_.]{20,8192}$/;
 
 export type EndReason = "expired" | "unauthorized" | "forbidden" | "network" | "signed_out";
 

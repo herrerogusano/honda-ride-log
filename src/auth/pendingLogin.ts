@@ -1,6 +1,7 @@
 /**
- * The one file allowed to use `sessionStorage` (docs/PLAN.md, section 10;
- * ESLint enforces it). It keeps the PKCE verifier and the `state` of a
+ * One of the two files allowed to use `sessionStorage` (docs/PLAN.md,
+ * section 10; ESLint enforces it; the other, src/auth/savedSession.ts,
+ * keeps the access token). It keeps the PKCE verifier and the `state` of a
  * login while the browser goes to the login page and back, and (open service
  * only) one fixed word across the trip to its sign-out page; nothing else,
  * never a token. Each entry is removed when it is read, whatever it holds.

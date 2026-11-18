@@ -10,12 +10,18 @@
  *   fragment. Then the page starts; with a session it loads the account
  *   through the real client, with `demo: false`.
  *
- * The session lives here and in the client only, in memory. Signing out
- * forgets it; the page drops the data and stops the load.
+ * - Otherwise a token this tab kept in `sessionStorage` (a reload) signs
+ *   the rider in again, in both access modes, and loads the account the
+ *   same way.
+ *
+ * The session lives here and in the client, in memory, and its token in
+ * the tab's `sessionStorage` (src/auth/savedSession.ts) until it ends.
+ * Signing out forgets both; the page drops the data and stops the load.
  *
  * The visit counters (docs/PLAN.md, section 17) start only after that
  * return has been dealt with, so neither ever runs with `?code` in the
- * address; then "signed in" is counted once the code became a session.
+ * address. With a session (new or kept) they are sealed first: no counter
+ * loads in a page load that holds a token or an account's data.
  *
  * In a build for the open service no counter shares a document with the
  * screen before the login, where the email is typed (docs/PLAN.md, section
@@ -23,7 +29,7 @@
  * (a script cannot be unloaded), the page reloads at `#entrar` instead, and
  * that load seals them before they start and opens the screen at once.
  */
-import { completeLogin, logout, startLogin, takeLogoutNotice, type AuthDeps, type LoginReturn } from "./auth/login";
+import { completeLogin, logout, resumeSession, startLogin, takeLogoutNotice, type AuthDeps, type LoginReturn } from "./auth/login";
 import type { LeaveNotice } from "./auth/login";
 import type { AuthSession, Schedule } from "./auth/session";
 import type { ServiceEnvironment } from "./service/environment";
@@ -91,20 +97,27 @@ export async function boot(options: BootOptions): Promise<App> {
   } catch (error) {
     failure = signInError(error);
   }
+  // A reload of a signed-in tab: the token this tab kept, if still valid
+  // (an expired one is removed here).
+  const resumed = back.status === "none" && failure === null ? resumeSession(config, deps) : null;
+  const started: AuthSession | null = back.status === "signed_in" ? back.session : resumed;
   // The open service, reloaded at `#entrar` to type the email in a page with
   // no counter: sealed before they can start. The screen opens below, and the
   // landing under it takes the fragment out of the address.
-  const enterNow = access !== null && back.status === "none" && failure === null && new URL(deps.currentUrl()).hash === ENTER_FRAGMENT;
-  if (enterNow) analytics?.seal();
+  const enterNow =
+    access !== null && started === null && back.status === "none" && failure === null && new URL(deps.currentUrl()).hash === ENTER_FRAGMENT;
+  // No counter shares a page load with an account's data or with a stored
+  // token (docs/PLAN.md, sections 10 and 17): sealed before they can start,
+  // whatever the visitor answered in the cookie notice.
+  if (enterNow || started !== null) analytics?.seal();
   // Only now: `completeLogin` has taken the login parameters out of the address.
   analytics?.start();
-  if (back.status === "signed_in") analytics?.track("login");
 
   const app = startApp({
     ...appOptions,
-    // A return from the login (good or bad) decides the first view; the
+    // A session (new or kept) or a failed return decides the first view; the
     // fragment does not, so `#demo` cannot replace the account.
-    initialView: back.status === "signed_in" || failure !== null || enterNow ? "none" : "address",
+    initialView: started !== null || failure !== null || enterNow ? "none" : "address",
     account:
       access === null
         ? {
@@ -177,12 +190,12 @@ export async function boot(options: BootOptions): Promise<App> {
 
   if (failure !== null) {
     app.showLanding(failure);
-  } else if (back.status === "signed_in") {
-    session = back.session;
+  } else if (started !== null) {
+    session = started;
     // However the session ends (the clock, a 401, `session_expired`, a sign-out), the whole traces leave memory.
-    back.session.onEnd(() => app.forgetTraces());
-    back.session.watchExpiry(deps.now, expiryTimer);
-    client = createMcpClient(config.mcpUrl, back.session, { ...mcp, publicService: access !== null });
+    started.onEnd(() => app.forgetTraces());
+    started.watchExpiry(deps.now, expiryTimer);
+    client = createMcpClient(config.mcpUrl, started, { ...mcp, publicService: access !== null });
     void app.load(client, { demo: false });
   } else if (leftNotice === "delete_unconfirmed") {
     app.showNotice(DELETE_UNCONFIRMED);

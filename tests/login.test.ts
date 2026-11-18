@@ -2,8 +2,12 @@
 // we read the login's contract, not that Cognito or its CORS behave this way.
 import { webcrypto } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { AuthError, authorizeUrl, browserDeps, completeLogin, logout, startLogin, takeLogoutNotice, type AuthDeps } from "../src/auth/login";
+import { AuthError, authorizeUrl, browserDeps, completeLogin, logout, resumeSession, startLogin, takeLogoutNotice, type AuthDeps } from "../src/auth/login";
 import { PENDING_LOGIN_TTL_MS, type StorageLike } from "../src/auth/pendingLogin";
+import { EXPIRY_MARGIN_MS } from "../src/auth/session";
+
+/** The one entry that src/auth/savedSession.ts keeps in the tab. */
+const SAVED_KEY = "ride-log.session";
 import { createFakeServer, TEST_CONFIG, type FakeServer } from "./fakeServer";
 
 class MemoryStorage implements StorageLike {
@@ -151,8 +155,12 @@ describe("return from the login", () => {
     // Neither the token nor the refresh or ID token is readable from the session object.
     const visible = JSON.stringify(result.session) + String(Object.keys(result.session));
     for (const token of [...server.issuedTokens, ...server.otherTokens]) expect(visible).not.toContain(token);
-    // Nothing is left in storage after the return.
-    expect(b.storage.items.size).toBe(0);
+    // After the return the tab keeps one entry: the access token and its expiry, nothing else.
+    expect([...b.storage.items.keys()]).toEqual([SAVED_KEY]);
+    const saved = JSON.parse(b.storage.items.get(SAVED_KEY) ?? "") as Record<string, unknown>;
+    expect(Object.keys(saved).sort()).toEqual(["expiresAt", "token"]);
+    expect(saved["token"]).toBe(server.issuedTokens[0]);
+    for (const token of server.otherTokens) expect(b.storage.items.get(SAVED_KEY)).not.toContain(token);
   });
 
   it("sends the verifier, the code and the same return address to the token endpoint, without cookies", async () => {
@@ -385,6 +393,114 @@ describe("return from the login", () => {
     const result = await completeLogin(TEST_CONFIG, b.deps);
     if (result.status !== "signed_in") throw new Error("expected a session");
     expect(result.session.authorization(server.clock.now + 86_400_000)).toBeNull();
+  });
+});
+
+describe("a reload keeps the session (docs/PLAN.md, section 10, «El token»)", () => {
+  /** Signs in, then "reloads": a fresh page whose only memory is the tab's storage. */
+  async function signedInThenReloaded(): Promise<{ server: FakeServer; b: Browser; token: string; first: ReturnType<typeof resumeSession> }> {
+    const server = createFakeServer();
+    const b = browser(server);
+    await roundTrip(server, b);
+    const result = await completeLogin(TEST_CONFIG, b.deps);
+    if (result.status !== "signed_in") throw new Error("expected a session");
+    b.address.href = "http://localhost:5173/";
+    return { server, b, token: server.issuedTokens[0] ?? "", first: result.session };
+  }
+
+  it("gives back the same token after a reload, until it expires", async () => {
+    const { server, b, token } = await signedInThenReloaded();
+    expect(await completeLogin(TEST_CONFIG, b.deps)).toEqual({ status: "none" });
+    const again = resumeSession(TEST_CONFIG, b.deps);
+    expect(again?.authorization(server.clock.now)).toBe(`Bearer ${token}`);
+    // The resumed session ends with the same margin as the first one.
+    expect(again?.authorization(server.clock.now + 3_600_000 - EXPIRY_MARGIN_MS)).toBeNull();
+    expect(b.storage.items.size).toBe(0);
+  });
+
+  it("does not resume a token that expired while the tab was away, and removes it", async () => {
+    const { server, b } = await signedInThenReloaded();
+    server.clock.now += 3_600_000 - EXPIRY_MARGIN_MS;
+    expect(resumeSession(TEST_CONFIG, b.deps)).toBeNull();
+    expect(b.storage.items.size).toBe(0);
+  });
+
+  it("drops a damaged or tampered entry instead of using it", async () => {
+    const server = createFakeServer();
+    const b = browser(server);
+    const now = server.clock.now;
+    for (const value of [
+      "not json",
+      JSON.stringify({ token: "short", expiresAt: now + 3_600_000 }),
+      JSON.stringify({ token: "eyJ".repeat(10), expiresAt: "later" }),
+      // One character over the longest token a sign-in takes.
+      JSON.stringify({ token: "a".repeat(8_193), expiresAt: now + 3_600_000 }),
+      // Longer than a day: never trusted, as on the way in.
+      JSON.stringify({ token: "eyJ".repeat(10), expiresAt: now + 2 * 86_400_000 }),
+    ]) {
+      b.storage.items.set(SAVED_KEY, value);
+      expect(resumeSession(TEST_CONFIG, b.deps)).toBeNull();
+      expect(b.storage.items.size).toBe(0);
+    }
+    expect(resumeSession(null, b.deps)).toBeNull();
+  });
+
+  it.each([
+    ["expired"],
+    ["unauthorized"],
+    ["forbidden"],
+    ["network"],
+  ] as const)("forgets the stored token when the session ends by %s", async (reason) => {
+    const { b, first } = await signedInThenReloaded();
+    expect(b.storage.items.has(SAVED_KEY)).toBe(true);
+    first?.end(reason);
+    expect(b.storage.items.size).toBe(0);
+  });
+
+  it("forgets it on a resumed session too, when its clock runs out", async () => {
+    const { server, b } = await signedInThenReloaded();
+    const again = resumeSession(TEST_CONFIG, b.deps);
+    expect(b.storage.items.has(SAVED_KEY)).toBe(true);
+    server.clock.now += 3_600_000;
+    expect(again?.authorization(server.clock.now)).toBeNull();
+    expect(b.storage.items.size).toBe(0);
+  });
+
+  it("forgets it on sign-out, even when the page no longer holds the session", async () => {
+    const { b, first } = await signedInThenReloaded();
+    logout(TEST_CONFIG, first, b.deps);
+    expect(b.storage.items.size).toBe(0);
+    const next = await signedInThenReloaded();
+    logout(TEST_CONFIG, null, next.b.deps);
+    expect(next.b.storage.items.size).toBe(0);
+  });
+
+  it("forgets it when a new sign-in starts or another return arrives", async () => {
+    const { b } = await signedInThenReloaded();
+    await startLogin(TEST_CONFIG, b.deps);
+    expect(b.storage.items.has(SAVED_KEY)).toBe(false);
+    const other = await signedInThenReloaded();
+    other.b.address.href = "http://localhost:5173/?code=synthetic&state=not-the-pending-one";
+    await expect(completeLogin(TEST_CONFIG, other.b.deps)).rejects.toBeInstanceOf(AuthError);
+    expect(other.b.storage.items.size).toBe(0);
+  });
+
+  it("keeps working in memory when the tab refuses to store the token", async () => {
+    const server = createFakeServer();
+    const b = browser(server);
+    await roundTrip(server, b);
+    const refusing = {
+      getItem: (key: string) => b.storage.getItem(key),
+      setItem: (key: string, value: string) => {
+        if (key === SAVED_KEY) throw new Error("quota");
+        b.storage.setItem(key, value);
+      },
+      removeItem: (key: string) => b.storage.removeItem(key),
+    };
+    const result = await completeLogin(TEST_CONFIG, { ...b.deps, storage: refusing });
+    if (result.status !== "signed_in") throw new Error("expected a session");
+    expect(result.session.authorization(server.clock.now)).toBe(`Bearer ${server.issuedTokens[0]}`);
+    expect(b.storage.items.size).toBe(0);
   });
 });
 

@@ -154,6 +154,23 @@ describe("rejected or lost token", () => {
     expect(mcpRequests(server)).toHaveLength(1);
   });
 
+  it("treats the network dropping while the answer is read as a network failure: 'sign in again'", async () => {
+    const { session } = await setUp();
+    const drops: typeof fetch = async () => {
+      const body = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"jsonrpc":"2.0",'));
+          controller.error(new TypeError("network error"));
+        },
+      });
+      return new Response(body, { status: 200, headers: { "content-type": "application/json" } });
+    };
+    const client = createMcpClient(TEST_CONFIG.mcpUrl, session, { fetch: drops, now: () => Date.parse("2026-07-01T10:00:00Z") });
+    const error = await failure(client.callTool("get_vehicle_status", {}));
+    expect([(error as ServiceError).kind, (error as ServiceError).detail]).toEqual(["reauth_required", "network"]);
+    expect(session.endReason).toBe("network");
+  });
+
   it("ends the session on a 403 and reports it apart", async () => {
     const { server, session, client } = await setUp();
     server.mcpOverride = () => ({ status: 403, body: "{}" });
@@ -300,9 +317,9 @@ describe("answers the client refuses", () => {
     expect((error as ToolCallError).code).toBe("tool_error");
   });
 
-  it("with the SDK's real text, session_expired ends the open service's session and the token is never sent again", async () => {
+  it.each([true, false])("with the SDK's real text, session_expired ends the session (open service: %s) and the token is never sent again", async (publicService) => {
     const { server, session } = await setUp();
-    const client = clientFor(server, session, { publicService: true });
+    const client = clientFor(server, session, { publicService });
     server.mcpOverride = () => sdkError("get_vehicle_status", "session_expired");
     await failure(client.callTool("get_vehicle_status", {}));
     expect(session.endReason).toBe("expired");

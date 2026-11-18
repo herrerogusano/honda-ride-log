@@ -38,12 +38,13 @@ Una sola página, oscura, con seis secciones:
   Analytics cuenta la visita sin cookies. Google Analytics solo se carga si
   aceptas en el aviso de cookies, y cuenta la visita y si abres la demo; si
   rechazas, no se carga. Se puede cambiar de opinión al final de la página.
-  Ninguno se carga en la página a la que vuelves tras iniciar sesión, y
-  ninguno recibe tus rutas, tus cifras ni la dirección completa de la
+  Ninguno se carga en la página a la que vuelves tras iniciar sesión ni
+  en ninguna que recargues con la sesión abierta, y ninguno recibe tus rutas, tus cifras ni la dirección completa de la
   página.
 - Los datos se leen y se calculan en tu navegador y no se guardan. Lo único
   que se recuerda, en tu navegador, son los dos números de mantenimiento que
-  tú escribas y tu respuesta al aviso de cookies.
+  tú escribas y tu respuesta al aviso de cookies; con la sesión abierta,
+  también el acceso, en esa pestaña.
 - Nunca se muestran la matrícula, el bastidor, el concesionario ni la
   posición actual de la moto.
 - El mapa y el atlas dibujan cada ruta entera, solo en tu pantalla y sin
@@ -51,8 +52,8 @@ Una sola página, oscura, con seis secciones:
   tarjeta para compartir y las descargas no llevan recorridos. Las rutas de
   menos de 300 m se ocultan.
 - La contraseña la pide la página de login del servicio, no esta web. El
-  acceso vive solo en la memoria de la pestaña: al recargar hay que volver a
-  entrar.
+  acceso se guarda en esta pestaña hasta que la cierras o caduca (una hora
+  como mucho): recargar no te saca; salir o «Borrar mis datos» lo borran.
 
 ## Estado
 

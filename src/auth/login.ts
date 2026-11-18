@@ -9,8 +9,11 @@
  * 2. Back on the page, `completeLogin` reads `code` and `state` from the
  *    address, removes them from it at once, checks the `state`, and trades
  *    the code for tokens at `/oauth2/token`.
- * 3. Only the access token is kept, in memory (`AuthSession`). The ID token
- *    and the refresh token that the login also returns are dropped.
+ * 3. Only the access token is kept, in memory (`AuthSession`) and, with its
+ *    expiry, in the tab's `sessionStorage` (src/auth/savedSession.ts) so a
+ *    reload keeps the session (`resumeSession`). That copy goes when the
+ *    session ends. The ID token and the refresh token that the login also
+ *    returns are dropped.
  *
  * Errors are `AuthError`s with a closed `kind` and a `detail` that is either
  * null or a short OAuth error code: never a token, a code, a URL or a body.
@@ -28,7 +31,8 @@ import {
   type StorageLike,
 } from "./pendingLogin";
 import { challengeFor, randomToken, type CryptoLike } from "./pkce";
-import { createSession, type AuthSession } from "./session";
+import { browserTokenStorage, clearSavedSession, readSavedSession, saveSession, type TokenStorage } from "./savedSession";
+import { createSession, MAX_SESSION_MS, TOKEN_PATTERN, type AuthSession } from "./session";
 
 export type AuthErrorKind =
   /** The build has no service configured: only the demo exists. */
@@ -88,12 +92,59 @@ export function browserDeps(): AuthDeps {
 }
 
 const storageOf = (deps: AuthDeps): StorageLike | null => (deps.storage === undefined ? browserSessionStorage() : deps.storage);
+/** Where the token survives a reload: the same tab's sessionStorage, through its own file. */
+const tokenStorageOf = (deps: AuthDeps): TokenStorage | null => (deps.storage === undefined ? browserTokenStorage() : deps.storage);
+
+/** Forgets the stored token; a storage that fails leaves it to expire with the tab or the clock. */
+function forgetSaved(deps: AuthDeps): void {
+  const storage = tokenStorageOf(deps);
+  if (storage === null) return;
+  try {
+    clearSavedSession(storage);
+  } catch {
+    // Nothing more can be done; `readSavedSession` refuses it once expired.
+  }
+}
+
+/**
+ * A session for this token that also lives in the tab's sessionStorage, so a
+ * reload keeps it, and leaves it the moment it ends for any reason.
+ */
+function keptSession(accessToken: string, expiresAtMs: number, deps: AuthDeps, store: boolean): AuthSession {
+  const session = createSession(accessToken, expiresAtMs);
+  if (store) {
+    const storage = tokenStorageOf(deps);
+    try {
+      if (storage !== null) saveSession(storage, { accessToken, expiresAtMs });
+    } catch {
+      // Storage full or blocked: the session works, a reload asks to sign in again.
+    }
+  }
+  session.onEnd(() => forgetSaved(deps));
+  return session;
+}
+
+/**
+ * Call once when the page loads and it is not a return from the login: the
+ * session stored in this tab, if it is still valid. An expired or damaged
+ * one is removed and gives null.
+ */
+export function resumeSession(config: ServiceConfig | null, deps: AuthDeps): AuthSession | null {
+  if (config === null) return null;
+  const storage = tokenStorageOf(deps);
+  if (storage === null) return null;
+  let saved;
+  try {
+    saved = readSavedSession(storage, deps.now());
+  } catch {
+    return null;
+  }
+  return saved === null ? null : keptSession(saved.accessToken, saved.expiresAtMs, deps, false);
+}
 
 const TOKEN_TIMEOUT_MS = 20_000;
 /** OAuth error codes are short lowercase words; anything else is not shown. */
 const SAFE_CODE = /^[a-z][a-z0-9_]{0,63}$/;
-/** JWT characters; a Cognito access token is about 1 KB. */
-const TOKEN_PATTERN = /^[A-Za-z0-9\-_.]{20,8192}$/;
 const MAX_TOKEN_RESPONSE_CHARS = 64 * 1024;
 
 const safeCode = (value: unknown): string | null => (typeof value === "string" && SAFE_CODE.test(value) ? value : null);
@@ -133,6 +184,8 @@ export async function startLogin(config: ServiceConfig | null, deps: AuthDeps, l
   if (config === null) throw new AuthError("config_missing");
   const storage = storageOf(deps);
   if (storage === null) throw new AuthError("storage_unavailable");
+  // A new sign-in replaces whatever this tab still kept.
+  forgetSaved(deps);
   const verifier = randomToken(deps.crypto);
   const state = randomToken(deps.crypto);
   const challenge = await challengeFor(verifier, deps.crypto);
@@ -167,6 +220,8 @@ export async function completeLogin(config: ServiceConfig | null, deps: AuthDeps
   // The login returns them in the query; the fragment is left to the page.
   for (const name of RETURN_PARAMS) params.delete(name);
   deps.replaceUrl(url.href);
+  // A return from the login, good or bad, replaces any session this tab kept.
+  forgetSaved(deps);
 
   let pending: PendingLogin | null = null;
   const storage = storageOf(deps);
@@ -237,8 +292,8 @@ async function exchangeCode(config: ServiceConfig, code: string, verifier: strin
     throw new AuthError("token_exchange", "bad_expiry");
   }
   // The service's tokens last 60 minutes; never trust a longer life than a day.
-  const lifetimeMs = Math.min(expiresIn, 86_400) * 1000;
-  return createSession(accessToken, startedAt + lifetimeMs);
+  const lifetimeMs = Math.min(expiresIn * 1000, MAX_SESSION_MS);
+  return keptSession(accessToken, startedAt + lifetimeMs, deps, true);
 }
 
 /**
@@ -250,6 +305,8 @@ async function exchangeCode(config: ServiceConfig, code: string, verifier: strin
  */
 export function logout(config: ServiceConfig | null, session: AuthSession | null, deps: AuthDeps, notice: LeaveNotice | null = null): void {
   session?.end("signed_out");
+  // Also when there was no session object in this page (it ended already).
+  forgetSaved(deps);
   const storage = storageOf(deps);
   if (storage !== null) {
     try {
