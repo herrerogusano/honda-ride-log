@@ -6,12 +6,12 @@ const STORAGE =
 const HTML = "Build DOM nodes instead: data must never be parsed as HTML and the CSP forbids inline code.";
 const PENDING_LOGIN_STORAGE = "Only the sign-in flow (src/auth/login.ts) may reach sessionStorage through src/auth/pendingLogin.ts (docs/PLAN.md, section 10).";
 const CONSENT_STORAGE = "Only the visit counters (src/analytics/tracker.ts) may reach localStorage and cookies through src/storage/consent.ts (docs/PLAN.md, section 17).";
-const PENDING_LOGIN_IMPORT = { regex: "(^|/)pendingLogin(\\.[cm]?[jt]s)?(\\?.*)?$", message: PENDING_LOGIN_STORAGE };
+const PENDING_LOGIN_IMPORT = { regex: "(^|/)pendingLogin(\\.[cm]?[jt]s)?([?#].*)?$", message: PENDING_LOGIN_STORAGE };
 const COUNTERS_IMPORT = {
-  regex: "(^|/)analytics/(tracker|consentNotice)(\\.[cm]?[jt]s)?(\\?.*)?$",
+  regex: "(^|/)analytics/(tracker|consentNotice)(\\.[cm]?[jt]s)?([?#].*)?$",
   message: "Third-party counters are started from src/main.ts only (docs/PLAN.md, section 17).",
 };
-const CONSENT_IMPORT ={ regex: "(^|/)consent(\\.[cm]?[jt]s)?(\\?.*)?$", message: CONSENT_STORAGE };
+const CONSENT_IMPORT ={ regex: "(^|/)consent(\\.[cm]?[jt]s)?([?#].*)?$", message: CONSENT_STORAGE };
 
 const LOCAL_STORAGE_GLOBAL = { name: "localStorage", message: STORAGE };
 const LOCAL_STORAGE_PROPERTY = { property: "localStorage", message: STORAGE };
@@ -31,11 +31,11 @@ const HTML_PROPERTIES = [
 
 /**
  * Imports that open a privacy seal; each is allowed in one place only. The
- * patterns also match a Vite query after the path (`?raw`, `?url`...): the
- * same module, so the same seal.
+ * patterns also match a Vite query or a fragment after the path (`?raw`,
+ * `?url`, `#x`...): the same module, so the same seal.
  */
 const sealedImport = (name, where) => ({
-  regex: "(^|/)sanitize(\\.[cm]?[jt]s)?(\\?.*)?$",
+  regex: "(^|/)sanitize(\\.[cm]?[jt]s)?([?#].*)?$",
   importNames: [name],
   message: `${name} is only for ${where} (docs/PLAN.md, privacy).`,
 });
@@ -49,7 +49,7 @@ const PLACES_SEAL = sealedImport("sensitivePlaces", "the trim function in src/do
  * card, a download, an image or the visit counters must not.
  */
 const SCREEN_SEAL = {
-  regex: "(^|/)trim(\\.[cm]?[jt]s)?(\\?.*)?$",
+  regex: "(^|/)trim(\\.[cm]?[jt]s)?([?#].*)?$",
   importNames: ["screenTrace"],
   message: "screenTrace is only for the trace store of the map and the atlas, src/ui/traceStore.ts: whatever leaves the screen gets no whole trace (docs/PLAN.md, privacy).",
 };
@@ -58,7 +58,7 @@ const SCREEN_SEAL = {
  * page that owns it (src/ui/app.ts), the map and the atlas may import it.
  */
 const STORE_SEAL = {
-  regex: "(^|/)traceStore(\\.[cm]?[jt]s)?(\\?.*)?$",
+  regex: "(^|/)traceStore(\\.[cm]?[jt]s)?([?#].*)?$",
   message: "The trace store holds whole traces: only src/ui/app.ts, src/ui/mapView.ts and src/ui/atlas/atlasView.ts may import it (docs/PLAN.md, privacy).",
 };
 

@@ -76,7 +76,7 @@ describe("privacy seals", () => {
   // Vite reads a query after the path (`?raw`, `?url`, `?inline`, ...): the
   // same module, so the same seal.
   it("hold with a Vite query after the path", async () => {
-    for (const query of ["?raw", "?url", "?inline", "?worker&url", "?import"]) {
+    for (const query of ["?raw", "?url", "?inline", "?worker&url", "?import", "#review", "?raw#x"]) {
       expect(await importErrors(use("screenTrace", `../domain/trim${query}`), "src/ui/card.ts")).toBe(1);
       expect(await importErrors(use("screenTrace", `../domain/trim.ts${query}`), "src/ui/card.ts")).toBe(1);
       expect(await importErrors(use("untrimmedLines", `../domain/sanitize${query}`), "src/ui/mapView.ts")).toBe(1);
