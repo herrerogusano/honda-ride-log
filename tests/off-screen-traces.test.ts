@@ -9,6 +9,7 @@ import { untrimmedLines } from "../src/domain/sanitize";
 import { screenTrace } from "../src/domain/trim";
 import { loadAllRoutes, loadRouteTrace } from "../src/service/loader";
 import { cardContent, cardText, drawCard } from "../src/ui/card";
+import { createTraceStore } from "../src/ui/traceStore";
 
 /**
  * The whole trace is drawn on the signed-in rider's screen only
@@ -64,10 +65,14 @@ describe("what leaves the screen carries no trace", () => {
     const service = createDemoService(rider);
     const routes = (await loadAllRoutes(service, NOW)).routes;
     const points: LatLng[] = [];
+    // The store the map and the atlas share, really holding the whole traces.
+    const store = createTraceStore(service);
     for (const route of routes.slice(0, 40)) {
       const trace = await loadRouteTrace(service, route.ref);
       points.push(...untrimmedLines(trace).flatMap((line) => line.points));
       expect(screenTrace(trace).lines.length).toBeGreaterThan(0);
+      await store.get(route);
+      expect(store.known(route.ref)?.lines).toEqual(screenTrace(trace).lines);
     }
     expect(points.length).toBeGreaterThan(100);
     const forbidden = spellings(points);

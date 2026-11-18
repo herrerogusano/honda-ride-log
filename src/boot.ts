@@ -25,7 +25,7 @@
  */
 import { completeLogin, logout, startLogin, takeLogoutNotice, type AuthDeps, type LoginReturn } from "./auth/login";
 import type { LeaveNotice } from "./auth/login";
-import type { AuthSession } from "./auth/session";
+import type { AuthSession, Schedule } from "./auth/session";
 import type { ServiceEnvironment } from "./service/environment";
 import { signInError, type LoadError } from "./service/loader";
 import { createMcpClient, type McpClient, type McpClientOptions } from "./service/mcpClient";
@@ -48,6 +48,8 @@ export interface BootOptions extends Omit<AppOptions, "account" | "initialView" 
   readonly analytics?: BootAnalytics;
   /** Only for tests: the anti-robot check of the open service (Cloudflare Turnstile in the page). */
   readonly challenge?: ChallengeRenderer;
+  /** Only for tests: the timer that ends the session when the token expires (`setTimeout` in the page). */
+  readonly expiryTimer?: Schedule;
   /** Only for tests: reloads the page (`location.reload()` in the page). */
   readonly reload?: () => void;
 }
@@ -63,7 +65,7 @@ function withoutFragment(href: string): string {
 }
 
 export async function boot(options: BootOptions): Promise<App> {
-  const { environment, auth, mcp, analytics, challenge, reload, ...rest } = options;
+  const { environment, auth, mcp, analytics, challenge, reload, expiryTimer, ...rest } = options;
   const appOptions: Omit<AppOptions, "account" | "initialView"> = { ...rest, onDemo: () => analytics?.track("demo_open") };
   if (environment.kind === "demo") {
     // No login in this build, so the address never carries a code.
@@ -177,6 +179,9 @@ export async function boot(options: BootOptions): Promise<App> {
     app.showLanding(failure);
   } else if (back.status === "signed_in") {
     session = back.session;
+    // However the session ends (the clock, a 401, `session_expired`, a sign-out), the whole traces leave memory.
+    back.session.onEnd(() => app.forgetTraces());
+    back.session.watchExpiry(deps.now, expiryTimer);
     client = createMcpClient(config.mcpUrl, back.session, { ...mcp, publicService: access !== null });
     void app.load(client, { demo: false });
   } else if (leftNotice === "delete_unconfirmed") {

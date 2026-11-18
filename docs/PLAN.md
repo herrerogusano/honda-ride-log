@@ -269,6 +269,15 @@ recorte»).
     como ese almacén guarda trazas enteras, también está sellado: solo lo
     importan `src/ui/app.ts`, `src/ui/mapView.ts` y
     `src/ui/atlas/atlasView.ts` (`tests/lint-seals.test.ts`).
+  - Las trazas enteras salen de la memoria al terminar la sesión, sea cual
+    sea el camino: «Salir», «Borrar mis datos», otra carga, el reloj (un
+    temporizador termina la sesión cuando caduca el token, aunque no se
+    pida nada) o el servicio (401, `session_expired`). La sesión avisa al
+    terminar (`onEnd` en `src/auth/session.ts`) y la página vacía el
+    almacén (`forgetTraces`); una respuesta que estaba en camino no se
+    guarda. Lo que ya está dibujado en pantalla se queda, con «Volver a
+    entrar» (`tests/boot.test.ts`, `tests/public-boot.test.ts`,
+    `tests/session-end.test.ts`, con el almacén lleno de verdad).
   - La demo no cambia: sus trayectos cortos de 320 a 780 m, que antes
     enseñaban la traza oculta, ahora se dibujan enteros.
   - La cabeza que va delante del trazo mientras se dibuja empieza en el
@@ -336,8 +345,9 @@ pantalla; hoy nada lo usa):
 - Si no queda nada, la web dice «traza oculta por privacidad»; si el servicio
   no envió ninguna línea, dice que no hay recorrido. Son mensajes distintos.
 - Los sellos son reglas de ESLint sobre los `import`. Están cerradas las
-  vías conocidas para saltárselas (`import()` dinámico e `import.meta.glob`,
-  con test), pero siguen siendo una red, no una prueba.
+  vías conocidas para saltárselas (`import()` dinámico, `import.meta.glob`,
+  tipos escritos como `import("...")` y la consulta de Vite tras la ruta,
+  como `?raw`; con test), pero siguen siendo una red, no una prueba.
 
 Leaflet y la política de seguridad de contenido (visto en un navegador):
 Leaflet cancela una tesela que aún está cargando apuntándola a una imagen
@@ -834,7 +844,9 @@ cliente ya ha olvidado.
    página y con ella la memoria. Un segundo `load` con otro `ToolCaller` en
    la misma página también deja de pedir con el primero (test).
 8. Al soltar la vista se vacía el almacén de trazas del mapa y
-   del atlas, también de las que llegan tarde.
+   del atlas, también de las que llegan tarde. También al terminar la
+   sesión (caducidad por reloj o rechazo del servicio), aunque la vista
+   siga en pantalla (apartado 4).
 
 El token no sale de `src/auth/session.ts` más que como cabecera de cada
 petición: `boot` guarda el objeto de sesión (para `logout`) y el cliente lo

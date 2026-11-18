@@ -73,6 +73,24 @@ describe("privacy seals", () => {
     }
   }, 30_000);
 
+  // Vite reads a query after the path (`?raw`, `?url`, `?inline`, ...): the
+  // same module, so the same seal.
+  it("hold with a Vite query after the path", async () => {
+    for (const query of ["?raw", "?url", "?inline", "?worker&url", "?import"]) {
+      expect(await importErrors(use("screenTrace", `../domain/trim${query}`), "src/ui/card.ts")).toBe(1);
+      expect(await importErrors(use("screenTrace", `../domain/trim.ts${query}`), "src/ui/card.ts")).toBe(1);
+      expect(await importErrors(use("untrimmedLines", `../domain/sanitize${query}`), "src/ui/mapView.ts")).toBe(1);
+      expect(await importErrors(use("sensitivePlaces", `../domain/sanitize.ts${query}`), "src/ui/traceStore.ts")).toBe(1);
+      expect(await importErrors(use("serviceRouteId", `./sanitize${query}`), "src/domain/trim.ts")).toBe(1);
+      expect(await importErrors(use("createTraceStore", `./traceStore${query}`), "src/ui/card.ts")).toBe(1);
+      expect(await importErrors(use("createTraceStore", `../ui/traceStore.ts${query}`), "src/analytics/tracker.ts")).toBe(1);
+      expect(await importErrors(`import store from "./traceStore${query}";\nexport const x = store;\n`, "src/ui/download.ts")).toBe(1);
+    }
+    // The allowed places stay allowed with a query.
+    expect(await importErrors(use("screenTrace", "../domain/trim?import"), "src/ui/traceStore.ts")).toBe(0);
+    expect(await importErrors(use("createTraceStore", "./traceStore?import"), "src/ui/app.ts")).toBe(0);
+  }, 60_000);
+
   it("let only the service code open a route reference", async () => {
     expect(await importErrors(use("serviceRouteId", "../domain/sanitize"), "src/service/loader.ts")).toBe(0);
     expect(await importErrors(use("serviceRouteId", "./sanitize"), "src/domain/trim.ts")).toBe(1);
@@ -92,6 +110,12 @@ describe("ways around the seals", () => {
       expect(await syntaxErrors('export const load = () => import("../domain/sanitize");\n', file)).toBe(1);
       expect(await syntaxErrors('export const all = import.meta.glob("../domain/sanit*.ts", { eager: true });\n', file)).toBe(1);
       expect(await syntaxErrors('export const all = import.meta.globEager("../domain/*.ts");\n', file)).toBe(1);
+    }
+    // A type written as `import("...")` names a module past the import rules too.
+    for (const file of ["src/ui/card.ts", "src/ui/summary.ts", "src/domain/csv.ts"]) {
+      expect(await syntaxErrors('export type Store = typeof import("./traceStore");\n', file)).toBe(1);
+      expect(await syntaxErrors('export type Lines = ReturnType<typeof import("../domain/trim").screenTrace>;\n', file)).toBe(1);
+      expect(await syntaxErrors('export type Trace = import("../domain/sanitize").UntrimmedTrace;\n', file)).toBe(1);
     }
     // Reading the address of the module itself is not a way around anything.
     expect(await syntaxErrors("export const here = import.meta.url;\n", "src/main.ts")).toBe(0);

@@ -22,6 +22,12 @@ export interface TraceStore {
   get(route: Route): Promise<ScreenTrace>;
   /** Calls `listener` each time a new trace is kept (the atlas updates what a build would cost). */
   onChange(listener: () => void): void;
+  /**
+   * Forgets every trace and every request on its way (their answers are not
+   * kept), and tells the listeners. The store can still be asked; the
+   * page calls it when the session ends.
+   */
+  forget(): void;
   /** Forgets every trace; answers still on their way are not kept. The store must not be used afterwards. */
   dispose(): void;
 }
@@ -30,6 +36,8 @@ export function createTraceStore(caller: ToolCaller): TraceStore {
   const traces = new Map<RouteRef, ScreenTrace>();
   const pending = new Map<RouteRef, Promise<ScreenTrace>>();
   let disposed = false;
+  /** Each forget starts a new round; an answer from an earlier round is not kept. */
+  let round = 0;
   const listeners: (() => void)[] = [];
   return {
     known: (ref) => traces.get(ref),
@@ -39,23 +47,32 @@ export function createTraceStore(caller: ToolCaller): TraceStore {
       if (known !== undefined) return Promise.resolve(known);
       let request = pending.get(route.ref);
       if (request === undefined) {
+        const mine = round;
         request = loadRouteTrace(caller, route.ref)
-          .then((unlines) => {
+          .then((detail) => {
             // Only the lines for the screen are kept; the sealed detail is dropped here.
-            const lines = screenTrace(unlines);
+            const lines = screenTrace(detail);
             // An answer that arrives after the view is gone is not kept.
-            if (!disposed) {
+            if (!disposed && mine === round) {
               traces.set(route.ref, lines);
               for (const listener of listeners) listener();
             }
             return lines;
           })
-          .finally(() => pending.delete(route.ref));
+          .finally(() => {
+            if (pending.get(route.ref) === request) pending.delete(route.ref);
+          });
         pending.set(route.ref, request);
       }
       return request;
     },
     onChange: (listener) => void listeners.push(listener),
+    forget() {
+      round += 1;
+      traces.clear();
+      pending.clear();
+      for (const listener of [...listeners]) listener();
+    },
     dispose() {
       disposed = true;
       listeners.length = 0;

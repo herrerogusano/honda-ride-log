@@ -29,9 +29,13 @@ const HTML_PROPERTIES = [
   { object: "document", property: "writeln", message: HTML },
 ];
 
-/** Imports that open a privacy seal; each is allowed in one place only. */
+/**
+ * Imports that open a privacy seal; each is allowed in one place only. The
+ * patterns also match a Vite query after the path (`?raw`, `?url`...): the
+ * same module, so the same seal.
+ */
 const sealedImport = (name, where) => ({
-  regex: "(^|/)sanitize(\\.[cm]?[jt]s)?$",
+  regex: "(^|/)sanitize(\\.[cm]?[jt]s)?(\\?.*)?$",
   importNames: [name],
   message: `${name} is only for ${where} (docs/PLAN.md, privacy).`,
 });
@@ -45,7 +49,7 @@ const PLACES_SEAL = sealedImport("sensitivePlaces", "the trim function in src/do
  * card, a download, an image or the visit counters must not.
  */
 const SCREEN_SEAL = {
-  regex: "(^|/)trim(\\.[cm]?[jt]s)?$",
+  regex: "(^|/)trim(\\.[cm]?[jt]s)?(\\?.*)?$",
   importNames: ["screenTrace"],
   message: "screenTrace is only for the trace store of the map and the atlas, src/ui/traceStore.ts: whatever leaves the screen gets no whole trace (docs/PLAN.md, privacy).",
 };
@@ -54,7 +58,7 @@ const SCREEN_SEAL = {
  * page that owns it (src/ui/app.ts), the map and the atlas may import it.
  */
 const STORE_SEAL = {
-  regex: "(^|/)traceStore(\\.[cm]?[jt]s)?$",
+  regex: "(^|/)traceStore(\\.[cm]?[jt]s)?(\\?.*)?$",
   message: "The trace store holds whole traces: only src/ui/app.ts, src/ui/mapView.ts and src/ui/atlas/atlasView.ts may import it (docs/PLAN.md, privacy).",
 };
 
@@ -81,6 +85,10 @@ export default tseslint.config(
         {
           selector: "ImportExpression",
           message: "No dynamic imports: they slip past the import rules that guard the privacy seals.",
+        },
+        {
+          selector: "TSImportType",
+          message: "No import() types: they name a module past the import rules that guard the privacy seals. Use import type.",
         },
         {
           selector: "MemberExpression[object.type='MetaProperty'][property.name=/^glob/]",
