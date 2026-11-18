@@ -153,12 +153,6 @@ function withSmallUnit(value: string): (Node | string)[] {
   return unit === "" ? [number] : [number, NBSP, el("small", { class: "unit" }, unit)];
 }
 
-function signedKm(km: number): string {
-  const rounded = Math.round(km);
-  if (rounded === 0) return "igual";
-  return `${rounded > 0 ? "+" : "−"}${formatWholeKm(Math.abs(rounded))}`;
-}
-
 /** The title of section 01 for a period: two lines, uppercase on screen. */
 export function figuresTitle(period: Period, currentYear: number): string[] {
   if (period === "all") return ["Todo", "en cifras"];
@@ -169,17 +163,21 @@ export function figuresTitle(period: Period, currentYear: number): string[] {
  * One figure of the readout strip: a huge number that counts up, a small
  * red unit and a caption. `note` says something about this very figure
  * (`.tile-note`); without one, `caption` says what the figure measures.
+ * A null value is a dash, without a unit.
  */
 function figure(
   label: string,
-  value: number,
+  value: number | null,
   unit: string | null,
   note: string | null,
   caption: string,
-  count: (element: HTMLElement, value: number) => void,
+  count: Count,
+  format: (value: number) => string = (shown) => formatNumber(shown),
 ): HTMLElement {
   const number = el("span", { class: "mv-num" });
-  count(number, value);
+  if (value === null) number.textContent = "—";
+  else count(number, value, format);
+  const shownUnit = value === null ? null : unit;
   return el(
     "div",
     { class: "tile m" },
@@ -188,11 +186,14 @@ function figure(
       "dd",
       {},
       // The no-break space keeps "84 km" as the text of the value, on one line.
-      el("span", { class: "tile-value mv" }, number, unit === null ? null : NBSP, unit === null ? null : el("small", { class: "mv-unit" }, unit)),
+      el("span", { class: "tile-value mv" }, number, shownUnit === null ? null : NBSP, shownUnit === null ? null : el("small", { class: "mv-unit" }, shownUnit)),
       note === null ? el("span", { class: "mc" }, caption) : el("span", { class: "tile-note mc" }, note),
     ),
   );
 }
+
+/** Starts the count of a figure up to its value, written with `format`. */
+type Count = (element: HTMLElement, value: number, format: (value: number) => string) => void;
 
 /** «2024», «2024 y 2025», «2023, 2024 y 2025». */
 function yearList(years: readonly number[]): string {
@@ -200,45 +201,91 @@ function yearList(years: readonly number[]): string {
   return names.length < 2 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} y ${names[names.length - 1]}`;
 }
 
+/** «+25», «−236» or «0»: whole km, signed, without the unit. */
+function signedNumber(km: number): string {
+  const rounded = Math.round(km);
+  if (rounded === 0) return "0";
+  return `${rounded > 0 ? "+" : "−"}${formatNumber(Math.abs(rounded))}`;
+}
+
 /** The words of the fourth figure and of «Mes frente a mes», from one comparison. */
 interface MonthWords {
-  /** «noviembre de 2025 frente a noviembre de 2024», «noviembre de 2026 frente a la media de tus noviembres anteriores». */
-  readonly versus: string;
-  /** The note of the figure: what it is compared with and the difference, or why there is no comparison. */
+  /** «Noviembre, frente a 2025», «Noviembre de 2025, frente a 2024», «Noviembre, frente a tu media». */
+  readonly title: string;
+  /** What is compared and the two amounts, or why there is no comparison. */
   readonly note: string;
+  /**
+   * The difference in whole km, from the two amounts as written (so «94 km»
+   * and «274 km» always differ by 180), or null without a baseline.
+   */
+  readonly differenceKm: number | null;
+  /** The caption under the difference in «Mes frente a mes». */
+  readonly caption: string;
   /** Label of the bar of the baseline, or null without one. */
   readonly baselineLabel: string | null;
+  /** Label of the bar of the month shown. */
+  readonly label: string;
 }
 
 function monthWords(month: MonthComparison): MonthWords {
   const name = MONTHS_LONG[month.month] as string;
+  const Name = `${name[0]?.toUpperCase() ?? ""}${name.slice(1)}`;
   const many = `${name}s`;
-  const { baseline } = month;
-  const difference = signedKm(month.differenceKm ?? 0);
-  // Without a baseline the history begins after the month it would be compared with.
-  const since = month.historyStart === null ? "" : `Tu historial empieza en ${formatMonth(month.historyStart.year, month.historyStart.month)}: `;
+  const { baseline, year } = month;
+  // While the month is in progress only its first days count, in every year.
+  const days = month.throughDay === 1 ? `el 1 de ${name}` : `del 1 al ${month.throughDay} de ${name}`;
+  const Days = `${days[0]?.toUpperCase() ?? ""}${days.slice(1)}`;
+  const pending = month.inProgress ? ": el mes aún no ha terminado" : "";
+  const differenceKm = baseline === null ? null : Math.round(month.km) - Math.round(baseline.km);
+  // Without a baseline the history begins after the days it would be compared with.
+  const start = month.historyStartMs === null ? null : new Date(month.historyStartMs);
+  const since =
+    start === null
+      ? ""
+      : start.getMonth() === month.month
+        ? `Tu historial empieza el ${formatDate(month.historyStartMs as number)}: `
+        : `Tu historial empieza en ${formatMonth(start.getFullYear(), start.getMonth())}: `;
   if (month.against === "year") {
-    const versus = `${name} de ${month.year} frente a ${name} de ${month.year - 1}`;
-    return baseline === null
-      ? { versus, note: `${since}no hay ${name} de ${month.year - 1} con que comparar.`, baselineLabel: null }
-      : { versus, note: `${formatWholeKm(baseline.km)} en ${name} de ${month.year - 1} · ${difference}`, baselineLabel: `${name} de ${month.year - 1}` };
+    const before = year - 1;
+    const title = month.inProgress ? `${Name}, frente a ${before}` : `${Name} de ${year}, frente a ${before}`;
+    if (baseline === null) {
+      const missing = month.inProgress ? `días del 1 al ${month.throughDay} de ${name} de ${before}` : `${name} de ${before}`;
+      const note = `${since}no hay ${missing} con que comparar.`;
+      return { title, note, differenceKm, caption: note, baselineLabel: null, label: String(year) };
+    }
+    return {
+      title,
+      note: month.inProgress
+        ? `${Days}: ${formatWholeKm(month.km)} este año, ${formatWholeKm(baseline.km)} en ${before}`
+        : `${Name} entero: ${formatWholeKm(month.km)} en ${year}, ${formatWholeKm(baseline.km)} en ${before}`,
+      differenceKm,
+      caption: month.inProgress
+        ? `${Days} en ${year} y en ${before}, en km${pending}.`
+        : `${Name} entero en ${year} y en ${before}, en km.`,
+      baselineLabel: String(before),
+      label: String(year),
+    };
   }
-  const versus = `${name} de ${month.year} frente a la media de tus ${many} anteriores`;
+  const title = `${Name}, frente a tu media`;
   if (baseline === null || baseline.kind !== "average") {
-    return { versus, note: `${since}no hay ${many} anteriores con que comparar.`, baselineLabel: null };
+    const note = `${since}no hay ${many} anteriores con que comparar.`;
+    return { title, note, differenceKm: null, caption: note, baselineLabel: null, label: String(year) };
   }
+  const years = yearList(baseline.years);
   return {
-    versus,
-    note: `Media de ${formatWholeKm(baseline.km)} en ${plural(baseline.years.length, name, many)} (${yearList(baseline.years)}) · ${difference}`,
-    baselineLabel: `Media de tus ${many}`,
+    title,
+    note: `${Days}: ${formatWholeKm(month.km)} este año; media de ${formatWholeKm(baseline.km)} en ${years}`,
+    differenceKm,
+    caption: `${Days} este año y de media en ${years}, en km${pending}.`,
+    baselineLabel: `Media de ${years}`,
+    label: String(year),
   };
 }
 
 /** The four figures of the period (docs/PLAN.md, "Resumen", item 2). */
-function figures(data: RiderData, period: Period, count: (element: HTMLElement, value: number) => void): HTMLElement[] {
+function figures(data: RiderData, period: Period, count: Count): HTMLElement[] {
   const sum = totals(inPeriod(data.figures, period));
-  const month = monthComparison(data.figures, data.nowMs, period);
-  const words = monthWords(month);
+  const words = monthWords(monthComparison(data.figures, data.nowMs, period));
   return [
     figure("Kilómetros", sum.km, "km", null, "Según el servicio; unidad sin confirmar", count),
     figure("Salidas", sum.rides, null, null, "Rutas que cuentan en las cifras", count),
@@ -250,7 +297,8 @@ function figures(data: RiderData, period: Period, count: (element: HTMLElement, 
       "Suma de las duraciones conocidas",
       count,
     ),
-    figure(words.versus, month.km, "km", words.note, "", count),
+    // The difference is the figure: the month against what it is compared with.
+    figure(words.title, words.differenceKm, "km", words.note, "", count, signedNumber),
   ];
 }
 
@@ -258,9 +306,10 @@ function figures(data: RiderData, period: Period, count: (element: HTMLElement, 
 const MONTH_INITIALS = ["E", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"] as const;
 
 /**
- * Km per month of the chosen year (with the whole history, the current one)
- * and the two latest years before it with routes. The chosen year is red;
- * the nearer of the others ivory, the older one steel blue.
+ * Km per month of the three latest years with routes, whatever the period;
+ * the chosen year (with the whole history, the current one) is always among
+ * them, in red. Of the others the more recent is ivory, the older one steel
+ * blue.
  */
 function monthsBlock(data: RiderData, period: Period): HTMLElement {
   const anchor = period === "all" ? new Date(data.nowMs).getFullYear() : period;
@@ -284,26 +333,20 @@ function monthsBlock(data: RiderData, period: Period): HTMLElement {
   );
 }
 
-/** «+25», «−236» or «0»: the difference in whole km, signed, without its unit. */
-function signedNumber(km: number): string {
-  const rounded = Math.round(km);
-  if (rounded === 0) return "0";
-  return `${rounded > 0 ? "+" : "−"}${formatNumber(Math.abs(rounded))}`;
-}
-
 /**
  * The fourth figure, drawn: the same comparison as section 01 (the current
  * month of the chosen year against that of the year before, or against the
- * mean of the earlier ones with the whole history), as a big signed
- * difference in km and two bars. Without anything to compare with, a dash,
- * the reason and the one bar.
+ * mean of the earlier ones with the whole history; the same days in both
+ * while the month is in progress), as a big signed difference in km and two
+ * bars. Without anything to compare with, a dash, the reason and the one bar.
  */
 function monthDetailBlock(data: RiderData, period: Period, periodLabel: string): HTMLElement {
   const month = monthComparison(data.figures, data.nowMs, period);
   const words = monthWords(month);
   const baselineKm = month.baseline?.km ?? 0;
   const peak = Math.max(month.km, baselineKm);
-  const delta = el("span", { class: "delta-num" }, month.differenceKm === null ? "—" : signedNumber(month.differenceKm));
+  const difference = words.differenceKm;
+  const delta = el("span", { class: "delta-num" }, difference === null ? "—" : signedNumber(difference));
   const bar = (label: string, km: number, now: boolean): HTMLElement => {
     const fill = el("span", { class: now ? "mbar-fill now" : "mbar-fill" });
     fill.style.setProperty("--v", peak > 0 ? (km / peak).toFixed(4) : "0");
@@ -315,12 +358,6 @@ function monthDetailBlock(data: RiderData, period: Period, periodLabel: string):
       el("strong", { class: "mbar-value" }, formatWholeKm(km)),
     );
   };
-  const name = MONTHS_LONG[month.month] as string;
-  const versus = `${words.versus[0]?.toUpperCase()}${words.versus.slice(1)}`;
-  const caption =
-    month.differenceKm === null
-      ? words.note
-      : `${versus}, en km.${month.inProgress ? " El mes en curso aún no ha terminado." : ""}`;
   return block(
     "Mes frente a mes",
     periodLabel,
@@ -334,19 +371,19 @@ function monthDetailBlock(data: RiderData, period: Period, periodLabel: string):
           "p",
           {
             class: "delta-figure",
-            attrs: { "aria-label": month.differenceKm === null ? words.note : `${signedKm(month.differenceKm)}: ${words.versus}` },
+            attrs: { "aria-label": difference === null ? words.note : `${signedNumber(difference)}${NBSP}km: ${words.title}. ${words.note}.` },
           },
           delta,
-          month.differenceKm === null ? null : NBSP,
-          month.differenceKm === null ? null : el("small", { class: "unit" }, "km"),
+          difference === null ? null : NBSP,
+          difference === null ? null : el("small", { class: "unit" }, "km"),
         ),
-        el("p", { class: "mbar-diff" }, caption),
+        el("p", { class: "mbar-diff" }, words.caption),
       ),
       el(
         "ul",
         { class: "mbars" },
         words.baselineLabel === null ? null : bar(words.baselineLabel, baselineKm, false),
-        bar(`${name} de ${month.year}`, month.km, true),
+        bar(words.label, month.km, true),
       ),
     ),
   );
@@ -909,8 +946,8 @@ export function renderRiderPage(data: RiderData, scope: StorageScope, options: R
     const durationMs = first ? undefined : durationToken("--dur-reveal", 520);
     clear(readout);
     readout.append(
-      ...figures(data, period, (element, value) => {
-        countUp(element, value, (shown) => formatNumber(shown), { signal: motion.signal, durationMs });
+      ...figures(data, period, (element, value, format) => {
+        countUp(element, value, format, { signal: motion.signal, durationMs });
       }),
     );
     const blocks: [HTMLElement, HTMLElement][] = [

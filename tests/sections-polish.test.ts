@@ -146,7 +146,8 @@ describe("chart columns", () => {
     expect(months().querySelectorAll(".dim")).toHaveLength(0);
     (view.querySelector('.period-control input[value="2025"]') as HTMLInputElement).click();
     expect(red()).toEqual(["2025"]);
-    expect(months().querySelector('[data-series="2026"]')).toBeNull();
+    // The later year stays, in ivory.
+    expect(months().querySelector('.chart-bar.tone-prev[data-series="2026"]')).not.toBeNull();
     (view.querySelector('.period-control input[value="all"]') as HTMLInputElement).click();
     expect(red()).toEqual(["2026"]);
   });

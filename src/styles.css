@@ -1134,8 +1134,6 @@ select:focus-visible {
   row-gap: var(--s2);
   min-width: 0;
   padding-top: var(--s5);
-  /* The figure is sized to its cell, so a number never breaks from its unit. */
-  container-type: inline-size;
 }
 
 /*
@@ -1166,6 +1164,12 @@ select:focus-visible {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
+  /*
+   * The figure is sized to its cell, so a number never breaks from its unit.
+   * The container is the value, not the tile: a size container has layout
+   * containment, and a grid with layout containment is never a subgrid.
+   */
+  container-type: inline-size;
 }
 
 /* Two classes: it must win over the generic `.tile-value`, which comes later. */
@@ -1360,7 +1364,8 @@ select:focus-visible {
 }
 
 .plate-note {
-  margin-top: var(--s5);
+  /* The tiles above end with their own bottom padding (var(--s5)). */
+  margin-top: 0;
   padding-top: var(--s3);
   border-top: 1px solid var(--line-soft);
   font-size: 12.5px;
@@ -1718,20 +1723,27 @@ h4 {
   margin-block: 0;
 }
 
-/* ---------- small figures (state, streaks) ---------- */
+/*
+ * ---------- small figures (state, streaks) ----------
+ * Each tile spans two rows of the grid and shares them with the tiles beside
+ * it, so a title on two lines pushes every figure of its row down alike and
+ * the figures of a row stay on one line, at every width.
+ */
 .tiles {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
-  row-gap: var(--s5);
+  row-gap: 0;
 }
 
 .tiles .tile {
   position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: var(--s2);
+  display: grid;
+  grid-row: span 2;
+  grid-template-rows: subgrid;
+  row-gap: var(--s2);
+  align-content: start;
   min-width: 0;
-  padding: 0 var(--s4) 0 var(--gut);
+  padding: 0 var(--s4) var(--s5) var(--gut);
 }
 
 /* Same rule as the readout: centred in the left padding, short enough to lean only within it. */
@@ -1757,24 +1769,6 @@ h4 {
   display: flex;
   flex-direction: column;
   gap: var(--s1);
-}
-
-/*
- * Streaks: each tile spans two rows of the grid and shares them with the
- * tiles beside it, so a title on two lines pushes every figure of its row
- * down alike and the figures stay on one line.
- */
-.tiles-4 {
-  row-gap: 0;
-}
-
-.tiles-4 .tile {
-  display: grid;
-  grid-row: span 2;
-  grid-template-rows: subgrid;
-  row-gap: var(--s2);
-  align-content: start;
-  padding-bottom: var(--s5);
 }
 
 .tile-value {
