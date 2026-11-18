@@ -38,6 +38,17 @@ const sealedImport = (name, where) => ({
 const ROUTE_ID_SEAL = sealedImport("serviceRouteId", "the code that requests a route detail, in src/service/");
 const TRACE_SEAL = sealedImport("untrimmedLines", "the trim function in src/domain/trim.ts");
 const PLACES_SEAL = sealedImport("sensitivePlaces", "the trim function in src/domain/trim.ts");
+/**
+ * The whole trace is drawn on the signed-in rider's screen (docs/PLAN.md,
+ * section 4), so its lines leave src/domain/trim.ts through `screenTrace`.
+ * Only the trace store of the map and the atlas may import it: a shared
+ * card, a download, an image or the visit counters must not.
+ */
+const SCREEN_SEAL = {
+  regex: "(^|/)trim(\\.[cm]?[jt]s)?$",
+  importNames: ["screenTrace"],
+  message: "screenTrace is only for the trace store of the map and the atlas, src/ui/traceStore.ts: whatever leaves the screen gets no whole trace (docs/PLAN.md, privacy).",
+};
 
 export default tseslint.config(
   { ignores: ["dist/", "node_modules/", "coverage/"] },
@@ -68,16 +79,20 @@ export default tseslint.config(
           message: "No import.meta.glob: it loads modules past the import rules that guard the privacy seals.",
         },
       ],
-      "no-restricted-imports": ["error", { patterns: [ROUTE_ID_SEAL, TRACE_SEAL, PLACES_SEAL] }],
+      "no-restricted-imports": ["error", { patterns: [ROUTE_ID_SEAL, TRACE_SEAL, PLACES_SEAL, SCREEN_SEAL] }],
     },
   },
   {
     files: ["src/service/**"],
-    rules: { "no-restricted-imports": ["error", { patterns: [TRACE_SEAL, PLACES_SEAL] }] },
+    rules: { "no-restricted-imports": ["error", { patterns: [TRACE_SEAL, PLACES_SEAL, SCREEN_SEAL] }] },
   },
   {
     files: ["src/domain/trim.ts"],
     rules: { "no-restricted-imports": ["error", { patterns: [ROUTE_ID_SEAL] }] },
+  },
+  {
+    files: ["src/ui/traceStore.ts"],
+    rules: { "no-restricted-imports": ["error", { patterns: [ROUTE_ID_SEAL, TRACE_SEAL, PLACES_SEAL] }] },
   },
   {
     // Storage exception 1 (docs/PLAN.md, "Privacidad"): this file may use

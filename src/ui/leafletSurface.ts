@@ -1,5 +1,5 @@
 /**
- * The Leaflet map: OpenStreetMap tiles and the trimmed lines of one route.
+ * The Leaflet map: OpenStreetMap tiles and the whole lines of one route.
  * It draws lines only. No markers, so the start and the end of a ride are
  * never pointed at.
  *

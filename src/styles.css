@@ -2583,10 +2583,6 @@ h4 {
   color: var(--fg);
 }
 
-.map-status .map-note-hidden {
-  border-left-color: var(--amber);
-}
-
 .map-status .error {
   max-width: 52ch;
 }

@@ -5,7 +5,7 @@ import { createDemoService } from "../src/demo/fakeService";
 import { generateRider } from "../src/demo/generator";
 import { createDemoCaller } from "../src/demo/scenarios";
 import type { LatLng, Route, TraceLine } from "../src/domain/model";
-import { trimTrace } from "../src/domain/trim";
+import { screenTrace, trimTrace } from "../src/domain/trim";
 import type { ToolCaller, ToolName } from "../src/service/contract";
 import { loadAllRoutes, loadRouteTrace, loadVehicleState } from "../src/service/loader";
 import { startApp, type App } from "../src/ui/app";
@@ -115,7 +115,7 @@ interface Harness {
   readonly data: RiderData;
   readonly calls: ToolName[];
   readonly rec: Recorder;
-  /** The trimmed lines of a route, computed here the way the view must compute them. */
+  /** The whole lines of a route, computed here the way the view must compute them. */
   trimmed(route: Route): Promise<readonly TraceLine[]>;
 }
 
@@ -132,7 +132,7 @@ async function harness(): Promise<Harness> {
   const rec = recorder();
   const view = createMapView(data, caller, { signIn: null }, () => rec.surface);
   document.body.replaceChildren(view.element, view.legend);
-  return { view, data, calls, rec, trimmed: async (route) => trimTrace(await loadRouteTrace(service, route.ref)).lines };
+  return { view, data, calls, rec, trimmed: async (route) => screenTrace(await loadRouteTrace(service, route.ref)).lines };
 }
 
 const longest = (routes: readonly Route[]): Route => routes.reduce((a, b) => (b.distanceKm > a.distanceKm ? b : a));
@@ -224,14 +224,14 @@ describe("the drawing, as geometry", () => {
 });
 
 describe("the trace draws itself on the map", () => {
-  it("flies to the route, then grows the trimmed lines frame by frame to exactly those lines, with a head that goes at the end", async () => {
+  it("flies to the route, then grows the whole lines frame by frame to exactly those lines, with a head that goes at the end", async () => {
     const h = await harness();
     screen(true);
     const route = longest(h.data.routes);
     const trimmed = await h.trimmed(route);
     h.view.open(route);
     await vi.waitFor(() => expect(h.rec.flights).toHaveLength(1));
-    // A flight of --dur-hero (jsdom has no stylesheet: its fallback, 800 ms), with only the trimmed lines.
+    // A flight of --dur-hero (jsdom has no stylesheet: its fallback, 800 ms), with the whole lines.
     expect(h.rec.flights[0]?.flyMs).toBe(800);
     expect(h.rec.flights[0]?.lines).toEqual(trimmed);
     expect(h.rec.paints).toEqual([]);
@@ -375,20 +375,21 @@ describe("the trace draws itself on the map", () => {
     expect(h.rec.paints[h.rec.paints.length - 1]).toEqual({ lines: await h.trimmed(route), head: null });
   });
 
-  it("shows the short demo route as hidden for privacy: its message, nothing drawn, no flight", async () => {
+  it("draws the short demo route whole, where the trim for anything leaving the screen would leave nothing", async () => {
+    reduced = true;
     const h = await harness();
-    screen(true);
-    const short = h.data.routes.find((route) => route.distanceKm >= 0.3 && route.distanceKm <= 0.8);
+    const short = h.data.routes.find((route) => route.distanceKm >= 0.3 && route.distanceKm <= 0.8) as Route;
     expect(short).toBeDefined();
-    h.view.open(short as Route);
-    await vi.waitFor(() => expect(document.body.textContent).toContain("Traza oculta por privacidad"));
-    expect(stage().getAttribute("data-state")).toBe("empty");
-    expect(document.querySelector(".map-note-hidden")).not.toBeNull();
-    expect(h.rec.flights).toEqual([]);
-    expect(h.rec.paints).toEqual([]);
-    expect(h.rec.shows).toEqual([]);
-    expect(frames.size).toBe(0);
-    expect((document.querySelector(".map-canvas") as HTMLElement).hidden).toBe(true);
+    const untrimmed = await loadRouteTrace(createDemoService(rider), short.ref);
+    expect(trimTrace(untrimmed).lines).toEqual([]);
+    h.view.open(short);
+    await vi.waitFor(() => expect(h.rec.shows).toHaveLength(1));
+    const shown = h.rec.shows[0] as readonly TraceLine[];
+    expect(shown.length).toBeGreaterThan(0);
+    expect(shown).toEqual(screenTrace(untrimmed).lines);
+    expect(document.body.textContent).not.toContain("Traza oculta");
+    expect(stage().getAttribute("data-state")).not.toBe("empty");
+    expect((document.querySelector(".map-canvas") as HTMLElement).hidden).toBe(false);
   });
 
   it("shows a scan line while the trace loads and keeps a status line for screen readers", async () => {
@@ -531,7 +532,7 @@ describe("list and map in the same place", () => {
     expect(chosen()).toEqual([0]);
   });
 
-  it("reaches the privacy-hidden demo route by sorting by distance", async () => {
+  it("reaches the shortest demo route by sorting by distance and draws it", async () => {
     await page();
     const select = root.querySelector<HTMLSelectElement>(".archive-list select") as HTMLSelectElement;
     select.value = "km_asc";
@@ -540,9 +541,8 @@ describe("list and map in the same place", () => {
     expect(km).toBeGreaterThanOrEqual(0.3);
     expect(km).toBeLessThanOrEqual(0.8);
     rowButton(0).click();
-    await vi.waitFor(() => expect(root.querySelector(".map-status")?.textContent).toContain("Traza oculta por privacidad"));
-    expect(rec.paints).toEqual([]);
-    expect(rec.shows).toEqual([]);
+    await vi.waitFor(() => expect(rec.flights.length + rec.shows.length).toBeGreaterThan(0));
+    expect(root.querySelector(".map-status")?.textContent).not.toContain("Traza oculta");
   });
 
   it("stops a drawing under way when the user signs out", async () => {

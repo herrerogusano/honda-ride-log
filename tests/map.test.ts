@@ -107,7 +107,7 @@ describe("Mapa tab", () => {
     expect(h.resized()).toBe(0);
   });
 
-  it("requests the opened route once and draws only its trimmed lines", async () => {
+  it("requests the opened route once and draws its whole trace, up to both ends", async () => {
     const h = await harness();
     const route = h.data.routes.reduce((a, b) => (b.distanceKm > a.distanceKm ? b : a));
     const rawRoute = rider.routes.reduce((a, b) => ((b.distance_km ?? 0) > (a.distance_km ?? 0) ? b : a));
@@ -119,17 +119,12 @@ describe("Mapa tab", () => {
 
     const raw = rawLines(rider.detail(rawRoute.route_id) as RawRouteDetail);
     const drawn = h.shown[0] as readonly TraceLine[];
-    // Nothing within 400 m of either end is handed to the map.
-    expect(pathLength(drawn)).toBeLessThan(pathLength(raw) - 800);
-    expect(pathLength(drawn)).toBeGreaterThan(pathLength(raw) / 2);
-    const start = raw[0]?.points[0] as LatLng;
-    const end = raw[raw.length - 1]?.points.slice(-1)[0] as LatLng;
-    for (const line of drawn) {
-      for (const point of line.points) {
-        expect(distanceMeters(point, start)).toBeGreaterThanOrEqual(400);
-        expect(distanceMeters(point, end)).toBeGreaterThanOrEqual(400);
-      }
-    }
+    // The screen gets the whole trace (docs/PLAN.md, section 4): every line,
+    // every point, from the first to the last, and nothing else.
+    expect(drawn).toEqual(raw);
+    expect(pathLength(drawn)).toBeCloseTo(pathLength(raw), 6);
+    expect(drawn[0]?.points[0]).toEqual(raw[0]?.points[0]);
+    expect(drawn[drawn.length - 1]?.points.slice(-1)[0]).toEqual(raw[raw.length - 1]?.points.slice(-1)[0]);
     expect(text()).toContain("Recorrido dibujado en el mapa");
 
     // Opening it again uses what is in memory.
@@ -153,27 +148,33 @@ describe("Mapa tab", () => {
     expect(text()).toContain("con tramos marcados como inferidos");
   });
 
-  it("says the trace is hidden for privacy when the trim leaves nothing", async () => {
+  it("draws a short trace whole, without hiding anything near its start or its end", async () => {
     const h = await harness(async (name, _args, answer) => (name === "get_route_detail" ? straightDetail(700) : answer()));
     h.view.open(h.data.routes[0] as RiderData["routes"][number]);
-    await vi.waitFor(() => expect(text()).toContain("Traza oculta por privacidad"));
-    expect(h.shown).toEqual([]);
-    expect(h.surfaces()).toBe(0);
-    expect(canvas().hidden).toBe(true);
+    await vi.waitFor(() => expect(h.shown.length).toBe(1));
+    expect(h.shown[0]).toEqual(rawLines(straightDetail(700) as RawRouteDetail));
+    expect(pathLength(h.shown[0] as readonly TraceLine[])).toBeCloseTo(700, 0);
+    expect(text()).not.toContain("Traza oculta");
+    expect(canvas().hidden).toBe(false);
   });
 
-  it("clears the previous drawing before showing a route with a hidden trace", async () => {
-    let short = false;
-    const h = await harness(async (name, _args, answer) => (name === "get_route_detail" && short ? straightDetail(700) : answer()));
+  it("never hands the map the start and end places the service marks apart", async () => {
+    // A trace whose marked start and end lie 300 m off its lines: only the lines are drawn.
+    const metresPerDegree = (Math.PI * 6_371_008.8) / 180;
+    const off = 300 / metresPerDegree;
+    const detail = straightDetail(2_000) as { geojson: { features: unknown[] } };
+    detail.geojson.features.push(
+      { type: "Feature", geometry: { type: "Point", coordinates: [-1 - off, 40, 0] }, properties: { name: "start", label: "S" } },
+      { type: "Feature", geometry: { type: "Point", coordinates: [-1 - off, 40 + 2_000 / metresPerDegree, 0] }, properties: { name: "end", label: "E" } },
+    );
+    const h = await harness(async (name, _args, answer) => (name === "get_route_detail" ? detail : answer()));
     h.view.open(h.data.routes[0] as RiderData["routes"][number]);
     await vi.waitFor(() => expect(h.shown.length).toBe(1));
-    short = true;
-    h.view.open(h.data.routes[1] as RiderData["routes"][number]);
-    await vi.waitFor(() => expect(text()).toContain("Traza oculta por privacidad"));
-    // Cleared when the route was opened and again when its trace turned out to be hidden.
-    expect(h.cleared()).toBe(2);
-    expect(canvas().hidden).toBe(true);
-    expect(h.shown.length).toBe(1);
+    const points = (h.shown[0] as readonly TraceLine[]).flatMap((line) => line.points);
+    expect(points).toEqual([
+      [40, -1],
+      [40 + 2_000 / metresPerDegree, -1],
+    ]);
   });
 
   it("says so when the service sends no trace at all", async () => {
@@ -430,12 +431,13 @@ describe("Mapa tab", () => {
     expect(document.querySelectorAll(".map-status button")).toHaveLength(0);
   });
 
-  it("explains the dotted line and the hidden surroundings in a legend", async () => {
+  it("explains the dotted line, the whole trace and that it stays on this screen in a legend", async () => {
     await harness();
     const legend = document.querySelector(".map-legend")?.textContent ?? "";
     expect(legend).toContain("Es una etiqueta descriptiva, no una garantía de precisión.");
-    expect(legend).toContain("No se dibuja nada a menos de 400 m de donde empieza o acaba cada ruta");
-    expect(legend).toContain("ni marcadores de inicio o de fin.");
+    expect(legend).toContain("La traza se dibuja entera, sin marcadores de inicio ni de fin.");
+    expect(legend).toContain("la tarjeta para compartir y las descargas no llevan recorridos.");
+    expect(legend).not.toContain("400 m");
   });
 });
 

@@ -101,7 +101,7 @@ export function startApp(options: AppOptions): App {
   let generation = 0;
   /** The map of the view on screen; released when another view replaces it. */
   let activeMap: MapView | null = null;
-  /** The atlas of the view on screen and the trimmed traces it shares with the map; released with the view. */
+  /** The atlas of the view on screen and the traces it shares with the map; released with the view. */
   let activeAtlas: AtlasView | null = null;
   let activeTraces: TraceStore | null = null;
   /**
@@ -334,7 +334,7 @@ export function startApp(options: AppOptions): App {
     activeMap = null;
     activeAtlas?.destroy();
     activeAtlas = null;
-    // The trimmed traces leave memory with the view (sign-out, another load).
+    // The traces leave memory with the view (sign-out, another load).
     activeTraces?.dispose();
     activeTraces = null;
     viewMotion?.abort();

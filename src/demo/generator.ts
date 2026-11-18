@@ -177,7 +177,7 @@ function makeRoute(random: Random, startMs: number, trip: PlannedTrip): RawRoute
   };
 }
 
-/** How often a riding day ends with a short hop of 320 to 780 m (one whose trace the trim hides whole). */
+/** How often a riding day ends with a short hop of 320 to 780 m (just over the 300 m below which a route is left out; the trim for anything leaving the screen would hide its trace whole). */
 const SHORT_HOP_CHANCE = 0.02;
 
 function generateRoutes(random: Random, profile: Profile, nowMs: number, seed: number): RawRouteSummary[] {
