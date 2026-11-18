@@ -85,20 +85,33 @@ Concretado en `src/domain/stats.ts`:
    falta, el kilometraje de los datos del vehículo). Sin posición.
 2. **Cuatro cifras** del año elegido (por defecto el actual, con selector de
    año y «Todo»): km, salidas, horas en marcha (suma de duraciones conocidas)
-   y la comparación del mes en curso (el mes del reloj de hoy; km de los dos
-   y la diferencia). Con un año Y, ese mes de Y frente al mismo mes de Y − 1.
-   Con «Todo», ese mes del año en curso frente a la media del mismo mes en
-   los años anteriores que el historial cubre: un mes está en el historial
-   desde el mes de la primera ruta (incluido), y un mes cubierto sin salidas
-   cuenta 0 km. Un mes anterior a la primera ruta no se compara como 0: la
-   cifra lo dice («Tu historial empieza en noviembre de 2025: no hay
-   noviembre de 2024 con que comparar.»). `monthComparison` en
-   `src/domain/stats.ts`.
+   y la comparación del mes en curso (el mes del reloj de hoy). La cifra
+   grande es la diferencia en km con signo («−180 km», «+45 km»), del mismo
+   color que las demás; debajo, los km de los dos. Con un año Y, ese mes de
+   Y frente al mismo mes de Y − 1. Con «Todo», ese mes del año en curso
+   frente a la media del mismo mes en los años anteriores que el historial
+   cubre. La comparación es justa: si el mes aún no ha terminado, cuentan
+   los mismos días en todos los años, del 1 al día de hoy (en un mes más
+   corto, hasta su último día); si ya terminó (un año pasado elegido), mes
+   entero contra mes entero. Unos días de un año están en el historial si
+   la primera ruta empieza antes de que acaben, y unos días cubiertos sin
+   salidas cuentan 0 km. Unos días anteriores a la primera ruta no se
+   comparan como 0: la cifra enseña una raya y lo dice («Tu historial empieza
+   en noviembre de 2025: no hay noviembre de 2024 con que comparar.»). La
+   diferencia sale de los dos km ya redondeados, para que cuadre con lo
+   escrito. Textos, con el 18 de noviembre: «Noviembre, frente a 2025» y
+   «Del 1 al 18 de noviembre: 94 km este año, 274 km en 2025»; con un año
+   pasado, «Noviembre de 2025, frente a 2024» y «Noviembre entero: 326 km en
+   2025, 862 km en 2024»; con «Todo», «Noviembre, frente a tu media» y «Del
+   1 al 18 de noviembre: 94 km este año; media de 250 km en 2024 y 2025».
+   `monthComparison` en `src/domain/stats.ts`.
 3. **Km por mes comparando años**: barras agrupadas, 12 meses, una serie por
-   año: el año elegido (con «Todo», el año en curso), aunque no tenga rutas,
-   y los dos últimos años anteriores a él con rutas. El elegido va en rojo
-   (`--red-hi`), el anterior más cercano en marfil (`--bar-prev`) y el más
-   antiguo en azul acero (`--bar-old`); los tres pasan de 3:1 sobre el fondo
+   año: siempre los tres años más recientes con rutas, elijas lo que elijas.
+   El elegido (con «Todo», el año en curso) va en rojo (`--red-hi`), aunque
+   no tenga rutas; si no está entre esos tres, sustituye al más antiguo de
+   ellos, y nunca hay más de tres series. Los otros dos van por orden fijo:
+   el más reciente en marfil (`--bar-prev`) y el más antiguo en azul acero
+   (`--bar-old`); los tres pasan de 3:1 sobre el fondo
    (`tests/contrast.test.ts`). Un mes sin rutas es una barra vacía, no un
    hueco en el eje.
 4. **Hábitos**: salidas por día de la semana y salidas por hora de salida
@@ -134,7 +147,8 @@ Vistas de estas mismas cifras (ninguna definición nueva):
   (km del periodo entre sus salidas, las dos cifras de 01 Resumen) y las dos
   partes de los trayectos cortos, en cifras grandes.
 - **Mes frente a mes** enseña la diferencia en km con signo en grande y las
-  dos barras: la misma comparación que la cuarta cifra, con el mismo periodo.
+  dos barras: la misma comparación que la cuarta cifra, con el mismo periodo
+  y los mismos días.
   Sin nada con que comparar, una raya, la frase de la cifra y una sola
   barra.
 
@@ -975,7 +989,11 @@ Uno solo, en la barra: botones de radio (los años con rutas y «Todo») en un
 control segmentado, con una píldora roja que se desliza bajo el elegido. Las
 flechas del teclado se mueven entre opciones, como en cualquier grupo de
 radio. Con muchos años, la fila se desplaza dentro de su caja y mantiene a la
-vista el elegido. Siguen al periodo exactamente los mismos bloques del
+vista el elegido. En 640 px o menos, el mismo periodo es un menú nativo
+(`<select>`, con la etiqueta «Periodo» para los lectores de pantalla) que
+cabe en la primera fila con la marca y «Salir»; la hoja de estilos enseña
+una forma y oculta la otra (`display: none`), y elegir en cualquiera de las
+dos mueve la otra y cambia el periodo una vez. Siguen al periodo exactamente los mismos bloques del
 apartado 3: las cuatro cifras, los récords, días y horas, los trayectos
 cortos y la tarjeta; cada bloque dice el periodo que enseña.
 
@@ -1149,7 +1167,7 @@ saneador, el recorte, el login o el servicio.
 
 | Parte | Qué cambia |
 |---|---|
-| 02 Ritmo | Récords con la unidad pequeña y roja. «Mes frente a mes»: la diferencia en km con signo, enorme, y las dos barras. Km por mes: cada mes es una columna que responde al ratón, al dedo y al teclado (una parada de tabulador, ← → Inicio Fin; nombre accesible con las cifras) y escribe sus cifras en una línea bajo el gráfico; el año elegido va en rojo y los dos anteriores con rutas en marfil y azul acero. |
+| 02 Ritmo | Récords con la unidad pequeña y roja. «Mes frente a mes»: la diferencia en km con signo, enorme, y las dos barras. Km por mes: cada mes es una columna que responde al ratón, al dedo y al teclado (una parada de tabulador, ← → Inicio Fin; nombre accesible con las cifras) y escribe sus cifras en una línea bajo el gráfico; siempre los tres años más recientes con rutas: el elegido en rojo (si es más antiguo, sustituye al más antiguo de los tres) y los otros dos, el más reciente en marfil y el más antiguo en azul acero. |
 | 03 Hábitos | Calendario de actividad (apartado 3) con su leyenda, su pie y su tabla por mes; cada celda tiene nombre accesible (fecha, km, salidas) y se recorre con flechas (↑ ↓ un día, ← → una semana; una parada por año). En móviles se desplaza dentro de su caja, con el borde difuminado y «Desliza para ver el año entero →»; nunca la página. Las celdas aparecen columna a columna (el retraso se reparte para que un año entero no pase de `--dur-hero`). Días y horas: columnas como las de Ritmo, el pico en rojo vivo y el resto en `--red-mid` (3,09:1 sobre el fondo; antes `--red-dim`, 2,2:1) y la frase bajo cada uno. «En números» en lugar de «Trayectos cortos». |
 | 06 Taller | El mantenimiento dice su respuesta además en una cifra grande («Te faltan / Te has pasado» y los km) con una barra de la parte del intervalo recorrida, que se llena al aparecer y al guardar. La frase de siempre sigue siendo la línea `role="status"`; la cifra lleva `aria-hidden`. Mismos dos números, mismo almacenamiento. |
 | Tarjeta | Con el aspecto de la web: fondo casi negro, cuña roja inclinada, etiquetas numeradas en rojo, Barlow Condensed para título y cifras, Manrope para las etiquetas, unidades en rojo; 2160 × 2160 px (dibujada al doble). Espera a `document.fonts.load` de sus cuatro caras; si fallan o tardan más de 3 s, dibuja con las de reserva. Si la vista cambia antes, no dibuja. El botón de descarga se activa al terminar de dibujar. La vista previa escala con el ancho y aparece con un fundido. |
@@ -1922,7 +1940,8 @@ confirmado) y `src/ui/app.ts` (confirmación del borrado), y los fijan
 - En cuanto empieza una herramienta de cuenta, las lecturas que esperaban
   en la cola del cliente se cancelan sin salir (`reauth_required`,
   `signed_out`); las que ya estaban en vuelo terminan.
-- **«Borrar mis datos»**, al lado de «Salir», pide confirmación y llama a
+- **«Borrar mis datos»**, al final del apartado «Privacidad» del pie (solo
+  con una cuenta real, no en la demo), pide confirmación y llama a
   `borrar_mis_datos`; después, lo mismo que «Salir», también si falla. Si
   falla (o la sesión ya había terminado), antes de irse deja una marca
   fija, y al volver del `/logout` la portada dice «No hemos podido
@@ -1941,14 +1960,24 @@ confirmado) y `src/ui/app.ts` (confirmación del borrado), y los fijan
 - Las herramientas de cuenta solo cuentan como hechas si la respuesta dice
   `isError: false` y trae un elemento de texto no vacío; si no, es
   `bad_response` (un `result: {}` ya no pasa por un borrado correcto).
-- En la barra, «Borrar mis datos» y «Salir» van juntos en un grupo
-  («Tu cuenta») separado por una línea fina: «Salir» es texto, como los
-  enlaces de sección, con una línea que crece debajo al pasar el ratón;
-  «Borrar mis datos» lleva un contorno tenue (dibujado dentro de la zona
-  pulsable de 44 px) que se vuelve rojo al pasar el ratón. Con la barra en
-  dos filas (1100 px o menos) el grupo pasa a la segunda, a la derecha de
-  los enlaces, para que el periodo no quede aplastado (antes, a 375 px, se
-  quedaba en 0 px de ancho). La barra del modo por invitación no cambia.
+- En la barra solo queda «Salir», como texto (los enlaces de sección),
+  con una línea que crece debajo al pasar el ratón; igual en los dos
+  modos. «Borrar mis datos» está al final del apartado «Privacidad» del
+  pie, en una frase y como botón con aspecto de enlace (el color de los
+  enlaces de la web, subrayado, zona pulsable de 44 px). La confirmación
+  se abre justo debajo, con el foco en su primer botón; «Cancelar» devuelve
+  el foco a «Borrar mis datos». Antes iban los dos juntos en la barra
+  (grupo «Tu cuenta») y, en un móvil, se comían la segunda fila de la
+  barra: la sacaban de los enlaces de sección.
+- Con la barra en dos filas (1100 px o menos), la primera lleva la marca,
+  el periodo y «Salir», y la segunda los enlaces de sección enteros. En
+  640 px o menos el periodo es un menú compacto («2026 ▾», con «Todo»
+  dentro) y la marca vuelve a enseñar «Ride Log» (antes solo la cuña).
+- En la pantalla previa al login el formulario va en una tarjeta oscura
+  con borde (fondo de superficie, línea fina, relleno), en todas las
+  anchuras: en un móvil la cuña roja del fondo queda detrás de su parte
+  baja, y el botón rojo «Continuar» perdía su borde contra ella. En
+  escritorio la tarjeta queda a la izquierda, lejos de la cuña.
 - El script de Turnstile tiene 15 s para llegar; si no, el formulario dice
   que no se ha podido hacer la comprobación. El elemento `<script>` se
   queda (quitarlo no cancela la petición): un reintento espera sobre el
@@ -2095,9 +2124,9 @@ hace la misma cuenta.
   real de su respuesta (la web no la lee: basta con que no sea un error).
 - Que el control de Turnstile se resuelva con interacción (en la prueba se
   resolvió solo) y en un iPhone.
-- La barra con «Borrar mis datos» y «Salir» con una cuenta en pantalla: se
-  midió forzando los botones visibles en la portada (caben a 320 px, en
-  dos líneas), no con datos reales.
+- La barra con «Salir» y «Borrar mis datos» en el pie con una cuenta real
+  en pantalla: se miró con la demo (forzando el botón del pie), no con
+  datos reales.
 - Que Cloudflare Pages con sus cabeceras (`frame-ancestors`,
   `Cross-Origin-Opener-Policy`) no moleste al control: solo se probó con
   la etiqueta `<meta>`.

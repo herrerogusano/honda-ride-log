@@ -242,13 +242,14 @@ export function startApp(options: AppOptions): App {
   );
   signOutButton.hidden = true;
 
-  // The open service only: next to «Salir», with a confirmation first.
+  // The open service only, with a real account on screen: at the end of the
+  // footer's «Privacidad», with a confirmation first.
   const deleteButton = el(
     "button",
-    { class: "button button-quiet delete-data", attrs: { type: "button" }, on: { click: () => confirmDelete() } },
+    { class: "link-button delete-data", attrs: { type: "button" }, on: { click: () => confirmDelete() } },
     "Borrar mis datos",
   );
-  deleteButton.hidden = true;
+  const deleteLine = el("p", { class: "foot-delete" }, "Puedes borrar al momento tus datos de este servicio: ", deleteButton, ".");
 
   function confirmDelete(): void {
     if (publicService === null) return;
@@ -291,8 +292,9 @@ export function startApp(options: AppOptions): App {
         ),
       ),
     );
-    content.prepend(panel);
-    panel.scrollIntoView?.({ block: "start" });
+    // Right under the button, so the page does not jump away from it.
+    deleteLine.after(panel);
+    panel.scrollIntoView?.({ block: "nearest" });
     panel.querySelector("button")?.focus();
   }
 
@@ -316,8 +318,8 @@ export function startApp(options: AppOptions): App {
         "div",
         { class: "bar-end" },
         periodSlot,
-        // The open service groups its two account actions (styled as a pair); the invitation bar keeps «Salir» as it was.
-        publicService === null ? signOutButton : el("div", { class: "bar-account", attrs: { role: "group", "aria-label": "Tu cuenta" } }, deleteButton, signOutButton),
+        // The only account action in the bar; «Borrar mis datos» is in the footer.
+        signOutButton,
       ),
     ),
   );
@@ -362,7 +364,6 @@ export function startApp(options: AppOptions): App {
     accountShown = false;
     showDemoMarks(false);
     signOutButton.hidden = true;
-    deleteButton.hidden = true;
     setHash("");
     clear(content);
     if (problem !== undefined) content.append(errorPanel(problem, null));
@@ -541,6 +542,8 @@ export function startApp(options: AppOptions): App {
       ...page.sections.map((section) => section.element),
       page.footer,
     );
+    // A real account in the open service can delete its data from the footer's «Privacidad».
+    if (publicService !== null && accountShown) page.footer.querySelector(".foot-privacy")?.append(deleteLine);
     // The loading stage becomes the page: its wedge wipes over the hero and settles on the hero's wedge.
     stage.handOff(page.hero, motion.signal);
     publishBar();
@@ -558,7 +561,6 @@ export function startApp(options: AppOptions): App {
       accountShown = true;
       showDemoMarks(false);
       signOutButton.hidden = account === undefined;
-      deleteButton.hidden = publicService === null;
       if (scenarioFromHash(location.hash) !== null) setHash("");
     }
     // The instrument-cluster boot: its loops stop when this load is replaced, abandoned or done.
@@ -631,7 +633,6 @@ export function startApp(options: AppOptions): App {
     scenarioSelect.value = scenario;
     showDemoMarks(true);
     signOutButton.hidden = true;
-    deleteButton.hidden = true;
     options.onDemo?.();
     await load(createDemoCaller(scenario, now(), options.demoDelayMs ?? 120), { demo: true });
   }

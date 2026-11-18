@@ -303,26 +303,13 @@ code {
 }
 
 /*
- * The open service's account actions (src/ui/app.ts), a pair set apart by a
- * thin rule: «Salir» reads like the section links (plain text, a line grows
- * under it on hover); «Borrar mis datos» keeps a quiet outline that turns
- * red only on hover. Neither competes with «Entrar» or the period.
+ * «Salir», the only account action in the bar (src/ui/app.ts): plain text
+ * like the section links, with a line that grows under it on hover. It never
+ * competes with «Entrar» or the period. «Borrar mis datos» is in the footer.
  */
-.bar-account {
-  display: flex;
+.topbar .sign-out {
+  position: relative;
   flex: none;
-  align-items: center;
-  gap: var(--s1);
-  padding-left: var(--s3);
-  border-left: 1px solid var(--line);
-}
-
-/* Nothing to show (landing, demo): no rule hanging in the bar. */
-.bar-account:not(:has(> :not([hidden]))) {
-  display: none;
-}
-
-.bar-account .button {
   padding: 0 12px;
   background: transparent;
   border-color: transparent;
@@ -331,29 +318,11 @@ code {
   color: var(--fg-2);
 }
 
-.bar-account .button:focus-visible {
+.topbar .sign-out:focus-visible {
   outline-offset: 0;
 }
 
-/* The outline is drawn inside the 44 px target, lighter than a full button. */
-.bar-account .delete-data {
-  position: relative;
-}
-
-.bar-account .delete-data::before {
-  content: "";
-  position: absolute;
-  inset: 6px 0;
-  border: 1px solid var(--line);
-  border-radius: 2px;
-  transition: border-color var(--dur-ui) var(--ease-out);
-}
-
-.bar-account .sign-out {
-  position: relative;
-}
-
-.bar-account .sign-out::after {
+.topbar .sign-out::after {
   content: "";
   position: absolute;
   left: 12px;
@@ -556,6 +525,40 @@ code {
   transition: transform var(--dur-ui) var(--ease-out);
 }
 
+/* The same choice as a native menu, on phones only (the 640 px rule below shows it). */
+.period-compact {
+  position: relative;
+  display: none;
+}
+
+.period-select {
+  appearance: none;
+  padding: 0 30px 0 12px;
+  background: var(--surface);
+  border-color: var(--line);
+  border-radius: 3px;
+  font: 700 13px/1 var(--text);
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+
+.period-select:focus-visible {
+  outline-offset: 0;
+}
+
+.period-caret {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  width: 7px;
+  height: 7px;
+  margin-top: -5px;
+  border-right: 2px solid var(--fg-2);
+  border-bottom: 2px solid var(--fg-2);
+  transform: rotate(45deg);
+  pointer-events: none;
+}
+
 /* ---------- demo banner (under the bar, scrolls away) ---------- */
 .demo-banner {
   display: flex;
@@ -665,25 +668,19 @@ code {
     border-color: var(--red-press);
   }
 
-  .bar-account .sign-out:hover:not(:disabled) {
+  .topbar .sign-out:hover:not(:disabled) {
     background: transparent;
     border-color: transparent;
     color: var(--fg);
   }
 
-  .bar-account .sign-out:hover::after {
+  .topbar .sign-out:hover::after {
     opacity: 1;
     transform: none;
   }
 
-  .bar-account .delete-data:hover:not(:disabled) {
-    background: transparent;
-    border-color: transparent;
-    color: var(--red-hi);
-  }
-
-  .bar-account .delete-data:hover::before {
-    border-color: var(--red-dim);
+  .link-button:hover:not(:disabled) {
+    text-decoration-thickness: 2px;
   }
 
   .nav-link:hover {
@@ -1134,8 +1131,6 @@ select:focus-visible {
   row-gap: var(--s2);
   min-width: 0;
   padding-top: var(--s5);
-  /* The figure is sized to its cell, so a number never breaks from its unit. */
-  container-type: inline-size;
 }
 
 /*
@@ -1166,6 +1161,12 @@ select:focus-visible {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
+  /*
+   * The figure is sized to its cell, so a number never breaks from its unit.
+   * The container is the value, not the tile: a size container has layout
+   * containment, and a grid with layout containment is never a subgrid.
+   */
+  container-type: inline-size;
 }
 
 /* Two classes: it must win over the generic `.tile-value`, which comes later. */
@@ -1360,7 +1361,8 @@ select:focus-visible {
 }
 
 .plate-note {
-  margin-top: var(--s5);
+  /* The tiles above end with their own bottom padding (var(--s5)). */
+  margin-top: 0;
   padding-top: var(--s3);
   border-top: 1px solid var(--line-soft);
   font-size: 12.5px;
@@ -1420,11 +1422,26 @@ select:focus-visible {
   text-transform: uppercase;
 }
 
-.pass-body,
-.pass-form {
+.pass-body {
   display: grid;
   gap: var(--s3);
   width: min(100%, 46ch);
+}
+
+/*
+ * The form sits on a card at every width: on a phone the hero's red wedge
+ * runs behind its lower part, and the red «Continuar» button lost its edge
+ * against it. The card keeps the same width as the text above it.
+ */
+.pass-form {
+  position: relative;
+  display: grid;
+  gap: var(--s3);
+  width: min(100%, 46ch);
+  padding: var(--s4);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 3px;
 }
 
 .pass-lead {
@@ -1718,20 +1735,27 @@ h4 {
   margin-block: 0;
 }
 
-/* ---------- small figures (state, streaks) ---------- */
+/*
+ * ---------- small figures (state, streaks) ----------
+ * Each tile spans two rows of the grid and shares them with the tiles beside
+ * it, so a title on two lines pushes every figure of its row down alike and
+ * the figures of a row stay on one line, at every width.
+ */
 .tiles {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
-  row-gap: var(--s5);
+  row-gap: 0;
 }
 
 .tiles .tile {
   position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: var(--s2);
+  display: grid;
+  grid-row: span 2;
+  grid-template-rows: subgrid;
+  row-gap: var(--s2);
+  align-content: start;
   min-width: 0;
-  padding: 0 var(--s4) 0 var(--gut);
+  padding: 0 var(--s4) var(--s5) var(--gut);
 }
 
 /* Same rule as the readout: centred in the left padding, short enough to lean only within it. */
@@ -1757,24 +1781,6 @@ h4 {
   display: flex;
   flex-direction: column;
   gap: var(--s1);
-}
-
-/*
- * Streaks: each tile spans two rows of the grid and shares them with the
- * tiles beside it, so a title on two lines pushes every figure of its row
- * down alike and the figures stay on one line.
- */
-.tiles-4 {
-  row-gap: 0;
-}
-
-.tiles-4 .tile {
-  display: grid;
-  grid-row: span 2;
-  grid-template-rows: subgrid;
-  row-gap: var(--s2);
-  align-content: start;
-  padding-bottom: var(--s5);
 }
 
 .tile-value {
@@ -2002,6 +2008,32 @@ h4 {
 
 .site-foot li::marker {
   color: var(--red-hi);
+}
+
+/* The open service, with a real account: the last line of «Privacidad» (src/ui/app.ts). */
+.foot-delete {
+  max-width: 80ch;
+  margin-top: var(--s3);
+  line-height: 1.6;
+}
+
+/* A button that reads as a link: the web's link colour, underlined. */
+.link-button {
+  /* A 44 px target that does not open up the line: the padding is taken back by the margin. */
+  display: inline-block;
+  padding: 12px 0;
+  margin-block: -12px;
+  background: none;
+  border: 0;
+  color: var(--red-hi);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.foot-privacy .delete-confirm {
+  margin-block: var(--s4) 0;
 }
 
 .foot-brand {
@@ -3778,78 +3810,49 @@ select:focus-visible {
     /* The strip's own padding moves the links, not the underline's origin. */
     left: 0;
   }
-
-  /*
-   * With the account actions on screen (open service), they move to the
-   * second row, after the section links, so the period keeps the first row
-   * with the brand: the bar stays two rows tall.
-   */
-  .topbar:has(.bar-account > :not([hidden])) .bar-end {
-    display: contents;
-  }
-
-  .topbar:has(.bar-account > :not([hidden])) .bar-period {
-    margin-left: auto;
-  }
-
-  /* An empty full-width item between the two rows: the links never climb to the first. */
-  .topbar:has(.bar-account > :not([hidden])) .topbar-in::before {
-    content: "";
-    order: 2;
-    flex: 0 0 100%;
-    height: 0;
-  }
-
-  /* Its basis outweighs its negative left margin, so it cannot sit on the separator's row. */
-  .topbar:has(.bar-account > :not([hidden])) .bar-nav {
-    flex: 1 1 calc(var(--pad) + 1px);
-    margin-right: 0;
-  }
-
-  .topbar:has(.bar-account > :not([hidden])) .bar-account {
-    order: 3;
-    align-self: stretch;
-    /* Flush with the links' strip: its top line runs on without a gap. */
-    margin-left: calc(var(--s4) * -1);
-    margin-right: calc(var(--pad) * -1);
-    padding-inline: var(--s2) var(--pad);
-    border-top: 1px solid var(--line-soft);
-    border-left-color: var(--line-soft);
-  }
 }
 
+/* ---------- the bar on a phone: the period as a compact menu ---------- */
 @media (max-width: 640px) {
-  .bar-account .button {
+  .period-control {
+    display: none;
+  }
+
+  .period-compact {
+    display: block;
+  }
+
+  /* The menu keeps the width of its longest option: the bar never squeezes it empty. */
+  .bar-period {
+    flex: none;
+  }
+
+  .topbar .sign-out {
     padding: 0 10px;
     font-size: 11px;
     letter-spacing: 0.1em;
   }
 
-  .bar-account .sign-out::after {
+  .topbar .sign-out::after {
     left: 10px;
     right: 10px;
   }
 }
 
-@media (max-width: 520px) {
-  .topbar:has(.bar-account > :not([hidden])) .bar-account {
-    margin-left: calc(var(--s3) * -1);
-  }
-}
-
 @media (max-width: 419px) {
-  .bar-account {
-    gap: 0;
-  }
-
-  .bar-account .button {
+  .topbar .sign-out {
     padding: 0 8px;
     letter-spacing: 0.06em;
   }
 
-  .bar-account .sign-out::after {
+  .topbar .sign-out::after {
     left: 8px;
     right: 8px;
+  }
+
+  .brand {
+    gap: 8px;
+    font-size: 21px;
   }
 }
 
@@ -4005,21 +4008,6 @@ select:focus-visible {
   .data-table th,
   .data-table td {
     padding: 10px 8px;
-  }
-
-  /* With the links in the bar the brand keeps its mark; its name stays for screen readers. */
-  .topbar.has-nav .brand {
-    gap: 0;
-  }
-
-  .topbar.has-nav .brand b,
-  .topbar.has-nav .brand-word {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
   }
 
   .topbar-in {
