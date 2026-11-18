@@ -37,8 +37,8 @@ Cloudflare comprueba que no eres un robot. La contraseña se escribe en la
 página de acceso del servicio, no en esta web. Si no quedan plazas, la demo
 sigue abierta para todo el mundo.
 
-La copia antigua en <https://herrerogusano.github.io/honda-ride-log/> sigue
-publicada y solo deja entrar a las personas invitadas.
+La dirección antigua, <https://herrerogusano.github.io/honda-ride-log/>, ya
+no publica la web: solo lleva a <https://my-ride-log.pages.dev/>.
 
 ## Privacidad
 
@@ -101,8 +101,8 @@ npm run dev        # servidor de desarrollo: http://localhost:5173/#demo
 npm run lint       # ESLint
 npm run typecheck  # TypeScript sin emitir
 npm test           # tests (Vitest)
-npm run build      # typecheck + build para GitHub Pages en dist/ + comprobaciones de publicación
-npm run build:cloudflare  # lo mismo para Cloudflare Pages, con dist/_headers
+npm run build      # typecheck + build por invitación en dist/ (no se publica) + comprobaciones
+npm run build:cloudflare  # lo mismo para la web publicada en Cloudflare Pages, con dist/_headers
 ```
 
 Sin configuración local, `npm run dev` solo enseña la demo. Las reglas para

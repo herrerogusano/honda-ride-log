@@ -4,7 +4,7 @@ Este documento explica a quien lea el código qué se construye, qué está
 decidido, qué reglas de privacidad y de datos se cumplen y qué se ha
 comprobado y qué no.
 
-Última actualización: 2026-11-17.
+Última actualización: 2026-11-18.
 
 ## 1. Qué es
 
@@ -18,7 +18,10 @@ Una web estática en la que cada persona invitada entra con su cuenta de MAPIT
 - El navegador inicia sesión en el login del servicio (Amazon Cognito, flujo
   de código de autorización con PKCE, cliente público sin secreto) y llama a
   las herramientas con el token de acceso.
-- Se publica en GitHub Pages: `https://herrerogusano.github.io/honda-ride-log/`.
+- Se publica en Cloudflare Pages: `https://my-ride-log.pages.dev/`
+  (apartado 17). Hasta el 2026-11-18 también se publicaba, por invitación,
+  en GitHub Pages (`https://herrerogusano.github.io/honda-ride-log/`); esa
+  dirección sirve ahora solo una página que redirige a la nueva.
 - Proyecto personal, sin relación con Honda ni con MAPIT.
 
 ## 2. Decisiones tomadas
@@ -28,7 +31,7 @@ las decisiones anotadas aquí.
 
 | Tema | Decisión |
 |---|---|
-| Forma | Web estática en un repo propio y público, publicada en GitHub Pages y, con el modo `cloudflare`, en Cloudflare Pages con cabeceras de seguridad propias (apartado 17). |
+| Forma | Web estática en un repo propio y público, publicada con el modo `cloudflare` en Cloudflare Pages con cabeceras de seguridad propias (apartado 17). GitHub Pages solo redirige allí desde el 2026-11-18. |
 | Alcance | Una sola página que se desplaza, con secciones numeradas (Resumen, Ritmo, Hábitos, Rutas con el mapa y la lista, Atlas, Taller) bajo una barra fija; la primera versión tenía tres pestañas (Resumen, Mapa, Rutas). Tarjeta para compartir solo con cifras, modo demo sin login. |
 | Fuera | Sección de territorio, filtros de «geometría inferida», exportación JSON. (Las fuentes incrustadas estuvieron fuera hasta D-025: ver «Aspecto». El atlas 3D estuvo fuera hasta el apartado 15.) |
 | Velocidad máxima | Se enseña en cada ruta (lista, mapa y CSV), nunca en la tarjeta para compartir, porque la tarjeta sale de la web. Desde el 2026-11-10; antes estaba fuera en cualquier parte. |
@@ -577,7 +580,8 @@ política de seguridad de contenido, tal como se publicará: `npm run build`,
 | `vite.config.ts` | Build, ruta base de cada publicación (GitHub Pages o Cloudflare Pages), inyección de la política y `_headers`. |
 | `analytics.config.json`, `src/analytics/`, `src/storage/consent.ts` | Contadores de visitas, aviso de cookies y la respuesta guardada (apartado 17). |
 | `scripts/check-dist.mjs` | Comprobaciones de publicación sobre `dist/index.html`. |
-| `.github/workflows/` | `ci.yml` (construye las dos publicaciones), `pages.yml` (publica `dist/` en GitHub Pages cuando cambia `main`) y `cloudflare-pages.yml` (publica el modo `cloudflare` en Cloudflare Pages cuando cambia `main`; apartado 17). |
+| `gh-pages-redirect/` | La página que sirve GitHub Pages: solo redirige a `https://my-ride-log.pages.dev/` (apartado 17, «Dos publicaciones»). Fuera del build de Vite; la comprueba `tests/gh-pages-redirect.test.ts`. |
+| `.github/workflows/` | `ci.yml` (construye los modos `production` y `cloudflare`), `pages.yml` (sube `gh-pages-redirect/` tal cual a GitHub Pages cuando cambia `main`, sin construir nada) y `cloudflare-pages.yml` (publica el modo `cloudflare` en Cloudflare Pages cuando cambia `main`; apartado 17). |
 
 Reglas:
 
@@ -640,8 +644,9 @@ primeras se cambian con una línea en `src/config.ts`.
    como mucho): recargar no saca de la cuenta, pero una pestaña nueva tiene que
    entrar por su cuenta (apartado 10, «El token»). Hasta el 2026-11-18 vivía
    solo en memoria y recargar obligaba a volver a entrar.
-9. Todas las webs de Pages de la cuenta comparten el origen (apartado 10,
-   «Riesgo de origen compartido»).
+9. Todas las webs de GitHub Pages de la cuenta comparten el origen
+   (apartado 10, «Riesgo de origen compartido»). Desde el 2026-11-18 la web
+   ya no se publica allí, solo una página de redirección.
 10. El nombre lleva una marca comercial y la web usa una API no oficial. Si
     alguna vez se abre al público general, hay que revisarlo.
 
@@ -679,7 +684,10 @@ página. Lo comprobado y lo no comprobado está en el apartado 16.
   desconocido), el build falla con el nombre del campo y sin su valor.
 - Direcciones de retorno: `http://localhost:5173/` en `development` y
   `https://herrerogusano.github.io/honda-ride-log/` en `production`. Deben
-  coincidir carácter a carácter con las del cliente del login.
+  coincidir carácter a carácter con las del cliente del login. El build
+  `production` ya no se publica (apartado 17, «Dos publicaciones»): en esa
+  dirección solo queda una página que redirige, así que una vuelta del login
+  a ella acaba en la raíz de `my-ride-log.pages.dev`, sin `code` ni `state`.
 - El servidor de desarrollo sirve en la raíz (`/`), en `localhost:5173` con
   el puerto fijo; el build y `npm run preview` siguen en `/honda-ride-log/`.
   Motivo: el login devuelve al navegador a `http://localhost:5173/`
@@ -1035,7 +1043,12 @@ página.
 
 ### Riesgo de origen compartido en GitHub Pages
 
-Riesgo conocido y aceptado. Todas las webs de Pages de la cuenta comparten el
+Desde el 2026-11-18 la web no se publica en GitHub Pages (apartado 17,
+«Dos publicaciones»): allí solo hay una página sin scripts que redirige, y
+este riesgo deja de aplicarse a la web publicada. Se deja escrito por si el
+build `production` volviera a publicarse allí.
+
+Riesgo conocido y aceptado mientras se publicaba. Todas las webs de Pages de la cuenta comparten el
 origen `https://herrerogusano.github.io`. Cualquier otra web de Pages de la
 cuenta, o una dependencia comprometida en ella, corre con el mismo origen.
 Podría abrir `/honda-ride-log/` en una ventana o un marco, leer el `?code=` y
@@ -1694,11 +1707,27 @@ apartado 4:
 
 | Modo de Vite | Dónde | Orden | Ruta base | Servicio | Contadores | `dist/_headers` |
 |---|---|---|---|---|---|---|
-| `production` | GitHub Pages (`pages.yml`), como hasta ahora | `npm run build` | `/honda-ride-log/` | el de producción | ninguno | no |
+| `production` | ninguno desde el 2026-11-18 (antes GitHub Pages); la CI lo sigue construyendo | `npm run build` | `/honda-ride-log/` | el de producción | ninguno | no |
 | `cloudflare` | Cloudflare Pages, proyecto `my-ride-log` (`cloudflare-pages.yml`) | `npm run build:cloudflare` | `/` | el servicio abierto de producción (apartado 18, «Abrir producción») | los de `analytics.config.json`: Cloudflare Web Analytics (token público del sitio `my-ride-log.pages.dev`) y Google Analytics (identificador público `G-JVB68585NG`) | sí |
 
-- `pages.yml` sigue publicando en GitHub Pages: mientras exista, hay dos
-  copias publicadas, y la de GitHub Pages no tiene contadores.
+- **Desde el 2026-11-18 solo hay una web publicada, la de Cloudflare
+  Pages.** `pages.yml` ya no construye la app: sube tal cual la carpeta
+  `gh-pages-redirect/` (fuera del build de Vite) a GitHub Pages, para que
+  los enlaces guardados a `https://herrerogusano.github.io/honda-ride-log/`
+  no se rompan. Esa carpeta tiene `index.html` y un `404.html` idéntico
+  (GitHub Pages sirve el segundo en cualquier ruta que no existe), con:
+  `<meta http-equiv="refresh">` a `https://my-ride-log.pages.dev/`, un
+  enlace visible a la misma dirección, `<link rel="canonical">`, una
+  política `default-src 'none'; base-uri 'none'; form-action 'none'` en
+  `<meta>` y `referrer` `no-referrer`. Sin scripts, sin estilos y sin
+  terceros. Redirige siempre a la raíz: no reenvía ni la consulta ni el
+  fragmento, que podrían llevar el `code` y el `state` de un login antiguo.
+  `tests/gh-pages-redirect.test.ts` lee la página y `pages.yml` y lo
+  comprueba en la CI. Sigue publicando solo desde `main` y con el repo
+  público.
+- El modo `production` y su entrada de `environments.config.json` no
+  cambian: el código por invitación sigue ahí y la CI lo construye y
+  comprueba (`npm run build`), pero no se publica en ninguna parte.
 - `cloudflare` es solo demo en `environments.config.json` porque la
   dirección de retorno del login tiene que estar dada de alta en el
   servicio, carácter a carácter, y la de `pages.dev` solo lo estará en el
@@ -1883,8 +1912,8 @@ comprueban `tests/lint-storage.test.ts` y `tests/analytics.test.ts`.
 ### Origen propio
 
 En `pages.dev` la web tiene su propio origen: desaparece el riesgo del origen
-compartido de GitHub Pages (apartado 10) para quien entre por ahí. La copia
-de GitHub Pages lo sigue teniendo mientras exista.
+compartido de GitHub Pages (apartado 10). Desde el 2026-11-18 no hay copia
+de la web en GitHub Pages, solo la página de redirección.
 
 ### Si algún día la contraseña se escribe en esta web
 
@@ -1958,6 +1987,12 @@ antes de `start()`. Habría que elegir entre:
 
 ### Qué no se ha comprobado
 
+- La página de redirección de GitHub Pages (`gh-pages-redirect/`) solo está
+  comprobada como texto por `tests/gh-pages-redirect.test.ts`. Sin ver en
+  un navegador que la redirección salte con la política `default-src
+  'none'`, que una ruta antigua con `?code=…&state=…` o `#demo` acabe en la
+  raíz limpia, ni que GitHub Pages sirva `404.html` en las rutas que no
+  existen.
 - Nada contra cuentas reales: en el navegador los identificadores eran
   inventados. Ni que Cloudflare Pages lea `_headers` como esperamos
   (`vite preview` no envía esas cabeceras, así que `frame-ancestors` no se
@@ -2270,7 +2305,8 @@ medio rellenar el build falla. Esa PR, al fusionarse, publica la web
 abierta en Cloudflare Pages (`cloudflare-pages.yml`): fusionarla es abrir.
 El servicio, por su parte, tiene que admitir exactamente
 `https://my-ride-log.pages.dev/` como retorno y salida, y su CORS ese
-origen. La entrada `production` (GitHub Pages, por invitación) no cambia.
+origen. La entrada `production` (por invitación; ya no se publica, ver
+«Dos publicaciones») no cambia.
 
 ### Política de seguridad de contenido: motivo del cambio
 
