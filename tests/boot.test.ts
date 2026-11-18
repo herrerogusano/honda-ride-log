@@ -13,6 +13,8 @@ import { writeConsent } from "../src/storage/consent";
 import { DEMO_ONLY, type ServiceConfig, type ServiceEnvironment } from "../src/service/environment";
 import type { App } from "../src/ui/app";
 import { createMapView } from "../src/ui/mapView";
+import { createTraceStore, type TraceStore } from "../src/ui/traceStore";
+import type { RouteRef } from "../src/domain/model";
 import { createFakeServer, TEST_CONFIG, type FakeServer } from "./fakeServer";
 
 class MemoryStorage implements StorageLike {
@@ -40,6 +42,12 @@ let authCalls: number;
 let mounted: App | null = null;
 /** Map views the page created and released. */
 const maps = { created: 0, destroyed: 0 };
+/** Every store of whole traces the page made, with the routes it was asked for. */
+let stores: { store: TraceStore; asked: RouteRef[] }[] = [];
+/** The routes whose whole trace some store still holds. */
+const held = (): RouteRef[] => stores.flatMap(({ store, asked }) => asked.filter((ref) => store.known(ref) !== undefined));
+/** The session's expiry timers, run by hand. */
+let expiryTimers: { run: () => void; delayMs: number; cancelled: boolean }[] = [];
 /** The tool named in a recorded /mcp request. */
 const toolOf = (body: string): string => (JSON.parse(body) as { params: { name: string } }).params.name;
 
@@ -69,6 +77,17 @@ async function start(environment: ServiceEnvironment, address = "/"): Promise<Ap
     auth: deps,
     now: () => server.clock.now,
     demoDelayMs: 0,
+    createTraces: (caller) => {
+      const store = createTraceStore(caller);
+      const entry = { store, asked: [] as RouteRef[] };
+      stores.push(entry);
+      return { ...store, get: (route) => (entry.asked.push(route.ref), store.get(route)) };
+    },
+    expiryTimer: (run, delayMs) => {
+      const timer = { run, delayMs, cancelled: false };
+      expiryTimers.push(timer);
+      return () => void (timer.cancelled = true);
+    },
     createMap: (data, caller, options) => {
       const view = createMapView(data, caller, options, () => surface);
       maps.created += 1;
@@ -135,6 +154,8 @@ beforeEach(() => {
   authCalls = 0;
   maps.created = 0;
   maps.destroyed = 0;
+  stores = [];
+  expiryTimers = [];
   const store = new Map<string, string>();
   Object.defineProperty(globalThis, "localStorage", {
     configurable: true,
@@ -344,6 +365,58 @@ describe("a build with a service", () => {
     await alert();
     expect(location.hash).toBe("");
     expect(root.querySelector<HTMLSelectElement>(".demo-banner select")?.value).toBe("commuter");
+  });
+});
+
+/** Opens the first route of the list and waits until its whole trace is kept in memory. */
+async function holdATrace(): Promise<void> {
+  root.querySelector<HTMLElement>(".row-button")?.click();
+  await vi.waitFor(() => expect(held()).toHaveLength(1));
+}
+
+describe("the whole traces leave memory when the session ends (docs/PLAN.md, section 4)", () => {
+  it("on «Salir»", async () => {
+    await signedIn();
+    await loaded();
+    await holdATrace();
+    signOutButton().click();
+    expect(held()).toEqual([]);
+  });
+
+  it("when the token's time is up, with no request made", async () => {
+    await signedIn();
+    await loaded();
+    await holdATrace();
+    const sent = mcpRequests();
+    const timer = expiryTimers[expiryTimers.length - 1];
+    expect(timer?.cancelled).toBe(false);
+    // The timer is set for the token's life less the margin; the clock gets there.
+    server.clock.now += timer?.delayMs ?? 0;
+    timer?.run();
+    expect(held()).toEqual([]);
+    expect(mcpRequests()).toBe(sent);
+    // What is on screen stays; opening a route now asks to sign in again, sending nothing.
+    expect(root.querySelector('nav[aria-label="Secciones"]')).not.toBeNull();
+  });
+
+  it("when the service no longer takes the token", async () => {
+    await signedIn();
+    await loaded();
+    await holdATrace();
+    server.mcpOverride = () => ({ status: 401, body: "{}" });
+    root.querySelectorAll<HTMLElement>(".row-button")[1]?.click();
+    await vi.waitFor(() => expect(root.querySelector(".map-status [role='alert']")?.textContent).toContain("reauth_required (unauthorized)"));
+    expect(held()).toEqual([]);
+  });
+
+  it("but not while the session lasts: the timer asked early sets itself again", async () => {
+    await signedIn();
+    await loaded();
+    await holdATrace();
+    const timer = expiryTimers[expiryTimers.length - 1];
+    timer?.run();
+    expect(held()).toHaveLength(1);
+    expect(expiryTimers.length).toBe(2);
   });
 });
 

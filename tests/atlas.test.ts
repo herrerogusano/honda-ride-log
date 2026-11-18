@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDemoService } from "../src/demo/fakeService";
 import { generateRider } from "../src/demo/generator";
 import type { Route, TraceLine } from "../src/domain/model";
-import { trimTrace } from "../src/domain/trim";
+import { screenTrace } from "../src/domain/trim";
 import { ToolCallError, type ToolCaller } from "../src/service/contract";
 import { loadAllRoutes, loadRouteTrace, loadVehicleState } from "../src/service/loader";
 import { ServiceError } from "../src/service/mcpClient";
@@ -362,17 +362,17 @@ describe("reads", () => {
     });
   }
 
-  it("skips a trace hidden by privacy and counts it, without calling it an error", async () => {
+  it("stacks a short trace whole too: nothing is hidden for privacy on this screen", async () => {
     expect(shortId).toBeDefined();
     const h = await harness({ answer: (n) => (n === 2 ? rider.detail(shortId) : undefined) });
     await press(".atlas-build");
     await settle();
     expect(h.reads).toHaveLength(8);
     expect(stageState()).toBe("built");
-    expect($(".atlas-skipped").textContent).toBe("1 traza oculta por privacidad");
+    expect(document.querySelector(".atlas-skipped")).toBeNull();
     expect(document.querySelector(".atlas .error")).toBeNull();
-    expect($(".atlas-canvas").getAttribute("aria-label")).toMatch(/^Atlas de 7 trazas apiladas/);
-    expect(document.querySelectorAll(".atlas-table tbody tr")).toHaveLength(7);
+    expect($(".atlas-canvas").getAttribute("aria-label")).toMatch(/^Atlas de 8 trazas apiladas/);
+    expect(document.querySelectorAll(".atlas-table tbody tr")).toHaveLength(8);
   });
 
   it("stops at a failed read, keeps what arrived, and «Reintentar» goes on from there", async () => {
@@ -431,11 +431,11 @@ const distanceToSegment = (p: readonly [number, number], a: readonly number[], b
 };
 
 async function trimmedOf(routes: readonly Route[]): Promise<TraceLine[][]> {
-  return Promise.all(routes.map(async (route) => [...trimTrace(await loadRouteTrace(service, route.ref)).lines]));
+  return Promise.all(routes.map(async (route) => [...screenTrace(await loadRouteTrace(service, route.ref)).lines]));
 }
 
 describe("what is drawn", () => {
-  it("draws every trace point, footprint and head only on the trimmed lines", async () => {
+  it("draws every trace point, footprint and head only on the whole lines handed to the screen", async () => {
     const h = await harness();
     await press(".atlas-build");
     const traces = (await trimmedOf(chooseRoutes(h.data.routes, "all", "longest"))).filter((lines) => lines.length > 0);

@@ -58,6 +58,8 @@ export interface AppOptions {
   /** Artificial wait of each demo answer, so loading states can be seen. */
   readonly demoDelayMs?: number;
   readonly createMap?: MapFactory;
+  /** Makes the store of whole traces each view shares between the map and the atlas; tests wrap it to look inside. */
+  readonly createTraces?: (caller: ToolCaller) => TraceStore;
   readonly account?: AccountActions;
   /**
    * What to show first: the landing or the demo, as the address says
@@ -80,6 +82,12 @@ export interface App {
   showNotice(text: string): void;
   /** The open service's screen before the login, as «Entrar» shows it; the landing in any other build. */
   showAccess(): void;
+  /**
+   * The session ended (the token expired, or the service no longer takes
+   * it): the whole traces kept in memory go (docs/PLAN.md, section 4). What
+   * is on screen stays, with its «Volver a entrar».
+   */
+  forgetTraces(): void;
   /** Stops listening to the address and abandons any load in progress. The page keeps what it shows. */
   dispose(): void;
 }
@@ -97,11 +105,12 @@ export function startApp(options: AppOptions): App {
   /** Takes down the screen before the login of the open service, if it is on screen. */
   let closeAccess: (() => void) | null = null;
   const mapFactory = options.createMap ?? createMapView;
+  const traceFactory = options.createTraces ?? createTraceStore;
   /** Each load gets a number; a load that is no longer the latest stops drawing. */
   let generation = 0;
   /** The map of the view on screen; released when another view replaces it. */
   let activeMap: MapView | null = null;
-  /** The atlas of the view on screen and the trimmed traces it shares with the map; released with the view. */
+  /** The atlas of the view on screen and the traces it shares with the map; released with the view. */
   let activeAtlas: AtlasView | null = null;
   let activeTraces: TraceStore | null = null;
   /**
@@ -336,7 +345,7 @@ export function startApp(options: AppOptions): App {
     activeMap = null;
     activeAtlas?.destroy();
     activeAtlas = null;
-    // The trimmed traces leave memory with the view (sign-out, another load).
+    // The traces leave memory with the view (sign-out, another load).
     activeTraces?.dispose();
     activeTraces = null;
     viewMotion?.abort();
@@ -491,7 +500,7 @@ export function startApp(options: AppOptions): App {
       { visibleTop, signal: motion.signal },
     );
     // One read per route detail, shared by the map and the atlas.
-    const traces = createTraceStore(caller);
+    const traces = traceFactory(caller);
     const signInOffer = account === undefined || data.demo ? null : signIn;
     const map = mapFactory(data, caller, {
       signIn: signInOffer,
@@ -672,6 +681,9 @@ export function startApp(options: AppOptions): App {
     showAccess() {
       if (publicService === null) showLanding();
       else showAccess(publicService);
+    },
+    forgetTraces() {
+      activeTraces?.forget();
     },
     dispose() {
       generation += 1;

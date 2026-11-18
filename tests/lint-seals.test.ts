@@ -26,6 +26,71 @@ describe("privacy seals", () => {
     }
   }, 30_000);
 
+  // The whole trace is drawn on the signed-in rider's screen (docs/PLAN.md,
+  // section 4), so its lines leave the trim through `screenTrace`. The seals
+  // on the sealed detail stay as they were; the new opening is one more
+  // seal: only the trace store of the map and the atlas may import it, so
+  // the shared card, the downloads, the visit counters or the map code
+  // itself cannot reach a whole trace by another way.
+  it("let only the trace store take the whole trace for the screen", async () => {
+    expect(await importErrors(use("screenTrace", "../domain/trim"), "src/ui/traceStore.ts")).toBe(0);
+    expect(await importErrors(use("trimTrace", "../domain/trim"), "src/ui/card.ts")).toBe(0);
+    for (const file of ["src/ui/card.ts", "src/ui/summary.ts", "src/ui/download.ts", "src/ui/routesView.ts", "src/ui/mapView.ts", "src/ui/atlas/atlasView.ts"]) {
+      expect(await importErrors(use("screenTrace", "../domain/trim"), file)).toBe(1);
+    }
+    expect(await importErrors(use("screenTrace", "./trim"), "src/domain/csv.ts")).toBe(1);
+    expect(await importErrors(use("screenTrace", "./trim.ts"), "src/domain/stats.ts")).toBe(1);
+    expect(await importErrors(use("screenTrace", "../domain/trim"), "src/analytics/tracker.ts")).toBe(1);
+    expect(await importErrors(use("screenTrace", "../domain/trim"), "src/service/loader.ts")).toBe(1);
+    expect(await importErrors(use("screenTrace", "./domain/trim"), "src/main.ts")).toBe(1);
+    // The store may take the screen lines, never the sealed detail itself.
+    for (const name of ["untrimmedLines", "sensitivePlaces", "serviceRouteId"]) {
+      expect(await importErrors(use(name, "../domain/sanitize"), "src/ui/traceStore.ts")).toBe(1);
+    }
+  }, 30_000);
+
+  // The store then holds whole traces, so it is sealed too: only the page
+  // that owns it (src/ui/app.ts), the map and the atlas may import it.
+  it("let only the page, the map and the atlas reach the store of whole traces", async () => {
+    const store = (from: string): string => `import { createTraceStore } from "${from}";\nexport const x = createTraceStore;\n`;
+    const storeType = (from: string): string => `import type { TraceStore } from "${from}";\nexport type X = TraceStore;\n`;
+    expect(await importErrors(store("./traceStore"), "src/ui/app.ts")).toBe(0);
+    expect(await importErrors(store("./traceStore"), "src/ui/mapView.ts")).toBe(0);
+    expect(await importErrors(storeType("../traceStore"), "src/ui/atlas/atlasView.ts")).toBe(0);
+    for (const file of ["src/ui/card.ts", "src/ui/summary.ts", "src/ui/download.ts", "src/ui/routesView.ts", "src/main.ts"]) {
+      expect(await importErrors(store(file === "src/main.ts" ? "./ui/traceStore" : "./traceStore"), file)).toBe(1);
+      expect(await importErrors(storeType(file === "src/main.ts" ? "./ui/traceStore.ts" : "./traceStore.ts"), file)).toBe(1);
+    }
+    expect(await importErrors(store("../ui/traceStore"), "src/domain/csv.ts")).toBe(1);
+    expect(await importErrors(store("../ui/traceStore"), "src/analytics/tracker.ts")).toBe(1);
+    expect(await importErrors(store("../ui/traceStore"), "src/service/loader.ts")).toBe(1);
+    expect(await importErrors(store("../ui/traceStore"), "src/domain/trim.ts")).toBe(1);
+    expect(await importErrors(store("../traceStore"), "src/ui/atlas/render.ts")).toBe(1);
+    // The three allowed files still may not open the sealed detail or the screen lines themselves.
+    for (const file of ["src/ui/app.ts", "src/ui/mapView.ts"]) {
+      expect(await importErrors(use("screenTrace", "../domain/trim"), file)).toBe(1);
+      expect(await importErrors(use("untrimmedLines", "../domain/sanitize"), file)).toBe(1);
+    }
+  }, 30_000);
+
+  // Vite reads a query after the path (`?raw`, `?url`, `?inline`, ...): the
+  // same module, so the same seal.
+  it("hold with a Vite query after the path", async () => {
+    for (const query of ["?raw", "?url", "?inline", "?worker&url", "?import", "#review", "?raw#x"]) {
+      expect(await importErrors(use("screenTrace", `../domain/trim${query}`), "src/ui/card.ts")).toBe(1);
+      expect(await importErrors(use("screenTrace", `../domain/trim.ts${query}`), "src/ui/card.ts")).toBe(1);
+      expect(await importErrors(use("untrimmedLines", `../domain/sanitize${query}`), "src/ui/mapView.ts")).toBe(1);
+      expect(await importErrors(use("sensitivePlaces", `../domain/sanitize.ts${query}`), "src/ui/traceStore.ts")).toBe(1);
+      expect(await importErrors(use("serviceRouteId", `./sanitize${query}`), "src/domain/trim.ts")).toBe(1);
+      expect(await importErrors(use("createTraceStore", `./traceStore${query}`), "src/ui/card.ts")).toBe(1);
+      expect(await importErrors(use("createTraceStore", `../ui/traceStore.ts${query}`), "src/analytics/tracker.ts")).toBe(1);
+      expect(await importErrors(`import store from "./traceStore${query}";\nexport const x = store;\n`, "src/ui/download.ts")).toBe(1);
+    }
+    // The allowed places stay allowed with a query.
+    expect(await importErrors(use("screenTrace", "../domain/trim?import"), "src/ui/traceStore.ts")).toBe(0);
+    expect(await importErrors(use("createTraceStore", "./traceStore?import"), "src/ui/app.ts")).toBe(0);
+  }, 60_000);
+
   it("let only the service code open a route reference", async () => {
     expect(await importErrors(use("serviceRouteId", "../domain/sanitize"), "src/service/loader.ts")).toBe(0);
     expect(await importErrors(use("serviceRouteId", "./sanitize"), "src/domain/trim.ts")).toBe(1);
@@ -45,6 +110,12 @@ describe("ways around the seals", () => {
       expect(await syntaxErrors('export const load = () => import("../domain/sanitize");\n', file)).toBe(1);
       expect(await syntaxErrors('export const all = import.meta.glob("../domain/sanit*.ts", { eager: true });\n', file)).toBe(1);
       expect(await syntaxErrors('export const all = import.meta.globEager("../domain/*.ts");\n', file)).toBe(1);
+    }
+    // A type written as `import("...")` names a module past the import rules too.
+    for (const file of ["src/ui/card.ts", "src/ui/summary.ts", "src/domain/csv.ts"]) {
+      expect(await syntaxErrors('export type Store = typeof import("./traceStore");\n', file)).toBe(1);
+      expect(await syntaxErrors('export type Lines = ReturnType<typeof import("../domain/trim").screenTrace>;\n', file)).toBe(1);
+      expect(await syntaxErrors('export type Trace = import("../domain/sanitize").UntrimmedTrace;\n', file)).toBe(1);
     }
     // Reading the address of the module itself is not a way around anything.
     expect(await syntaxErrors("export const here = import.meta.url;\n", "src/main.ts")).toBe(0);

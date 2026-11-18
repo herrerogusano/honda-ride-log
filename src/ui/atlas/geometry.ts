@@ -1,17 +1,18 @@
 /**
  * The atlas's own math (docs/PLAN.md, section 15): no WebGL, no library.
  *
- * - The plane: trimmed lat/lon become kilometres on a local plane
+ * - The plane: lat/lon become kilometres on a local plane
  *   (equirectangular around the centre of the set), then plate units, the
  *   plate being the square from -1 to 1 on both axes. x grows to the east,
  *   y to the north.
  * - The camera: a yaw about the vertical axis, a tilt (0 = looking straight
  *   from the side, 90° = straight down) and a perspective division, all by
  *   hand. A straight segment in space projects to a straight segment on
- *   screen, so a point on a projected trimmed segment is on the trace.
+ *   screen, so a point on a projected segment is on the trace.
  *
- * Privacy: the plane only ever receives `TrimmedTrace` lines. Every point it
- * produces is the affine image of a trimmed vertex.
+ * Privacy: the plane only ever receives `ScreenTrace` lines, never the start
+ * and end places the service marks apart. Every point it produces is the
+ * affine image of a vertex of those lines.
  */
 import type { LatLng, TraceLine } from "../../domain/model";
 
@@ -68,7 +69,7 @@ export function fitPlane(traces: readonly (readonly TraceLine[])[]): Plane {
   return { center, halfKm, kmPerDegree };
 }
 
-/** One trimmed point on the plate. */
+/** One trace point on the plate. */
 export function toPlane(plane: Plane, point: LatLng): PlanePoint {
   return [
     ((point[1] - plane.center[1]) * plane.kmPerDegree[0]) / plane.halfKm,

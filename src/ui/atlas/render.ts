@@ -5,7 +5,7 @@
  * the camera did not move projects nothing again.
  *
  * Every stroke of a trace, every footprint and every head dot is the
- * projection of a point of the trimmed lines (or of a point on one of their
+ * projection of a point of the lines (or of a point on one of their
  * segments): nothing marks where a route starts or ends. Dates are written
  * beside the corner posts, never on the plate.
  */
@@ -34,7 +34,7 @@ export interface LayerScene {
   readonly lines: readonly PlaneLine[];
   /** The whole trace, for its footprint on the ground. */
   readonly full: readonly PlaneLine[];
-  /** Where the stroke is while it draws itself; null when complete. Always on the trimmed lines. */
+  /** Where the stroke is while it draws itself; null when complete. Always on the lines. */
   readonly head: PlanePoint | null;
   readonly z: number;
   /** 0 for the oldest layer, 1 for the newest. */

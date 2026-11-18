@@ -46,9 +46,10 @@ Una sola página, oscura, con seis secciones:
   tú escribas y tu respuesta al aviso de cookies.
 - Nunca se muestran la matrícula, el bastidor, el concesionario ni la
   posición actual de la moto.
-- El mapa y el atlas no dibujan nada a menos de 400 m de donde empieza o
-  acaba cada ruta, ni marcas de inicio o de fin. Las rutas de menos de 300 m
-  se ocultan.
+- El mapa y el atlas dibujan cada ruta entera, solo en tu pantalla y sin
+  marcas de inicio o de fin: una captura enseña dónde empieza y acaba. La
+  tarjeta para compartir y las descargas no llevan recorridos. Las rutas de
+  menos de 300 m se ocultan.
 - La contraseña la pide la página de login del servicio, no esta web. El
   acceso vive solo en la memoria de la pestaña: al recargar hay que volver a
   entrar.

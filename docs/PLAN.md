@@ -162,15 +162,15 @@ se cuentan y cuántas se han descartado por venir sin fecha o sin km.
 - Muestra la ruta elegida. El detalle de una ruta se pide **al pulsarla**
   (`get_route_detail`), nunca al cargar; se guarda en memoria para no pedirlo
   dos veces.
-- Solo se dibujan las líneas, ya recortadas (apartado 4). Sin marcadores de
-  inicio ni de fin. Los tramos marcados como inferidos por el servicio se
+- Se dibujan las líneas enteras, solo en esta pantalla (apartado 4, «Trazas
+  enteras en pantalla»). Sin marcadores de inicio ni de fin. Los tramos marcados como inferidos por el servicio se
   dibujan con trazo discontinuo y una leyenda que dice que es una etiqueta
   descriptiva, no una garantía de precisión.
-- Si tras el recorte no queda traza, se dice «traza oculta por privacidad»;
-  si el servicio no envió ninguna línea, «sin recorrido». Son mensajes
-  distintos, cada uno con su estado vacío dentro del recuadro del mapa.
+- Si el servicio no envió ninguna línea, se dice «sin recorrido», con su
+  estado vacío dentro del recuadro del mapa. Desde el 2026-11-18 no hay
+  «traza oculta por privacidad»: en pantalla no se recorta nada.
 - Convive con la lista en la sección «04 Rutas» (apartado 13): al elegir una
-  ruta, el mapa vuela a sus líneas recortadas y la traza se dibuja sola de
+  ruta, el mapa vuela a sus líneas y la traza se dibuja sola de
   principio a fin; con movimiento reducido, salta y aparece entera.
 
 ### Rutas
@@ -231,11 +231,57 @@ color, foco visible y zonas de pulsación de 44 px como mínimo.
 |---|---|
 | Nunca matrícula, bastidor, datos del concesionario ni posición actual; de cada ruta, tampoco su odómetro ni su zona horaria | `src/domain/sanitize.ts` copia una lista cerrada de campos y descarta el resto al recibir la respuesta. De una ruta copia fechas, km, velocidad media, velocidad máxima (desde el 2026-11-10; antes no se copiaba) y la etiqueta de tramos inferidos; `tests/sanitize.test.ts` fija esa lista exacta. Que ningún otro módulo lea respuestas sin sanear es una convención: ninguna herramienta lo impide. |
 | Nunca identificadores de ruta en pantalla ni en exportaciones | El identificador vive detrás de un `RouteRef` opaco y sin campos; solo `serviceRouteId` lo recupera, y ESLint solo deja importar esa función desde `src/service/` (donde va la petición de detalle; `tests/lint-seals.test.ts`). Serializar una ruta no lo incluye. |
-| Recortar 400 m al inicio y al final de cada traza antes de dibujarla | `TRIM_METERS` en `src/domain/privacy.ts` y `trimTrace` en `src/domain/trim.ts`. Se cumple con una regla más fuerte: **no se dibuja nada a menos de 401 m en línea recta del inicio ni del final** (ver «Cómo quedó el recorte»). El radio no es un parámetro: nadie puede pedir un corte más corto. El mapa y el atlas solo guardan en memoria las líneas ya recortadas (`src/ui/traceStore.ts`). El saneador devuelve un `UntrimmedTrace` sellado, sin campos legibles; sus líneas solo salen con `untrimmedLines` y los dos puntos de inicio y final con `sensitivePlaces`, y ESLint solo deja importar esas dos funciones desde ese archivo (`tests/lint-seals.test.ts`). |
+| En la pantalla de quien ha entrado (el mapa de «04 Rutas» y el atlas), la traza entera; todo lo que pueda salir de esa pantalla, sin trazas o recortado 400 m al inicio y al final | Desde el 2026-11-18 (ver «Trazas enteras en pantalla», abajo). `screenTrace` en `src/domain/trim.ts` entrega las líneas enteras, sin los dos puntos sueltos de inicio y final; ESLint solo deja importarla desde `src/ui/traceStore.ts`, el almacén que comparten el mapa y el atlas. `trimTrace` (mismo archivo, `TRIM_METERS` en `src/domain/privacy.ts`) sigue siendo el recorte para cualquier salida que algún día lleve trazas: **nada a menos de 401 m en línea recta del inicio ni del final** (ver «Cómo quedó el recorte»); el radio no es un parámetro. Hoy ninguna salida lleva trazas (`tests/off-screen-traces.test.ts`). El saneador devuelve un `UntrimmedTrace` sellado, sin campos legibles; sus líneas solo salen con `untrimmedLines` y los dos puntos de inicio y final con `sensitivePlaces`, y ESLint solo deja importar esas dos funciones desde `src/domain/trim.ts` (`tests/lint-seals.test.ts`). |
 | Ocultar rutas de menos de 300 m | `hideShortRoutes` en `src/domain/privacy.ts`. |
 | Token solo en memoria | Ver «Almacenamiento» en el apartado 2. ESLint prohíbe `localStorage`, `sessionStorage` y `document.cookie` en todo el código, con tres excepciones de un único archivo cada una (la tercera, `src/storage/consent.ts`, en el apartado 17). **`src/storage/maintenance.ts` puede usar `localStorage`** (y solo `localStorage`) para guardar los dos números del mantenimiento que escribe el usuario, con una clave para la cuenta y otra para la demo. **`src/auth/pendingLogin.ts` puede usar `sessionStorage`** (y solo `sessionStorage`) para el login a medio hacer y, en el servicio abierto, una marca fija de borrado no confirmado (apartado 18), y solo lo importa `src/auth/login.ts` (apartado 10). `tests/units.test.ts` y `tests/lint-storage.test.ts` comprueban que cada excepción vale para su archivo y para ningún otro, que cada uno sigue teniendo prohibido el almacenamiento del otro y que las listas de prohibiciones no se separan. |
 | Sin terceros salvo las teselas de OpenStreetMap y dos contadores de visitas (apartado 17): Cloudflare Web Analytics y, solo si el visitante acepta, Google Analytics. A ninguno se le envía una ruta, una cifra, un identificador ni la dirección completa; con `analytics.config.json` vacío no se carga ninguno | Política de seguridad de contenido en `csp.config.json`; los orígenes de cada contador se añaden solo si tiene valor. `scripts/check-dist.mjs` rompe el build si la página que genera Vite no lleva exactamente esa política, o si detecta código en línea o recursos de otro origen; `tests/csp.test.ts` fija su texto. Es una red contra errores propios hecha con expresiones regulares, no un analizador de HTML: no protege contra quien edite `dist/` a mano, y no tiene tests propios. |
 | Los datos viven solo en el navegador y solo durante la sesión | Nada se guarda salvo los dos números de mantenimiento y la respuesta al aviso de cookies (tercera excepción: **`src/storage/consent.ts` puede usar `localStorage`**, y `document.cookie` solo para borrar las de Google Analytics; apartado 17). |
+
+### Trazas enteras en pantalla
+
+Decidido por el propietario del proyecto el 2026-11-18. Hasta entonces el
+mapa y el atlas dibujaban cada traza recortada (lo que sigue, «Cómo quedó el
+recorte»).
+
+- **Qué cambia:** en la pantalla de quien ha entrado (el mapa de «04 Rutas» y
+  el atlas) la traza se dibuja entera, de su primer punto al último. Ya no
+  hay «traza oculta por privacidad»: una ruta corta o una vuelta por el
+  barrio se ven enteras.
+- **Por qué:** con el recorte parecía que la ruta no se reconstruía entera.
+- **Riesgo aceptado:** una captura de pantalla del mapa o del atlas enseña
+  dónde empiezan y acaban las rutas (una casa, un trabajo). Quien enseñe su
+  pantalla a otra persona le enseña lo mismo.
+- **Qué no cambia:**
+  - Lo que puede salir de la pantalla no lleva trazas: la tarjeta para
+    compartir (imagen y texto), la descarga CSV y las analíticas solo
+    llevan cifras, fechas y eventos de la lista cerrada; ninguna importa el
+    recorte, el saneador ni el almacén de trazas, y con todas las trazas en
+    memoria no contienen ninguna coordenada (`tests/off-screen-traces.test.ts`).
+    Si algún día una salida lleva trazas, usa `trimTrace` y su regla de 401 m.
+  - Los dos puntos sueltos de inicio y final del detalle no se dibujan ni
+    como marcador ni como línea: `screenTrace` no los entrega. Si la línea
+    llega hasta ellos, basta con la línea.
+  - Las rutas de menos de 300 m siguen ocultas.
+  - Los sellos de `untrimmedLines` y `sensitivePlaces` siguen en
+    `src/domain/trim.ts`. La salida nueva es un sello más: `screenTrace` solo
+    se importa desde `src/ui/traceStore.ts`; ni la tarjeta, ni las descargas,
+    ni las analíticas, ni el propio código del mapa pueden importarla. Y
+    como ese almacén guarda trazas enteras, también está sellado: solo lo
+    importan `src/ui/app.ts`, `src/ui/mapView.ts` y
+    `src/ui/atlas/atlasView.ts` (`tests/lint-seals.test.ts`).
+  - Las trazas enteras salen de la memoria al terminar la sesión, sea cual
+    sea el camino: «Salir», «Borrar mis datos», otra carga, el reloj (un
+    temporizador termina la sesión cuando caduca el token, aunque no se
+    pida nada) o el servicio (401, `session_expired`). La sesión avisa al
+    terminar (`onEnd` en `src/auth/session.ts`) y la página vacía el
+    almacén (`forgetTraces`); una respuesta que estaba en camino no se
+    guarda. Lo que ya está dibujado en pantalla se queda, con «Volver a
+    entrar» (`tests/boot.test.ts`, `tests/public-boot.test.ts`,
+    `tests/session-end.test.ts`, con el almacén lleno de verdad).
+  - La demo no cambia: sus trayectos cortos de 320 a 780 m, que antes
+    enseñaban la traza oculta, ahora se dibujan enteros.
+  - La cabeza que va delante del trazo mientras se dibuja empieza en el
+    primer punto de la línea y desaparece al terminar; no es un marcador.
 
 Lo que se vio en una lectura real, que el recorte tiene en cuenta:
 
@@ -254,7 +300,8 @@ Lo que se vio en una lectura real, que el recorte tiene en cuenta:
 - El saneador solo conserva geometrías `LineString`, las únicas vistas. Si
   el servicio enviara otro tipo de línea, se ignoraría sin aviso.
 
-Cómo quedó el recorte:
+Cómo quedó el recorte (desde el 2026-11-18 solo para lo que salga de la
+pantalla; hoy nada lo usa):
 
 - Cortar solo por distancia recorrida no basta: una ruta que vuelve a pasar
   por su punto de salida (una ida y vuelta, por ejemplo) dibujaría ese punto
@@ -298,8 +345,9 @@ Cómo quedó el recorte:
 - Si no queda nada, la web dice «traza oculta por privacidad»; si el servicio
   no envió ninguna línea, dice que no hay recorrido. Son mensajes distintos.
 - Los sellos son reglas de ESLint sobre los `import`. Están cerradas las
-  vías conocidas para saltárselas (`import()` dinámico e `import.meta.glob`,
-  con test), pero siguen siendo una red, no una prueba.
+  vías conocidas para saltárselas (`import()` dinámico, `import.meta.glob`,
+  tipos escritos como `import("...")` y la consulta de Vite tras la ruta,
+  como `?raw`; con test), pero siguen siendo una red, no una prueba.
 
 Leaflet y la política de seguridad de contenido (visto en un navegador):
 Leaflet cancela una tesela que aún está cargando apuntándola a una imagen
@@ -510,14 +558,14 @@ política de seguridad de contenido, tal como se publicará: `npm run build`,
 | `src/domain/model.ts` | Lo que el resto de la web puede tener en memoria. |
 | `src/domain/sanitize.ts` | El único módulo que lee respuestas sin sanear. |
 | `src/domain/privacy.ts` | Umbrales de privacidad y la regla de rutas cortas. |
-| `src/domain/trim.ts` | El recorte de 400 m; el único módulo que abre una traza sin recortar. |
+| `src/domain/trim.ts` | El único módulo que abre una traza sin recortar: entrega la traza entera para la pantalla (`screenTrace`) y el recorte de 400 m para lo que salga de ella (`trimTrace`). |
 | `src/domain/stats.ts`, `format.ts`, `csv.ts`, `maintenance.ts` | Cifras del Resumen, textos en español y búsqueda por fecha, exportación CSV, cálculo de la revisión. |
 | `src/config.ts` | Las dos respuestas de producto que se pueden cambiar con una línea (apartado 9). |
 | `src/storage/maintenance.ts` | El único archivo que usa `localStorage`. |
 | `src/ui/` | La página: `app.ts` (entrada, demo, carga y estados), `summary.ts`, `routesView.ts`, `mapView.ts` y `leafletSurface.ts` (el mapa), `charts.ts`, `card.ts`, `dom.ts`; `nav.ts` (enlaces de sección, seguimiento de la lectura y barra de progreso) y `period.ts` (selector de periodo de la barra). |
 | `src/ui/motion.ts`, `src/ui/sectionHeader.ts`, `src/styles.css` | Movimiento (aparecer al entrar en pantalla, cifras que cuentan, la línea de barrido de las esperas), cabecera de sección numerada y la hoja de estilos con los tokens (apartado 11). |
 | `src/ui/calendar.ts`, `src/ui/insights.ts`, `src/ui/loadingStage.ts` | Calendario de actividad, frases bajo los gráficos de hábitos y pantalla de carga (apartado 14). |
-| `src/ui/traceDraw.ts`, `src/ui/traceStore.ts`, `src/ui/atlas/` | La traza que se dibuja (apartado 13), el almacén de trazas recortadas que comparten el mapa y el atlas, y el atlas (apartado 15). |
+| `src/ui/traceDraw.ts`, `src/ui/traceStore.ts`, `src/ui/atlas/` | La traza que se dibuja (apartado 13), el almacén de trazas (enteras, solo para la pantalla) que comparten el mapa y el atlas, y el atlas (apartado 15). |
 | `src/assets/fonts/` | Las fuentes propias (woff2, subconjunto latino) y sus licencias SIL OFL. |
 | `public/favicon.svg` | El icono de la pestaña del navegador. |
 | `src/demo/` | Generador de datos sintéticos con semilla, servicio de demo en memoria y los escenarios de la demo. |
@@ -580,10 +628,9 @@ primeras se cambian con una línea en `src/config.ts`.
    anterior: la carga se para en el primer año pasado sin rutas.
 5. «Exportar CSV» exporta todas las rutas que cumplen la búsqueda, en el
    orden elegido, no solo las filas dibujadas.
-6. El recorte es por cercanía (nada a menos de 401 m en línea recta del
-   inicio o del final), más estricto que «los primeros y últimos 400 m». Una
-   ida y vuelta queda partida en dos trozos y una vuelta corta por el barrio
-   no se dibuja (apartado 4).
+6. Desde el 2026-11-18 el mapa y el atlas dibujan la traza entera: una
+   captura de pantalla enseña dónde empieza y acaba cada ruta (apartado 4,
+   «Trazas enteras en pantalla»).
 7. Los años del gráfico de km por mes se distinguen por color y posición; la
    leyenda, la tabla y el texto al pasar el ratón dan lo mismo sin color. El
    contraste entre los tres colores es bajo.
@@ -796,8 +843,10 @@ cliente ya ha olvidado.
 7. Cambiar de cuenta es salir y volver a entrar: la ida al login abandona la
    página y con ella la memoria. Un segundo `load` con otro `ToolCaller` en
    la misma página también deja de pedir con el primero (test).
-8. Al soltar la vista se vacía el almacén de trazas recortadas del mapa y
-   del atlas, también de las que llegan tarde.
+8. Al soltar la vista se vacía el almacén de trazas del mapa y
+   del atlas, también de las que llegan tarde. También al terminar la
+   sesión (caducidad por reloj o rechazo del servicio), aunque la vista
+   siga en pantalla (apartado 4).
 
 El token no sale de `src/auth/session.ts` más que como cabecera de cada
 petición: `boot` guarda el objeto de sesión (para `logout`) y el cliente lo
@@ -1071,7 +1120,7 @@ el CSV no cambian.
 
 ### Cómo se dibuja la traza (`src/ui/traceDraw.ts`)
 
-1. El mapa vuela a los límites de las **líneas recortadas**
+1. El mapa vuela a los límites de las **líneas**
    (`flyToBounds`, duración `--dur-hero`). La primera vez no hay vista que
    animar: salta.
 2. Al aterrizar (`moveend`), las líneas crecen fotograma a fotograma con
@@ -1084,9 +1133,10 @@ el CSV no cambian.
 3. Una cabeza blanca con halo rojo (`circleMarker`, clase `trace-head`)
    va delante del trazo y desaparece al terminar. Los tramos inferidos siguen
    discontinuos y ámbar mientras crecen.
-4. Al final, el mapa tiene exactamente las líneas recortadas.
+4. Al final, el mapa tiene exactamente las líneas.
 
-Privacidad: la vista del mapa solo recibe `trimTrace(...).lines`; la cabeza y
+Privacidad: la vista del mapa solo recibe `screenTrace(...).lines` (enteras
+desde el 2026-11-18, apartado 4; antes, `trimTrace`); la cabeza y
 los puntos interpolados están sobre esas líneas; el encuadre y el vuelo usan
 solo sus límites; no hay marcadores de inicio ni de fin. `trim.ts`,
 `sanitize.ts` y los sellos no intervienen en el dibujo.
@@ -1102,15 +1152,15 @@ traza entera, ningún fotograma y ningún observador.
 
 Estados del recuadro (`data-state` en `.map-stage`): sin elegir (rejilla y
 «Elige una ruta»), cargando (una línea roja que barre el recuadro, con el
-texto en `role="status"`), dibujada, vacía («Traza oculta por privacidad» con
-filo ámbar, o «Sin recorrido») y error.
+texto en `role="status"`), dibujada, vacía («Sin recorrido») y error. Hasta
+el 2026-11-18 había otro estado vacío, «Traza oculta por privacidad».
 
 ### Demo
 
 El generador añade, al final de algunos días con salidas (2 %), un trayecto
 corto de 320 a 780 m, con su propio flujo de números aleatorios para que el
-resto de rutas no cambie. Se ve el caso «traza oculta por privacidad»
-ordenando por distancia de menor a mayor.
+resto de rutas no cambie. Hasta el 2026-11-18 enseñaba el caso «traza
+oculta por privacidad»; ahora se dibuja entero (apartado 4).
 
 ### Otros cambios
 
@@ -1215,7 +1265,7 @@ trivial. Si el navegador no da contexto 2D, la sección dice «Este navegador
 no puede dibujar el atlas», enseña la lista de las rutas que apilaría y no
 lee nada.
 
-- Plano: las líneas recortadas pasan a km sobre un plano local
+- Plano: las líneas pasan a km sobre un plano local
   equirectangular centrado en el conjunto y luego a la placa (de −1 a 1, con
   un 8 % de margen). Cuadrícula con escala real: de la escala 1, 2, 5, 10,
   20, 50… km, el paso más cercano a ocho celdas (de 6 a 10 siempre que la
@@ -1247,7 +1297,7 @@ lee nada.
   mientras la cámara no se mueve.
 - **Sin marcas de inicio ni de fin.** El concepto de origen pintaba un punto
   de salida: aquí no. Solo hay un punto (la cabeza) mientras una traza se
-  dibuja, y va sobre las líneas recortadas (`partialTrace` de
+  dibuja, y va sobre las líneas (`partialTrace` de
   `src/ui/traceDraw.ts`, la misma del mapa).
 - El texto del lienzo usa Manrope y se repinta cuando `document.fonts.ready`.
   DPR limitado a 2.
@@ -1260,16 +1310,18 @@ lee nada.
   últimas», dentro del periodo de la barra. Antes de pulsar se dice cuántas
   lecturas hará («Hará hasta 8 lecturas al servicio»; menos si ya están en
   memoria) y la cifra sigue a lo que lea el mapa.
-- El mapa de «04 Rutas» y el atlas comparten las trazas recortadas en un
+- El mapa de «04 Rutas» y el atlas comparten las trazas en un
   único almacén por vista (`createTraceStore`): una ruta abierta en el mapa
   no se vuelve a leer, una ruta leída por el atlas se abre en el mapa sin
   esperar, y una petición en vuelo se comparte. Se vacía al soltar la vista
-  (salir, cambiar de escenario, otra carga). Solo guarda líneas recortadas.
+  (salir, cambiar de escenario, otra carga). Solo guarda las líneas que
+  entrega `screenTrace` (enteras desde el 2026-11-18, apartado 4).
 - Una serie para **antes de su siguiente petición** con «Cancelar», al
   cambiar de periodo o de conjunto y al soltar la vista. La petición en vuelo
   no se cancela; su respuesta no se dibuja.
-- Una traza que el recorte deja sin nada, o sin recorrido, se salta y se
-  cuenta («1 traza oculta por privacidad»); no es un error.
+- Una traza sin recorrido se salta y se cuenta («1 ruta sin recorrido»); no
+  es un error. Hasta el 2026-11-18 se contaban también las que el recorte
+  dejaba sin nada («traza oculta por privacidad»).
 - Una lectura fallida para la serie y conserva lo que llegó, con el
   tratamiento de error de siempre (código y acción): «Reintentar» sigue
   desde donde paró (lo leído no se vuelve a leer); si la sesión acabó,
@@ -1341,7 +1393,8 @@ superficie de mapa y contextos de canvas que graban.
   seguimiento, cambio de periodo, movimiento reducido y liberación al cambiar
   de vista.
 - Mapa y traza (`tests/map.test.ts`, `tests/routes-map.test.ts`): la traza
-  crece sin retroceder hasta exactamente las líneas recortadas y ningún punto
+  crece sin retroceder hasta exactamente las líneas enteras, de su primer
+  punto al último, sin los puntos sueltos de inicio y final, y ningún punto
   ni la cabeza salen de ellas; cancelación; nada fuera de pantalla; un
   detalle por ruta; ninguna regla de la hoja esconde o corta una celda
   (lectura del texto de la hoja, no del dibujo).
@@ -1349,9 +1402,15 @@ superficie de mapa y contextos de canvas que graban.
   `tests/card.test.ts`, `tests/loading-stage.test.ts`,
   `tests/sections-polish.test.ts`): la tarjeta no lleva velocidades,
   coordenadas ni fechas.
+- Lo que sale de la pantalla (`tests/off-screen-traces.test.ts`): con las
+  trazas enteras de 40 rutas de la demo en memoria, ni la tarjeta (su
+  contenido, su texto y cada llamada al dibujarla) ni el CSV contienen una
+  coordenada; la tarjeta, el CSV, la descarga, el resumen y las analíticas
+  no importan nada que llegue a una traza. Es una lectura del código y de
+  la salida en memoria, no del PNG descargado.
 - Atlas (`tests/atlas.test.ts`): nada pedido antes del botón; como mucho 8
   lecturas y nunca dos a la vez; todo punto de trazo, huella y cabeza está
-  sobre los tramos proyectados de las líneas recortadas; cancelación y
+  sobre los tramos proyectados de las líneas; cancelación y
   limpieza; sin canvas.
 - Contraste (`tests/contrast.test.ts`): lee los colores de la hoja de
   estilos, los pasa de oklch a sRGB y comprueba 4,5:1 para texto y 3:1 para

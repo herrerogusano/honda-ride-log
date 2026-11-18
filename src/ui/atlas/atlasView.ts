@@ -1,5 +1,5 @@
 /**
- * Section «Atlas» (docs/PLAN.md, section 15): up to eight trimmed traces of
+ * Section «Atlas» (docs/PLAN.md, section 15): up to eight whole traces of
  * the period stacked in layers by date, oldest at the bottom, on a slanted
  * plate drawn with Canvas 2D and a hand-written projection.
  *
@@ -17,9 +17,8 @@
  */
 import { formatDate, formatDuration, formatKm, formatNumber, formatSpeed } from "../../domain/format";
 import type { Route } from "../../domain/model";
-import { TRIM_METERS } from "../../domain/privacy";
 import { inPeriod, type Period } from "../../domain/stats";
-import type { TrimmedTrace } from "../../domain/trim";
+import type { ScreenTrace } from "../../domain/trim";
 import { LoadError } from "../../service/loader";
 import type { RiderData } from "../data";
 import { clear, el, uniqueId } from "../dom";
@@ -65,7 +64,7 @@ const MAX_RATIO = 2;
 const GLOW_BUDGET_MS = 6;
 
 export interface AtlasOptions {
-  /** The trimmed traces of the page, shared with the map. */
+  /** The traces of the page, shared with the map. */
   readonly traces: TraceStore;
   /** Offered when a read fails because the session is over; null in the demo. */
   readonly signIn: (() => void) | null;
@@ -120,7 +119,6 @@ export function createAtlasView(data: RiderData, initialPeriod: Period, options:
   let destroyed = false;
   let built = false;
   let layers: Layer[] = [];
-  let hidden = 0;
   let noLine = 0;
   let selected = -1;
 
@@ -212,7 +210,7 @@ export function createAtlasView(data: RiderData, initialPeriod: Period, options:
   const note = el(
     "p",
     { class: "atlas-note" },
-    `Proyección esquemática, sin mapa base. La altura separa las trazas por fecha (abajo la más antigua) y no es altitud. Solo se dibujan las trazas recortadas: nada a menos de ${TRIM_METERS} m de donde empieza o acaba cada ruta, sin marcas de inicio ni de fin. Cada traza es una lectura al servicio, como al abrirla en el mapa.`,
+    `Proyección esquemática, sin mapa base. La altura separa las trazas por fecha (abajo la más antigua) y no es altitud. Las trazas se dibujan enteras, sin marcas de inicio ni de fin; son solo para tu pantalla. Cada traza es una lectura al servicio, como al abrirla en el mapa.`,
   );
 
   const panel = el("div", { class: "atlas-panel" }, readout, setGroup, el("div", { class: "atlas-go" }, buildButton, cancelButton), cost, controls, announce);
@@ -509,11 +507,7 @@ export function createAtlasView(data: RiderData, initialPeriod: Period, options:
   }
 
   function skippedText(): string | null {
-    const parts = [
-      hidden > 0 ? `${plural(hidden, "traza oculta", "trazas ocultas")} por privacidad` : null,
-      noLine > 0 ? `${plural(noLine, "ruta", "rutas")} sin recorrido` : null,
-    ].filter((one): one is string => one !== null);
-    return parts.length === 0 ? null : parts.join(" · ");
+    return noLine > 0 ? `${plural(noLine, "ruta", "rutas")} sin recorrido` : null;
   }
 
   function figure(labelText: string, value: string): HTMLElement {
@@ -606,7 +600,7 @@ export function createAtlasView(data: RiderData, initialPeriod: Period, options:
     controls.hidden = layers.length === 0 || phase === "loading";
     mapButton.disabled = selected < 0;
     playButton.hidden = !animate;
-    count.textContent = phase === "loading" ? `${layers.length + hidden + noLine} / ${chosen.length}` : "";
+    count.textContent = phase === "loading" ? `${layers.length + noLine} / ${chosen.length}` : "";
     setButtons.forEach((button) => button.setAttribute("aria-pressed", String(button.dataset["set"] === set)));
     cancelButton.hidden = phase !== "loading";
     buildButton.hidden = phase === "loading" || context === null;
@@ -630,7 +624,6 @@ export function createAtlasView(data: RiderData, initialPeriod: Period, options:
   function reset(): void {
     series += 1;
     layers = [];
-    hidden = 0;
     noLine = 0;
     selected = -1;
     plane = null;
@@ -641,11 +634,7 @@ export function createAtlasView(data: RiderData, initialPeriod: Period, options:
     clear(overlay);
   }
 
-  function addLayer(route: Route, trace: TrimmedTrace): void {
-    if (trace.empty === "hidden") {
-      hidden += 1;
-      return;
-    }
+  function addLayer(route: Route, trace: ScreenTrace): void {
     if (trace.empty === "no_geometry" || trace.lines.length === 0) {
       noLine += 1;
       return;
@@ -717,7 +706,7 @@ export function createAtlasView(data: RiderData, initialPeriod: Period, options:
       // Stop before the next request when the series was replaced, cancelled or the view is gone.
       if (!wanted()) return;
       const known = traces.known(route.ref);
-      let trace: TrimmedTrace;
+      let trace: ScreenTrace;
       if (known !== undefined) trace = known;
       else {
         try {

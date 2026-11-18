@@ -256,8 +256,8 @@ export function sanitizeRouteTrace(raw: unknown): UntrimmedTrace {
 }
 
 /**
- * The lines behind an `UntrimmedTrace`. Only the trim function may call it
- * (ESLint enforces the import); everything else works with trimmed lines.
+ * The lines behind an `UntrimmedTrace`. Only src/domain/trim.ts may call it
+ * (ESLint enforces the import); everything else gets its lines from there.
  */
 export function untrimmedLines(trace: UntrimmedTrace): readonly TraceLine[] {
   const lines = traceLines.get(trace);

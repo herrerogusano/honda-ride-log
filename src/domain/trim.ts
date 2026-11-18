@@ -24,6 +24,13 @@
  * This is the only module allowed to open an `UntrimmedTrace` (ESLint
  * guards the imports). The radius is not a parameter on purpose: no caller
  * can ask for a shorter cut.
+ *
+ * What is drawn on the screen of the signed-in rider is the whole trace, by
+ * decision of the project owner (docs/PLAN.md, section 4): `screenTrace`
+ * hands out its lines, and ESLint lets only the trace store of the map and
+ * the atlas (src/ui/traceStore.ts) import it. Anything that can leave the
+ * screen (a shared card, a download, an image, the visit counters) carries
+ * no trace today; if one ever does, it uses `trimTrace`.
  */
 import type { LatLng, TraceLine, UntrimmedTrace } from "./model";
 import { TRIM_METERS } from "./privacy";
@@ -161,8 +168,29 @@ function hideAround(lines: readonly TraceLine[], places: readonly Hidden[]): Tra
   return result;
 }
 
+/** The whole trace of a route, for the screen of the signed-in rider only. */
+export interface ScreenTrace {
+  /** Every line of the trace with at least two points, uncut. Empty when there is none. */
+  readonly lines: readonly TraceLine[];
+  /** `no_geometry` when the service sent no line to draw; null when there are lines. */
+  readonly empty: "no_geometry" | null;
+}
+
 /**
- * The lines of a route that may be drawn: everything except what lies near
+ * The lines of a route as the service sent them, for the map and the atlas
+ * on screen (docs/PLAN.md, section 4). Nothing is cut, but the two start and
+ * end places the service marks apart are still not handed out: they are
+ * never drawn as markers. Only src/ui/traceStore.ts may import this.
+ */
+export function screenTrace(trace: UntrimmedTrace): ScreenTrace {
+  const lines = untrimmedLines(trace)
+    .filter((line) => line.points.length >= 2)
+    .map((line): TraceLine => ({ inferred: line.inferred, points: [...line.points] }));
+  return lines.length > 0 ? { lines, empty: null } : { lines: [], empty: "no_geometry" };
+}
+
+/**
+ * The lines of a route that may leave the screen: everything except what lies near
  * its start or its end. With the start and end places the service marks, a
  * trace of `2 * TRIM_METERS` or less always leaves nothing, because each of
  * its points is that close to one of the two.

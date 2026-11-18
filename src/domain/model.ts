@@ -69,7 +69,9 @@ declare const untrimmedBrand: unique symbol;
  * Sealed handle to a route's lines exactly as the service sent them, start
  * and end included. It has no readable fields: the lines can only be taken
  * out with `untrimmedLines` in `sanitize.ts`, which is reserved (by an ESLint
- * rule) for the trim function that cuts `TRIM_METERS` from each end. Map code
- * therefore cannot draw an untrimmed trace by accident.
+ * rule) for src/domain/trim.ts. That module hands out the whole lines for the
+ * screen (`screenTrace`, itself importable only by the trace store of the map
+ * and the atlas) and the lines cut `TRIM_METERS` from each end for anything
+ * else (`trimTrace`). Other code therefore cannot reach the lines by accident.
  */
 export type UntrimmedTrace = { readonly [untrimmedBrand]: true };

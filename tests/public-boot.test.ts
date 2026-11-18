@@ -17,6 +17,8 @@ import { writeConsent } from "../src/storage/consent";
 import type { ServiceConfig, ServiceEnvironment } from "../src/service/environment";
 import type { App } from "../src/ui/app";
 import { createMapView } from "../src/ui/mapView";
+import { createTraceStore, type TraceStore } from "../src/ui/traceStore";
+import type { RouteRef } from "../src/domain/model";
 import { PRIVACY_NOTICE_VERSION } from "../src/ui/passScreen";
 import { createFakeServer, PUBLIC_CONFIG, TEST_CONFIG, type FakeServer } from "./fakeServer";
 
@@ -92,11 +94,28 @@ async function start(environment: ServiceEnvironment, address = "/"): Promise<Ap
     now: () => server.clock.now,
     demoDelayMs: 0,
     createMap: (data, caller, options) => createMapView(data, caller, options, () => surface),
+    createTraces: (caller) => {
+      const store = createTraceStore(caller);
+      const entry = { store, asked: [] as RouteRef[] };
+      stores.push(entry);
+      return { ...store, get: (route) => (entry.asked.push(route.ref), store.get(route)) };
+    },
     mcp: { fetch: server.fetch, now: () => server.clock.now, sleep: async () => undefined, minIntervalMs: 0 },
     ...(counters === null ? {} : { analytics: counters }),
     reload: () => void reloads.push(location.href),
   });
   return mounted;
+}
+
+/** Every store of whole traces the page made, with the routes it was asked for. */
+let stores: { store: TraceStore; asked: RouteRef[] }[] = [];
+/** The routes whose whole trace some store still holds. */
+const held = (): RouteRef[] => stores.flatMap(({ store, asked }) => asked.filter((ref) => store.known(ref) !== undefined));
+/** Opens the first route of the list and waits until its whole trace is kept in memory. */
+async function holdATrace(): Promise<void> {
+  await vi.waitFor(() => expect(root.querySelector(".routes-table tbody tr .row-button")).not.toBeNull());
+  root.querySelector<HTMLButtonElement>(".routes-table tbody tr .row-button")?.click();
+  await vi.waitFor(() => expect(held()).toHaveLength(1));
 }
 
 /** The visit counters of the page under test, if any (synthetic identifiers), and the reloads it asked for. */
@@ -156,6 +175,7 @@ let holdStatus: Promise<void> | null = null;
 let store = new Map<string, string>();
 
 beforeEach(() => {
+  stores = [];
   server = createFakeServer(CONFIG);
   navigations = [];
   widgets = [];
@@ -671,6 +691,26 @@ describe("leaving the account", () => {
       return found as HTMLElement;
     });
     expect([...panel.querySelectorAll("button")].map((one) => one.textContent)).toEqual(["Volver a entrar"]);
+  });
+
+  it("«Borrar mis datos» drops the whole traces kept in memory before anything is sent", async () => {
+    await signedIn();
+    await holdATrace();
+    button("Borrar mis datos").click();
+    const confirm = [...root.querySelectorAll<HTMLButtonElement>(".delete-confirm button")].find((one) => one.textContent === "Borrar mis datos");
+    confirm?.click();
+    expect(held()).toEqual([]);
+    await vi.waitFor(() => expect(navigations).toHaveLength(1));
+    expect(held()).toEqual([]);
+  });
+
+  it("session_expired from the service drops the whole traces kept in memory", async () => {
+    await signedIn();
+    await holdATrace();
+    server.mcpOverride = sdkToolError("session_expired");
+    root.querySelectorAll<HTMLButtonElement>(".routes-table tbody tr .row-button")[1]?.click();
+    await vi.waitFor(() => expect(root.querySelector(".archive-map .error")).not.toBeNull());
+    expect(held()).toEqual([]);
   });
 
   it("a paused service mid-session shows the maintenance text with «Reintentar»", async () => {

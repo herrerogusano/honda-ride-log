@@ -1,7 +1,9 @@
 /**
  * The map of section «Rutas»: one map and the route chosen in the list. A route's
  * trace is requested when the route is opened, never earlier, and only its
- * trimmed lines are kept in memory, so the same route is not asked twice.
+ * lines are kept in memory, so the same route is not asked twice. The whole
+ * trace is drawn, with no marker at its start or its end (docs/PLAN.md,
+ * section 4).
  *
  * When the route is chosen the map flies to it and the trace draws itself
  * from start to end (docs/PLAN.md, section 13), only while the map is on
@@ -19,8 +21,7 @@ import {
   formatTime,
 } from "../domain/format";
 import type { Route } from "../domain/model";
-import { TRIM_METERS } from "../domain/privacy";
-import type { TrimmedTrace } from "../domain/trim";
+import type { ScreenTrace } from "../domain/trim";
 import type { ToolCaller } from "../service/contract";
 import { LoadError } from "../service/loader";
 import type { RiderData } from "./data";
@@ -51,7 +52,7 @@ export interface MapViewOptions {
   /** Told about every route the view opens, also with its own «anterior / siguiente» buttons. */
   readonly onOpen?: ((route: Route) => void) | undefined;
   /**
-   * The trimmed traces shared with the atlas, owned by the page. Without it
+   * The traces shared with the atlas, owned by the page. Without it
    * the view keeps its own and forgets them when it is destroyed.
    */
   readonly traces?: TraceStore | undefined;
@@ -190,8 +191,8 @@ export function createMapView(
     );
   }
 
-  /** Draws the trimmed lines: animated when motion is allowed, complete at once otherwise. */
-  function animate(target: MapSurface, trace: TrimmedTrace, mine: number): void {
+  /** Draws the lines: animated when motion is allowed, complete at once otherwise. */
+  function animate(target: MapSurface, trace: ScreenTrace, mine: number): void {
     const lines = trace.lines;
     if (!canAnimate()) {
       target.show(lines);
@@ -230,32 +231,20 @@ export function createMapView(
     };
   }
 
-  function draw(route: Route, trace: TrimmedTrace, mine: number): void {
+  function draw(route: Route, trace: ScreenTrace, mine: number): void {
     if (trace.empty !== null) {
       surface?.clear();
       canvas.hidden = true;
       setState("empty");
       clear(status);
       status.append(
-        trace.empty === "hidden"
-          ? el(
-              "div",
-              { class: "notice map-note map-note-hidden" },
-              el("strong", { class: "map-note-title" }, "Traza oculta por privacidad"),
-              el("span", { class: "sr-only" }, ": "),
-              el(
-                "span",
-                {},
-                `No se dibuja nada a menos de ${TRIM_METERS} m de donde empieza o acaba una ruta, y de esta no queda nada fuera.`,
-              ),
-            )
-          : el(
-              "div",
-              { class: "notice map-note map-note-none" },
-              el("strong", { class: "map-note-title" }, "Sin recorrido"),
-              el("span", { class: "sr-only" }, ". "),
-              el("span", {}, "El servicio no ha enviado el recorrido de esta ruta."),
-            ),
+        el(
+          "div",
+          { class: "notice map-note map-note-none" },
+          el("strong", { class: "map-note-title" }, "Sin recorrido"),
+          el("span", { class: "sr-only" }, ". "),
+          el("span", {}, "El servicio no ha enviado el recorrido de esta ruta."),
+        ),
       );
       return;
     }
@@ -369,7 +358,7 @@ export function createMapView(
     el(
       "li",
       {},
-      `No se dibuja nada a menos de ${TRIM_METERS} m de donde empieza o acaba cada ruta (eso quita, como poco, sus primeros y últimos ${TRIM_METERS} m), ni marcadores de inicio o de fin.`,
+      "La traza se dibuja entera, sin marcadores de inicio ni de fin. Es solo para tu pantalla: la tarjeta para compartir y las descargas no llevan recorridos.",
     ),
     el(
       "li",
@@ -400,7 +389,7 @@ export function createMapView(
       document.removeEventListener("visibilitychange", onVisibility);
       surface?.destroy();
       surface = null;
-      // The trimmed traces leave memory with the view (sign-out, another load); a shared store goes with the page.
+      // The traces leave memory with the view (sign-out, another load); a shared store goes with the page.
       if (ownTraces) traces.dispose();
       current = null;
     },

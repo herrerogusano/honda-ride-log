@@ -1,10 +1,11 @@
 /**
- * The trace drawing itself (docs/PLAN.md, section 13): a route's trimmed
+ * The trace drawing itself (docs/PLAN.md, section 13): a route's
  * lines grow from their first point to their last, at a pace proportional
  * to length, with a bright head leading the stroke.
  *
- * Privacy: this module only ever sees lines that already went through
- * `trimTrace` (src/domain/trim.ts). Every point it hands out is a vertex of
+ * Privacy: this module only ever sees the lines `screenTrace`
+ * (src/domain/trim.ts) hands out for the screen, never the start and end
+ * places the service marks apart. Every point it hands out is a vertex of
  * those lines or lies on one of their segments, interpolated on the map's
  * own projection (Web Mercator), where the map draws a segment as a
  * straight line. So a partial drawing is always a piece of the final one,
