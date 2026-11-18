@@ -332,6 +332,15 @@ describe("Resumen", () => {
     expect(tileValue("Kilómetros")).toBe(`${formatNumber(km(visible))}\u00A0km`);
     pick("2025");
     expect(tileValue("Salidas")).toBe(formatNumber(visible.filter((route) => localYear(route.started_at) === 2025).length));
+    // On a phone the same choice is a menu in the bar: it changes the figures too.
+    const menu = root.querySelector<HTMLSelectElement>("header.topbar .period-compact select") as HTMLSelectElement;
+    expect(menu.value).toBe("2025");
+    menu.value = "all";
+    menu.dispatchEvent(new Event("change"));
+    expect(tileValue("Salidas")).toBe(formatNumber(visible.length));
+    menu.value = "2026";
+    menu.dispatchEvent(new Event("change"));
+    expect(tileValue("Salidas")).toBe(formatNumber(thisYear.length));
   });
 
   it("shows battery, last use and odometer, and nothing about where the bike is", async () => {

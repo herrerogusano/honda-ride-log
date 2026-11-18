@@ -537,19 +537,34 @@ describe("the screen before the login", () => {
 });
 
 describe("leaving the account", () => {
-  it("keeps the two account actions together in the bar, as one labelled group, «Borrar mis datos» first", async () => {
+  it("keeps only «Salir» in the bar and puts «Borrar mis datos» at the end of the footer's «Privacidad»", async () => {
     await signedIn();
-    await vi.waitFor(() => expect(visibleButtons()).toContain("Salir"));
-    const group = root.querySelector<HTMLElement>(".bar-end .bar-account");
-    expect(group?.getAttribute("role")).toBe("group");
-    expect(group?.getAttribute("aria-label")).toBe("Tu cuenta");
-    expect([...(group?.children ?? [])].map((one) => one.textContent)).toEqual(["Borrar mis datos", "Salir"]);
+    await vi.waitFor(() => expect(visibleButtons()).toContain("Borrar mis datos"));
+    const bar = root.querySelector("header.topbar") as HTMLElement;
+    expect([...bar.querySelectorAll(".bar-end button")].map((one) => one.textContent)).toEqual(["Salir"]);
+    expect([...bar.querySelectorAll("button")].map((one) => one.textContent)).not.toContain("Borrar mis datos");
+    expect(bar.querySelector(".bar-end > .sign-out")).not.toBeNull();
+    expect(root.querySelector(".bar-account")).toBeNull();
+    const privacy = root.querySelector(".site-foot .foot-privacy") as HTMLElement;
+    expect(privacy.querySelector("h2")?.textContent).toBe("Privacidad");
+    const line = privacy.lastElementChild as HTMLElement;
+    expect(line.textContent).toBe("Puedes borrar al momento tus datos de este servicio: Borrar mis datos.");
+    // A real button (reached with the tab key), styled as a link.
+    const remove = line.querySelector("button") as HTMLButtonElement;
+    expect([remove.textContent, remove.type, remove.className]).toEqual(["Borrar mis datos", "button", "link-button delete-data"]);
+    expect(root.querySelectorAll(".delete-data")).toHaveLength(1);
+  });
+
+  it("shows no «Borrar mis datos» with the demo on screen", async () => {
+    await start(PUBLIC, "/#demo");
+    await vi.waitFor(() => expect(root.querySelector(".site-foot .foot-privacy")).not.toBeNull());
+    expect(root.querySelector(".delete-data")).toBeNull();
+    expect(visibleButtons()).not.toContain("Borrar mis datos");
   });
 
   it("«Salir» calls cerrar_sesion with the token, then goes to the login's sign-out page", async () => {
     await signedIn();
-    await vi.waitFor(() => expect(visibleButtons()).toContain("Salir"));
-    expect(visibleButtons()).toContain("Borrar mis datos");
+    await vi.waitFor(() => expect(visibleButtons()).toContain("Borrar mis datos"));
     button("Salir").click();
     // The data left the page at once.
     expect(root.querySelector('nav[aria-label="Secciones"]')).toBeNull();
@@ -586,11 +601,18 @@ describe("leaving the account", () => {
     await vi.waitFor(() => expect(visibleButtons()).toContain("Borrar mis datos"));
     button("Borrar mis datos").click();
     expect(text()).toContain("¿Borrar tus datos de este servicio?");
+    // The question opens right under the footer's button, focused on its first answer.
+    const panel = root.querySelector(".delete-confirm") as HTMLElement;
+    expect(panel.previousElementSibling?.classList.contains("foot-delete")).toBe(true);
+    expect(panel.getAttribute("role")).toBe("alertdialog");
+    expect(document.activeElement).toBe(panel.querySelector("button"));
     // What stays: the failed-attempts count, which deletes itself.
     expect(text()).toContain("Tus datos en MAPIT no se modifican. El recuento de intentos fallidos caduca a las 24 horas y se borra en los días siguientes. Después se cierra la sesión.");
     button("Cancelar").click();
     expect(text()).not.toContain("¿Borrar tus datos de este servicio?");
     expect(server.accountCalls).toEqual([]);
+    // «Cancelar» gives the focus back to the footer's button.
+    expect(document.activeElement?.closest(".foot-delete")).not.toBeNull();
     button("Borrar mis datos").click();
     const confirm = [...root.querySelectorAll<HTMLButtonElement>(".delete-confirm button")].find((one) => one.textContent === "Borrar mis datos");
     confirm?.click();
