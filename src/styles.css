@@ -267,6 +267,9 @@ code {
   padding: 0;
   border: 0;
   background: none;
+  /* A button does not inherit these by default: the brand keeps the heading's look. */
+  font: inherit;
+  color: inherit;
   letter-spacing: inherit;
   text-transform: inherit;
   white-space: inherit;
