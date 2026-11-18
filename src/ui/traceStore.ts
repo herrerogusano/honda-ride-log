@@ -11,7 +11,7 @@
 import type { Route, RouteRef } from "../domain/model";
 import { screenTrace, type ScreenTrace } from "../domain/trim";
 import type { ToolCaller } from "../service/contract";
-import { loadRouteTrace } from "../service/loader";
+import { LoadError, loadRouteTrace } from "../service/loader";
 
 export interface TraceStore {
   /** The trace of a route already read, without asking anything. */
@@ -24,7 +24,8 @@ export interface TraceStore {
   onChange(listener: () => void): void;
   /**
    * Forgets every trace and every request on its way (their answers are not
-   * kept), and tells the listeners. The store can still be asked; the
+   * kept, and their callers get a `reauth_required` error instead of the
+   * lines), and tells the listeners. The store can still be asked; the
    * page calls it when the session ends.
    */
   forget(): void;
@@ -52,11 +53,12 @@ export function createTraceStore(caller: ToolCaller): TraceStore {
           .then((detail) => {
             // Only the lines for the screen are kept; the sealed detail is dropped here.
             const lines = screenTrace(detail);
-            // An answer that arrives after the view is gone is not kept.
-            if (!disposed && mine === round) {
-              traces.set(route.ref, lines);
-              for (const listener of listeners) listener();
-            }
+            // An answer that arrives after the view is gone, or after the
+            // session ended, is neither kept nor handed out to be drawn.
+            if (disposed) throw new LoadError("detail", "cancelled", null);
+            if (mine !== round) throw new LoadError("detail", "reauth_required", null);
+            traces.set(route.ref, lines);
+            for (const listener of listeners) listener();
             return lines;
           })
           .finally(() => {

@@ -101,7 +101,8 @@ describe("the store of whole traces", () => {
     expect(told).toBe(2);
     expect(store.known(first.ref)).toBeUndefined();
     expect(store.has(second.ref)).toBe(false);
-    await late;
+    // The answer on its way is not handed out to be drawn either.
+    await expect(late).rejects.toMatchObject({ name: "LoadError", kind: "reauth_required" });
     expect(store.known(second.ref)).toBeUndefined();
     // It can still be asked after forgetting.
     await store.get(first);
