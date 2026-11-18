@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDemoService } from "../src/demo/fakeService";
 import { generateRider } from "../src/demo/generator";
 import { ToolCallError, type ToolArguments, type ToolCaller } from "../src/service/contract";
@@ -56,6 +56,10 @@ async function loadError(promise: Promise<unknown>): Promise<LoadError> {
   throw new Error("expected a LoadError");
 }
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe("a period that fails because MAPIT or the service did not answer", () => {
   it.each(["mapit_unavailable", "internal_error"])("after %s, is asked once more, after about a second, and the load completes", async (code) => {
     const clean = await loadAllRoutes(createDemoService(rider), NOW);
@@ -68,6 +72,20 @@ describe("a period that fails because MAPIT or the service did not answer", () =
     expect(callsFor(harness, JAN_JUN_2024)[1]).toEqual(callsFor(harness, JAN_JUN_2024)[0]);
     expect(load.routes).toEqual(clean.routes);
     expect(load.requests).toBe(clean.requests + 1);
+  });
+
+  it("without an injected wait, really waits about a second before asking again (fake clock)", async () => {
+    vi.useFakeTimers();
+    const harness = failing(new Map([[JAN_JUN_2024, 1]]), () => new ToolCallError("mapit_unavailable", "x"));
+    const load = loadAllRoutes(harness.caller, NOW);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(callsFor(harness, JAN_JUN_2024)).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(RETRY_DELAY_MS - 1);
+    expect(callsFor(harness, JAN_JUN_2024)).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(callsFor(harness, JAN_JUN_2024)).toHaveLength(2);
+    await vi.runAllTimersAsync();
+    await expect(load).resolves.toMatchObject({ requests: expect.any(Number) });
   });
 
   it("fails the load as before when the repeated request fails too: once, no partial history", async () => {

@@ -1920,7 +1920,14 @@ confirmado) y `src/ui/app.ts` (confirmación del borrado), y los fijan
   nombre es el de la herramienta llamada, antes de leer el código. Hasta el
   2026-11-18 no lo hacía: la web veía siempre `tool_error` y estos textos,
   y el cierre de sesión por `session_expired`, no se activaban nunca (el
-  servidor falso de los tests no ponía el prefijo; ahora sí). Un build
+  servidor falso de los tests no ponía el prefijo; ahora sí). Después, el código
+  tiene que estar en una lista cerrada (`SERVICE_TOOL_CODES`), sacada del
+  código del servicio para las herramientas que usa esta web: los códigos
+  del camino de lectura, los rechazos y fallos de cuenta del servicio
+  abierto y los rechazos de inquilino del servicio por invitación.
+  Cualquier otra palabra, aunque tenga forma de código, se enseña como
+  `tool_error`. Si el servicio añade un código, hay que añadirlo aquí; si
+  no, se ve el texto general. Un build
   por invitación sigue con el texto general de `tool_error`. Lo mismo en
   los paneles de error del mapa y del atlas (al leer el recorrido de una
   ruta), que reciben el modo de la página.

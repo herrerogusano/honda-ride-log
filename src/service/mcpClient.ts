@@ -110,6 +110,48 @@ const MAX_RESPONSE_CHARS = 4 * 1024 * 1024;
  */
 const SAFE_TOOL_CODE = /^[a-z]+(?:_[a-z]+){1,5}$/;
 
+/**
+ * Every code the service's tool errors can start with, for the tools this web
+ * calls (read from the `honda-mapit-mcp` service code: its `ServiceError`
+ * codes of the read path, the open service's refusals and account failures,
+ * and the invitation service's tenant refusals). Any other code, even one
+ * with a valid form, is shown as `tool_error`: a word the service never
+ * sends is not read as one.
+ */
+export const SERVICE_TOOL_CODES: readonly string[] = [
+  // Read path (`services.py`).
+  "authentication_failed",
+  "credential_store_failed",
+  "distance_unavailable",
+  "duplicate_route_conflict",
+  "internal_error",
+  "invalid_date_range",
+  "invalid_response",
+  "invalid_route_id",
+  "invalid_route_timestamp",
+  "mapit_request_failed",
+  "mapit_unavailable",
+  "not_found",
+  "numeric_overflow",
+  "pagination_unsupported",
+  "period_too_large",
+  "rate_limited",
+  "response_too_large",
+  "route_limit_exceeded",
+  "route_outside_requested_interval",
+  "vehicle_not_found",
+  // Open service (`public_web_service.py`).
+  "session_expired",
+  "session_limit_reached",
+  "service_paused",
+  "service_unavailable",
+  "logout_failed",
+  "delete_failed",
+  // Invitation service (`invited_mcp.py`).
+  "tenant_unauthorized",
+  "tenant_provider_failed",
+];
+
 /** The rejection of `AbortSignal.timeout` (a DOMException named `TimeoutError`, whatever realm made it). */
 function isTimeout(error: unknown): boolean {
   return typeof error === "object" && error !== null && (error as { name?: unknown }).name === "TimeoutError";
@@ -155,7 +197,7 @@ function toolCode(result: Record<string, unknown>, tool: string): string {
   const prefix = `Error executing tool ${tool}: `;
   const text = raw.startsWith(prefix) ? raw.slice(prefix.length) : raw;
   const code = text.split(":", 1)[0]?.trim() ?? "";
-  return SAFE_TOOL_CODE.test(code) ? code : "tool_error";
+  return SAFE_TOOL_CODE.test(code) && SERVICE_TOOL_CODES.includes(code) ? code : "tool_error";
 }
 
 /**
