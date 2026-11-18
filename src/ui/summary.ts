@@ -29,7 +29,6 @@ import {
 } from "../domain/format";
 import { maintenanceProgress, maintenanceStatus, validPlan, type MaintenancePlan } from "../domain/maintenance";
 import { currentAnalytics, type AnalyticsConfig } from "../analytics/config";
-import { TRIM_METERS } from "../domain/privacy";
 import {
   activityCalendar,
   averageRideKm,
@@ -95,7 +94,7 @@ export function promises(config: AnalyticsConfig = currentAnalytics()): readonly
     "Tus datos se leen y se calculan en tu navegador y no salen de él: esta web no tiene servidor propio.",
     countingPromise(config),
     "Nunca se muestran la matrícula, el bastidor, el concesionario ni la posición actual de la moto.",
-    `Los mapas ocultan los primeros y los últimos ${TRIM_METERS} m de cada ruta.`,
+    "Los mapas enseñan cada ruta entera, solo en tu pantalla, sobre un plano que se pide a OpenStreetMap. La tarjeta para compartir y las descargas no llevan recorridos.",
   ];
 }
 
