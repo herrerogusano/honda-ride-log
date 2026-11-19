@@ -6,6 +6,8 @@ de tu cuenta de MAPIT (la app que localiza la moto).
 **Verla:** <https://my-ride-log.pages.dev/> · con datos de ejemplo, sin
 cuenta: <https://my-ride-log.pages.dev/#demo>
 
+[![Ride Log en 16 segundos, con los datos de ejemplo de la demo: una ruta, el atlas, los días del año, los kilómetros por mes y la web en un portátil](docs/media/ride-log.gif)](https://my-ride-log.pages.dev/#demo)
+
 Proyecto personal, sin relación con Honda ni con MAPIT. Usa una interfaz no
 oficial de MAPIT: usarla con tu cuenta es decisión tuya, y MAPIT podría
 bloquear o cancelar cuentas según sus condiciones.
