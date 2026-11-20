@@ -1,7 +1,9 @@
 /**
- * Contract of the four service tools the web uses, as read from the service
+ * Contract of the five service tools the web uses, as read from the service
  * source (pydantic models with `extra="forbid"`) and checked against three
- * small real reads on 2026-11-09. See docs/PLAN.md, "Límites técnicos".
+ * small real reads on 2026-11-09 (`list_vehicles` and `vehicle_id`: read from
+ * the service source and its contract document only, not against a real
+ * account). See docs/PLAN.md, "Límites técnicos".
  *
  * These are the RAW shapes. They contain fields the web must never show
  * (registration, VIN, dealer, position, route ids): only
@@ -119,12 +121,45 @@ export interface RawVehicleDetails {
   units_confirmed: boolean;
 }
 
+/**
+ * One entry of `list_vehicles` (service model `VehicleListEntry`). `status`
+ * has the fields of `get_vehicle_status`; for a cancelled vehicle it also
+ * carries `vehicle_cancelled: true` and a fixed `state_warning`.
+ */
+export interface RawVehicleListEntry {
+  vehicle_id: string;
+  model: string | null;
+  registration: string | null;
+  cancelled: boolean;
+  status: RawVehicleStatus & { vehicle_cancelled?: boolean; state_warning?: string };
+}
+
+/** `list_vehicles` (service model `VehicleList`). */
+export interface RawVehicleList {
+  vehicles: RawVehicleListEntry[];
+  vehicle_count: number;
+  selection_required: boolean;
+  selection_basis: "mapit_dashboard_filter" | "legacy_single_vehicle_fallback";
+  selection_hint: string;
+}
+
+/**
+ * The vehicle a tool works on (service contract, "Vehicle selection"). With
+ * one vehicle it may be left out; with several, a tool without it fails with
+ * `vehicle_selection_required`. An id that is not one of the account's
+ * vehicles fails with `vehicle_not_found`.
+ */
+export interface VehicleArgument {
+  vehicle_id?: string;
+}
+
 export interface ToolArguments {
-  get_vehicle_status: Record<string, never>;
-  get_vehicle_details: Record<string, never>;
+  list_vehicles: Record<string, never>;
+  get_vehicle_status: VehicleArgument;
+  get_vehicle_details: VehicleArgument;
   /** `from_time` inclusive, `to_time` exclusive; ISO date or datetime with timezone. */
-  list_routes: { from_time: string; to_time: string };
-  get_route_detail: { route_id: string };
+  list_routes: { from_time: string; to_time: string } & VehicleArgument;
+  get_route_detail: { route_id: string } & VehicleArgument;
 }
 
 export type ToolName = keyof ToolArguments;

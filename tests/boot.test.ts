@@ -34,6 +34,7 @@ class MemoryStorage implements StorageLike {
 /** The two entries that src/auth/savedSession.ts keeps in the tab: the token, and the account data bound to it. */
 const SAVED_KEY = "ride-log.session";
 const ACCOUNT_KEY = "ride-log.account";
+const VEHICLE_KEY = "ride-log.vehicle";
 
 // jsdom serves the page at http://localhost:3000/; the login sends the browser back there.
 const CONFIG: ServiceConfig = Object.freeze({ ...TEST_CONFIG, redirectUri: "http://localhost:3000/" });
@@ -245,8 +246,9 @@ describe("a build with a service", () => {
     expect(page()).not.toContain(token);
     expect(location.href).not.toContain(token);
     // The pending login was used once and is gone; the tab keeps the token
-    // and its expiry, and the account data bound to that expiry.
-    expect([...(storage?.items.keys() ?? [])].sort()).toEqual([ACCOUNT_KEY, SAVED_KEY]);
+    // and its expiry, and the account data and the chosen motorbike bound to it.
+    expect([...(storage?.items.keys() ?? [])].sort()).toEqual([ACCOUNT_KEY, SAVED_KEY, VEHICLE_KEY]);
+    expect(Object.keys(JSON.parse(storage?.items.get(VEHICLE_KEY) ?? "{}") as object).sort()).toEqual(["binding", "vehicle"]);
     expect(Object.keys(JSON.parse(storage?.items.get(SAVED_KEY) ?? "{}") as object).sort()).toEqual(["binding", "expiresAt", "token"]);
     // Nor in the title.
     expect(document.title).not.toContain(token);
@@ -301,9 +303,10 @@ describe("a build with a service", () => {
   });
 
   it.each([
-    ["a 401", () => ({ status: 401, body: "{}" }), "status/reauth_required (unauthorized)"],
-    ["a network failure", () => "network" as const, "status/reauth_required (network)"],
-    ["a 403", () => ({ status: 403, body: "{}" }), "status/forbidden"],
+    // The first call is the list of motorbikes (docs/PLAN.md, section 19).
+    ["a 401", () => ({ status: 401, body: "{}" }), "vehicles/reauth_required (unauthorized)"],
+    ["a network failure", () => "network" as const, "vehicles/reauth_required (network)"],
+    ["a 403", () => ({ status: 403, body: "{}" }), "vehicles/forbidden"],
   ])("after %s asks to sign in again, with no retry on the same token", async (_name, answer, code) => {
     server.mcpOverride = answer;
     await signedIn();
@@ -327,7 +330,7 @@ describe("a build with a service", () => {
     };
     await signedIn();
     const panel = await alert();
-    expect(panel.textContent).toContain("status/http_status (503)");
+    expect(panel.textContent).toContain("vehicles/http_status (503)");
     expect(buttons(panel)).toEqual(["Reintentar"]);
     button("Reintentar", panel).click();
     await loaded();
@@ -456,7 +459,7 @@ describe("a reload keeps the session (docs/PLAN.md, section 10, «El token»)", 
     await loaded();
     await reload();
     await loaded();
-    expect(storage?.items.size).toBe(2);
+    expect(storage?.items.size).toBe(3);
     server.mcpOverride = () => ({ status: 401, body: "{}" });
     root.querySelectorAll<HTMLElement>(".row-button")[1]?.click();
     await vi.waitFor(() => expect(root.querySelector(".map-status [role='alert']")?.textContent).toContain("reauth_required (unauthorized)"));
@@ -468,7 +471,7 @@ describe("a reload keeps the session (docs/PLAN.md, section 10, «El token»)", 
     await loaded();
     await reload();
     await loaded();
-    expect(storage?.items.size).toBe(2);
+    expect(storage?.items.size).toBe(3);
     // The exact text the MCP Python SDK sends for a tool error.
     server.mcpOverride = (request) => {
       const message = JSON.parse(request.body) as { id: number; params: { name: string } };
@@ -510,7 +513,8 @@ describe("a reload paints the account data kept in the tab (docs/PLAN.md, sectio
     const from = mcpRequests();
     await reload();
     await loaded();
-    await vi.waitFor(() => expect(toolsSince(from)).toEqual(["get_vehicle_status", "get_vehicle_details"]));
+    // The list of motorbikes brings the state (docs/PLAN.md, section 19).
+    await vi.waitFor(() => expect(toolsSince(from)).toEqual(["list_vehicles", "get_vehicle_details"]));
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
 
@@ -526,14 +530,14 @@ describe("a reload paints the account data kept in the tab (docs/PLAN.md, sectio
     await loaded();
     // Painted at once, from the tab.
     expect(rows()).toBe(listed);
-    await vi.waitFor(() => expect(toolsSince(before)).toEqual(["get_vehicle_status", "get_vehicle_details"]));
+    await vi.waitFor(() => expect(toolsSince(before)).toEqual(["list_vehicles", "get_vehicle_details"]));
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(rows()).toBe(listed);
     expect(rows()).toBeGreaterThan(10);
     expect(content()).toBe(shown);
     choosePeriod("all");
     expect(content()).toBe(allShown);
-    expect(toolsSince(before)).toEqual(["get_vehicle_status", "get_vehicle_details"]);
+    expect(toolsSince(before)).toEqual(["list_vehicles", "get_vehicle_details"]);
   });
 
   it("finds a kept route again with one light read per semester, then asks for its trace", async () => {
@@ -589,7 +593,10 @@ describe("a reload paints the account data kept in the tab (docs/PLAN.md, sectio
     const value = JSON.parse(kept) as { binding: string; account: Record<string, unknown> };
     expect(Object.keys(value).sort()).toEqual(["account", "binding"]);
     expect(value.binding).toBe((JSON.parse(storage?.items.get(SAVED_KEY) ?? "{}") as { binding: string }).binding);
-    expect(Object.keys(value.account).sort()).toEqual(["info", "routes", "skipped", "v", "vehicle"]);
+    // `k`: the motorbike's hashed key, never its id (docs/PLAN.md, section 19).
+    expect(Object.keys(value.account).sort()).toEqual(["info", "k", "routes", "skipped", "v", "vehicle"]);
+    expect(value.account["k"]).toMatch(/^[0-9a-f]{16}$/);
+    expect(kept).not.toContain("veh-DEMO");
     const routes = value.account["routes"] as unknown[][];
     expect(routes.every((one) => one.length === 6 && one.every((field) => field === null || ["number", "boolean"].includes(typeof field)))).toBe(true);
     expect((value.account["vehicle"] as unknown[]).length).toBe(4);
@@ -629,18 +636,24 @@ describe("a reload paints the account data kept in the tab (docs/PLAN.md, sectio
     };
     expect(battery()).not.toBe("");
     expect(battery()).not.toContain("13");
-    // The service now says the battery is at 13 %.
+    // The service now says the battery is at 13 %, in the list of motorbikes that carries each one's state.
     server.mcpOverride = (request) => {
       const message = JSON.parse(request.body) as { id: number; params: { name: string } };
-      if (message.params.name !== "get_vehicle_status") return null;
-      const status = { ...rider.status, battery: 13 };
-      return { body: JSON.stringify({ jsonrpc: "2.0", id: message.id, result: { content: [{ type: "text", text: JSON.stringify(status) }], structuredContent: status, isError: false } }) };
+      if (message.params.name !== "list_vehicles") return null;
+      const list = {
+        vehicles: [{ vehicle_id: "veh-DEMO-0001", model: rider.details.model, registration: rider.details.registration, cancelled: false, status: { ...rider.status, battery: 13 } }],
+        vehicle_count: 1,
+        selection_required: false,
+        selection_basis: "mapit_dashboard_filter",
+        selection_hint: "hint",
+      };
+      return { body: JSON.stringify({ jsonrpc: "2.0", id: message.id, result: { content: [{ type: "text", text: JSON.stringify(list) }], structuredContent: list, isError: false } }) };
     };
     const before = mcpRequests();
     await reload();
     await loaded();
     await vi.waitFor(() => expect(battery()).toContain("13"));
-    expect(toolsSince(before)).toEqual(["get_vehicle_status", "get_vehicle_details"]);
+    expect(toolsSince(before)).toEqual(["list_vehicles", "get_vehicle_details"]);
     await vi.waitFor(() => expect((JSON.parse(storage?.items.get(ACCOUNT_KEY) ?? "{}") as { account: { vehicle: unknown[] } }).account.vehicle[1]).toBe(13));
   });
 
@@ -653,7 +666,7 @@ describe("a reload paints the account data kept in the tab (docs/PLAN.md, sectio
     const before = mcpRequests();
     await reload();
     await loaded();
-    await vi.waitFor(() => expect(toolsSince(before)).toContain("get_vehicle_status"));
+    await vi.waitFor(() => expect(toolsSince(before)).toContain("list_vehicles"));
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(root.querySelector('[role="alert"]')).toBeNull();
     expect(content()).toBe(shown);
@@ -670,7 +683,7 @@ describe("a reload paints the account data kept in the tab (docs/PLAN.md, sectio
     await reload();
     await loaded();
     expect(toolsSince(before)).toContain("list_routes");
-    expect(toolsSince(before)).toContain("get_vehicle_status");
+    expect(toolsSince(before)).toContain("list_vehicles");
     expect((JSON.parse(storage?.items.get(ACCOUNT_KEY) ?? "{}") as { binding: string }).binding).toBe(kept.binding);
   });
 
@@ -868,7 +881,7 @@ describe("signing out", () => {
     await loaded();
     // The first account's load got its held answer and asked nothing more.
     expect(mcpRequests()).toBe(1);
-    expect(asked.slice(0, 2)).toEqual(["get_vehicle_status", "get_vehicle_details"]);
+    expect(asked.slice(0, 2)).toEqual(["list_vehicles", "get_vehicle_details"]);
     expect(signOutButton().hidden).toBe(false);
   });
 
@@ -892,7 +905,7 @@ describe("signing out", () => {
     await loaded();
     await new Promise((resolve) => setTimeout(resolve, 20));
     const firstAccount = server.requests.filter((one) => one.url === CONFIG.mcpUrl).map((one) => toolOf(one.body));
-    expect(firstAccount).toEqual(["get_vehicle_status", "get_vehicle_details", "list_routes"]);
+    expect(firstAccount).toEqual(["list_vehicles", "get_vehicle_details", "list_routes"]);
   });
 
   it("leaves for the login's sign-out page when the build knows one", async () => {

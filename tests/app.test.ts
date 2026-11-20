@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { createDemoService } from "../src/demo/fakeService";
+import { createDemoService, DEMO_VEHICLE_ID } from "../src/demo/fakeService";
 import { DEMO_TOP_SPEED, FORBIDDEN_MARK, generateRider } from "../src/demo/generator";
 import { createDemoCaller, DEMO_SEED } from "../src/demo/scenarios";
 import { formatDate, formatDateLong, formatNumber } from "../src/domain/format";
 import { ToolCallError, type ToolCaller, type ToolName } from "../src/service/contract";
 import { loadAllRoutes, loadVehicleState } from "../src/service/loader";
+import { keyOfVehicleId } from "../src/service/vehicles";
 import { startApp, type App } from "../src/ui/app";
 import { buildRiderData } from "../src/ui/data";
 import { downloadBlob } from "../src/ui/download";
@@ -196,7 +197,7 @@ describe("load states", () => {
     expect(root.querySelector(".demo-banner")?.hasAttribute("hidden")).toBe(true);
   });
 
-  it("stops at a failed vehicle state and shows a code, not a message", async () => {
+  it("stops at a failed list of motorbikes and shows a code, not a message", async () => {
     const calls: ToolName[] = [];
     const broken: ToolCaller = {
       async callTool(name) {
@@ -206,11 +207,28 @@ describe("load states", () => {
     };
     await mount().load(broken, { demo: false });
     const alert = root.querySelector('[role="alert"]');
+    expect(alert?.textContent).toContain("No se ha podido leer la lista de motos de tu cuenta.");
+    expect(alert?.querySelector("code")?.textContent).toBe("vehicles/tool_error (upstream_unavailable)");
+    expect(text()).not.toContain("secret detail");
+    expect(text()).not.toContain("eyJ");
+    expect(calls).toEqual(["list_vehicles"]);
+  });
+
+  it("stops at a failed vehicle state of a service without list_vehicles and shows a code, not a message", async () => {
+    const calls: ToolName[] = [];
+    const broken: ToolCaller = {
+      async callTool(name) {
+        calls.push(name);
+        if (name === "list_vehicles") throw new ToolCallError("unknown_tool", "Unknown tool: list_vehicles");
+        throw new ToolCallError("upstream_unavailable", "secret detail eyJhbGciOi");
+      },
+    };
+    await mount().load(broken, { demo: false });
+    const alert = root.querySelector('[role="alert"]');
     expect(alert?.textContent).toContain("No se ha podido leer el estado de la moto.");
     expect(alert?.querySelector("code")?.textContent).toBe("status/tool_error (upstream_unavailable)");
     expect(text()).not.toContain("secret detail");
-    expect(text()).not.toContain("eyJ");
-    expect(calls).toEqual(["get_vehicle_status"]);
+    expect(calls).toEqual(["list_vehicles", "get_vehicle_status"]);
   });
 
   it("shows the error of the routes with its code and lets the user retry", async () => {
@@ -522,8 +540,11 @@ describe("maintenance", () => {
     expect(result.textContent).toContain(`Te faltan ${formatNumber(remaining)}\u00A0km para la revisión`);
     expect(result.textContent).toContain("Guardado en este navegador.");
     expect(stored.size).toBe(1);
-    expect([...stored.keys()][0]).toBe("ride-log.demo.maintenance.v1");
-    expect(JSON.parse(stored.get("ride-log.demo.maintenance.v1") as string)).toEqual({
+    // Filed under the motorbike's hashed key, never its id (docs/PLAN.md, section 19).
+    const key = `ride-log.demo.maintenance.v1.${await keyOfVehicleId(DEMO_VEHICLE_ID)}`;
+    expect([...stored.keys()][0]).toBe(key);
+    expect(key).not.toContain(DEMO_VEHICLE_ID);
+    expect(JSON.parse(stored.get(key) as string)).toEqual({
       intervalKm: 6000,
       lastServiceKm: Math.floor(odometer) - 1000,
     });
@@ -579,7 +600,7 @@ describe("maintenance", () => {
     interval.value = "4000";
     last.value = "100";
     submit(form);
-    expect([...stored.keys()][0]).toBe("ride-log.maintenance.v1");
+    expect([...stored.keys()][0]).toBe(`ride-log.maintenance.v1.${await keyOfVehicleId(DEMO_VEHICLE_ID)}`);
   });
 });
 

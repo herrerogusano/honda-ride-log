@@ -106,8 +106,8 @@ describe("requests", () => {
 });
 
 describe("closed tool list and arguments", () => {
-  it("allows exactly the four read tools", () => {
-    expect([...ALLOWED_TOOLS].sort()).toEqual(["get_route_detail", "get_vehicle_details", "get_vehicle_status", "list_routes"]);
+  it("allows exactly the five read tools", () => {
+    expect([...ALLOWED_TOOLS].sort()).toEqual(["get_route_detail", "get_vehicle_details", "get_vehicle_status", "list_routes", "list_vehicles"]);
   });
 
   it.each(["borrar_mis_datos", "get_route_statistics", "tools/list", ""])("refuses %j before sending anything", async (name) => {
@@ -129,6 +129,52 @@ describe("closed tool list and arguments", () => {
     const error = await failure(client.callTool(name as ToolName, args as never));
     expect([(error as ServiceError).kind, (error as ServiceError).detail]).toEqual(["not_allowed", "arguments"]);
     expect(mcpRequests(server)).toEqual([]);
+  });
+});
+
+describe("vehicle selection (docs/PLAN.md, section 19)", () => {
+  it("sends list_vehicles with no arguments, and vehicle_id only when given, as a string", async () => {
+    const { server, client } = await setUp();
+    await client.callTool("list_vehicles", {});
+    await client.callTool("get_vehicle_status", { vehicle_id: "veh-DEMO-0001" });
+    await client.callTool("list_routes", { from_time: "2026-01-01", to_time: "2026-02-01", vehicle_id: "veh-DEMO-0001" });
+    // Left undefined (a caller that spreads an empty choice): not sent.
+    await client.callTool("get_vehicle_details", { vehicle_id: undefined } as never);
+    const sent = mcpRequests(server).map((request) => (JSON.parse(request.body) as { params: { name: string; arguments: unknown } }).params);
+    expect(sent).toEqual([
+      { name: "list_vehicles", arguments: {} },
+      { name: "get_vehicle_status", arguments: { vehicle_id: "veh-DEMO-0001" } },
+      { name: "list_routes", arguments: { from_time: "2026-01-01", to_time: "2026-02-01", vehicle_id: "veh-DEMO-0001" } },
+      { name: "get_vehicle_details", arguments: {} },
+    ]);
+  });
+
+  it.each([
+    ["a vehicle_id on list_vehicles", "list_vehicles", { vehicle_id: "x" }],
+    ["an empty vehicle_id", "get_vehicle_status", { vehicle_id: "" }],
+    ["a vehicle_id longer than 256 characters", "get_vehicle_details", { vehicle_id: "v".repeat(257) }],
+    ["a number for a vehicle_id", "list_routes", { from_time: "2026-01-01", to_time: "2026-02-01", vehicle_id: 7 }],
+  ])("refuses %s before sending anything", async (_label, name, args) => {
+    const { server, client } = await setUp();
+    const error = await failure(client.callTool(name as ToolName, args as never));
+    expect([(error as ServiceError).kind, (error as ServiceError).detail]).toEqual(["not_allowed", "arguments"]);
+    expect(mcpRequests(server)).toEqual([]);
+  });
+
+  it.each(["vehicle_selection_required", "vehicle_not_found"])("reads %s behind the SDK's prefix", async (code) => {
+    const { server, client } = await setUp();
+    const text = `Error executing tool get_vehicle_status: ${code}: this account has 2 vehicles`;
+    server.mcpOverride = () => ({ body: JSON.stringify({ jsonrpc: "2.0", id: 1, result: { isError: true, content: [{ type: "text", text }] } }) });
+    const error = await failure(client.callTool("get_vehicle_status", {}));
+    expect((error as ToolCallError).code).toBe(code);
+    expect(error.message).not.toContain("2 vehicles");
+  });
+
+  it.each([true, false])("calls a tool the service does not have «unknown_tool» (SDK prefix: %s)", async (prefixed) => {
+    const { server, client } = await setUp();
+    const text = `${prefixed ? "Error executing tool list_vehicles: " : ""}Unknown tool: list_vehicles`;
+    server.mcpOverride = () => ({ body: JSON.stringify({ jsonrpc: "2.0", id: 1, result: { isError: true, content: [{ type: "text", text }] } }) });
+    expect(((await failure(client.callTool("list_vehicles", {}))) as ToolCallError).code).toBe("unknown_tool");
   });
 });
 
@@ -301,7 +347,7 @@ describe("answers the client refuses", () => {
       "logout_failed", "mapit_request_failed", "mapit_unavailable", "not_found", "numeric_overflow",
       "pagination_unsupported", "period_too_large", "rate_limited", "response_too_large", "route_limit_exceeded",
       "route_outside_requested_interval", "service_paused", "service_unavailable", "session_expired", "session_limit_reached",
-      "tenant_provider_failed", "tenant_unauthorized", "vehicle_not_found",
+      "tenant_provider_failed", "tenant_unauthorized", "vehicle_not_found", "vehicle_selection_required",
     ]);
     for (const code of SERVICE_TOOL_CODES) {
       const { server, client } = await setUp();

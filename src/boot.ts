@@ -33,7 +33,9 @@ import {
   completeLogin,
   dropAccountData,
   keepAccountData,
+  keepVehicleChoice,
   keptAccountData,
+  keptVehicleChoice,
   logout,
   resumeSession,
   startLogin,
@@ -48,6 +50,7 @@ import type { AuthSession, Schedule } from "./auth/session";
 import type { ServiceEnvironment } from "./service/environment";
 import { signInError, type LoadError } from "./service/loader";
 import { createMcpClient, type McpClient, type McpClientOptions } from "./service/mcpClient";
+import { vehicleMemory } from "./service/vehicles";
 import { renderTurnstile, type ChallengeRenderer } from "./access/turnstile";
 import { clear, el } from "./ui/dom";
 import { showPassScreen } from "./ui/passScreen";
@@ -217,6 +220,11 @@ export async function boot(options: BootOptions): Promise<App> {
       demo: false,
       saved,
       onLoaded: (data) => keepAccountData(started, deps, accountSnapshot(data)),
+      // The motorbike chosen in this tab, next to the session and removed with it (docs/PLAN.md, section 19).
+      vehicles: vehicleMemory({
+        read: () => keptVehicleChoice(started, deps),
+        write: (id) => keepVehicleChoice(started, deps, id),
+      }),
     });
   } else if (leftNotice === "delete_unconfirmed") {
     app.showNotice(DELETE_UNCONFIRMED);

@@ -97,6 +97,15 @@ describe("privacy seals", () => {
     expect(await importErrors(use("serviceRouteId", "../domain/sanitize"), "src/ui/routesView.ts")).toBe(1);
     expect(await importErrors(use("serviceRouteId", "./domain/sanitize"), "src/main.ts")).toBe(1);
   }, 30_000);
+
+  it("let only the service code open a vehicle reference (docs/PLAN.md, section 19)", async () => {
+    expect(await importErrors(use("serviceVehicleId", "../domain/sanitize"), "src/service/vehicles.ts")).toBe(0);
+    for (const file of ["src/ui/app.ts", "src/ui/vehiclePicker.ts", "src/ui/summary.ts", "src/ui/mapView.ts", "src/ui/traceStore.ts"]) {
+      expect(await importErrors(use("serviceVehicleId", "../domain/sanitize"), file)).toBe(1);
+    }
+    expect(await importErrors(use("serviceVehicleId", "./sanitize"), "src/domain/trim.ts")).toBe(1);
+    expect(await importErrors(use("serviceVehicleId", "./domain/sanitize"), "src/boot.ts")).toBe(1);
+  }, 60_000);
 });
 
 describe("ways around the seals", () => {

@@ -4,7 +4,7 @@ Este documento explica a quien lea el código qué se construye, qué está
 decidido, qué reglas de privacidad y de datos se cumplen y qué se ha
 comprobado y qué no.
 
-Última actualización: 2026-11-18.
+Última actualización: 2026-11-20.
 
 ## 1. Qué es
 
@@ -2345,3 +2345,109 @@ hace la misma cuenta.
 - Que Cloudflare Pages con sus cabeceras (`frame-ancestors`,
   `Cross-Origin-Opener-Policy`) no moleste al control: solo se probó con
   la etiqueta `<meta>`.
+
+## 19. Varias motos en una cuenta
+
+Una cuenta de MAPIT puede tener varias motos. El servicio (contrato
+«Vehicle selection» de `honda-mapit-mcp`) ofrece `list_vehicles` y un
+`vehicle_id` opcional en cada herramienta de la moto; con varias motos y
+sin `vehicle_id` responde `vehicle_selection_required`, y con un id que no
+es de la cuenta, `vehicle_not_found`. Decisiones del propietario
+(2026-11-20):
+
+- **Una moto a la vez**, sin vista «todas».
+- **Con una sola moto, la web es la misma**: sin selector ni texto nuevo
+  (`tests/multi-vehicle.test.ts` compara la página dibujada con y sin
+  `list_vehicles`, sin los identificadores generados).
+- **El selector va en el héroe**, en lugar de «<modelo> · Ride Log», con el
+  aspecto del menú compacto de años, zona de pulsación de 44 px y la nota
+  «N motos en tu cuenta» (`src/ui/vehiclePicker.ts`). Activas primero y
+  dadas de baja al final, cada grupo en el orden del servicio.
+- **La etiqueta es el modelo.** Si dos motos comparten modelo, en el
+  selector y solo ahí se añaden los tres últimos caracteres de la
+  matrícula («Forza 125 · …BCD»). El saneador (`sanitizeVehicleList`) lee
+  la matrícula solo para eso y la descarta; la tarjeta, el CSV, los
+  contadores y el almacenamiento no la ven nunca (test que lo comprueba).
+- **Moto por defecto**: la de `last_communication` más reciente en
+  `list_vehicles`. Es el último informe del aparato a MAPIT, que sigue de
+  cerca a la última salida pero no es exactamente ella. Empate o sin dato:
+  la primera de la lista. Una dada de baja solo si todas lo están
+  (`defaultVehicle` en `src/service/vehicles.ts`).
+- **Moto dada de baja**: marca «Dada de baja» junto al selector y en la
+  placa; el estado dice «No disponible» (nada de datos viejos) y «Última
+  salida» sale de sus rutas; sus rutas, cifras y tarjeta funcionan; en
+  Taller, un aviso en lugar del formulario.
+- **Cambiar de moto** es una carga, con la línea de barrido, sin volver a
+  pedir la lista: `get_vehicle_status`, `get_vehicle_details` y el
+  historial. El año se queda si esa moto tiene salidas ese año; si no, su
+  año más reciente con salidas; «Todo» se queda (`openingPeriod`).
+
+### Llamadas
+
+Al entrar, `list_vehicles` primero; trae el estado de cada moto, así que
+sustituye a `get_vehicle_status` y una carga gasta las mismas llamadas que
+antes. Después, `vehicle_id` en cada herramienta de la moto, también con una
+sola (el servicio lo admite y responde igual). Una recarga con datos
+guardados pide `list_vehicles` y `get_vehicle_details`, como antes pedía el
+estado y los datos. El identificador vive detrás de un `VehicleRef` opaco;
+solo `serviceVehicleId` lo abre y ESLint solo deja importarlo en
+`src/service/` (`tests/lint-seals.test.ts`).
+
+Si el servicio no tiene `list_vehicles` (un despliegue anterior: error de
+herramienta «Unknown tool», que esta web llama `unknown_tool`; un error
+JSON-RPC −32601 o −32602; o un rechazo sin código conocido), la web
+funciona como antes, sin `vehicle_id`. Con varias motos, la siguiente
+llamada diría `vehicle_selection_required`.
+
+`vehicle_selection_required` y `vehicle_not_found` tienen texto propio en
+los dos modos y «Reintentar», que olvida la moto guardada y vuelve a leer
+la lista.
+
+### Almacenamiento
+
+- **La moto elegida** sobrevive a una recarga en la pestaña: su
+  `vehicle_id`, en `sessionStorage`, en una tercera clave de
+  `src/auth/savedSession.ts` (`ride-log.vehicle`), ligada al token con el
+  mismo vínculo que los datos de la cuenta y borrada con él. Nunca en
+  `localStorage` ni en los contadores. Es un identificador de la cuenta en
+  la pestaña: mismo riesgo aceptado que el token y los datos (apartado 10).
+- **Los datos guardados de la cuenta** llevan la clave de su moto (`k`, ver
+  abajo) y solo se pintan si coincide con la moto elegida; si no, la carga
+  se hace entera. Una moto dada de baja añade `c: true`. Los dos campos
+  solo aparecen cuando aplican.
+- **El mantenimiento es por moto**, en `localStorage` bajo
+  `ride-log.maintenance.v1.<clave>`. La clave son los 16 primeros dígitos
+  hexadecimales de SHA-256(`ride-log.vehicle:` + `vehicle_id`)
+  (`keyOfVehicleId`): así el identificador de MAPIT no se escribe en un
+  almacenamiento que dura más que la sesión. No es un secreto (quien
+  conozca el id puede calcularla); 64 bits bastan para separar unas pocas
+  motos en un navegador. La pareja guardada antes, bajo la clave sin
+  sufijo, es de la primera moto que lista el servicio (con una sola, de
+  esa): se mueve allí una vez y la clave antigua se borra. Sin
+  `list_vehicles` se sigue usando la clave antigua.
+
+### Demo
+
+`#demo` sigue con una moto. `#demo=motos` («Varias motos» en el
+desplegable) tiene tres inventadas: dos «Demo 125» (el selector añade
+«…BCD» y «…KLM») y una «Demo 500» dada de baja cuyas salidas acabaron hace
+más de un año.
+
+### Qué se ha comprobado y dónde
+
+- En memoria (Vitest, jsdom) contra el servicio de demo y
+  `tests/fakeServer.ts`: `tests/multi-vehicle.test.ts` y añadidos en
+  `mcpClient`, `saved-account` y `lint-seals`. Cada test nuevo se vio
+  fallar con 21 roturas a propósito, una cada vez.
+- En un navegador (Chrome sin ventana) sobre el build y la demo, a 390 px
+  y 1440 px: selector, nota, marca, placa y Taller de la moto dada de
+  baja, sin desplazamiento horizontal.
+
+### Qué no se ha comprobado
+
+- **Nada con una cuenta real de varias motos** ni contra el servicio
+  desplegado: la forma de `list_vehicles` y de sus errores sale de su
+  código y su documento de contrato.
+- El texto exacto con que un servicio sin `list_vehicles` lo rechaza: se
+  aceptan las tres formas de arriba.
+- El menú nativo del selector en un móvil real (se pinta el del sistema).

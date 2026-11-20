@@ -164,7 +164,8 @@ describe("progress of a load", () => {
     const content = root.querySelector(".content") as HTMLElement;
     expect(content.children.length).toBe(1);
     expect(content.firstElementChild?.getAttribute("role")).toBe("alert");
-    expect(content.querySelector("code")?.textContent).toBe("status/unknown (Error)");
+    // The first call is the list of motorbikes, which also brings the state.
+    expect(content.querySelector("code")?.textContent).toBe("vehicles/unknown (Error)");
   });
 });
 

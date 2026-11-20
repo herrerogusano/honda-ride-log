@@ -17,7 +17,11 @@
  *   trace, no start or end place, no route id, no email and no token, and
  *   hands it back to `restoreAccount` there, which checks it again.
  *
- * The data entry is bound to the token entry: each time a token is saved it
+ * - `ride-log.vehicle` (since vehicle selection, docs/PLAN.md section 19):
+ *   the `vehicle_id` of the motorbike chosen in this tab, so a reload shows
+ *   the same one. Nothing else: no model, no registration.
+ *
+ * The data entry (and the vehicle entry) is bound to the token entry: each time a token is saved it
  * gets a new random `binding` (256 bits, made by the sign-in with Web Crypto,
  * unrelated to the token), recorded in both entries. The data is kept and
  * handed back only while a usable token entry with that same binding is
@@ -53,6 +57,9 @@ export interface SavedSession {
 
 const KEY = "ride-log.session";
 const ACCOUNT_KEY = "ride-log.account";
+const VEHICLE_KEY = "ride-log.vehicle";
+/** The service refuses longer ids (contract, "Vehicle selection"). */
+const MAX_VEHICLE_ID_LENGTH = 256;
 /** What `randomToken` in src/auth/pkce.ts makes: 43 base64url characters. */
 export const BINDING_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 
@@ -72,6 +79,7 @@ export function browserTokenStorage(): TokenStorage | null {
  */
 export function saveSession(storage: TokenStorage, saved: SavedSession & { readonly binding: string }): void {
   storage.removeItem(ACCOUNT_KEY);
+  storage.removeItem(VEHICLE_KEY);
   if (!BINDING_PATTERN.test(saved.binding)) throw new TypeError("binding");
   storage.setItem(KEY, JSON.stringify({ token: saved.accessToken, expiresAt: saved.expiresAtMs, binding: saved.binding }));
 }
@@ -85,6 +93,7 @@ export function readSavedSession(storage: TokenStorage, nowMs: number): SavedSes
   const text = storage.getItem(KEY);
   if (text === null) {
     storage.removeItem(ACCOUNT_KEY);
+    storage.removeItem(VEHICLE_KEY);
     return null;
   }
   let saved: SavedSession | null = null;
@@ -103,7 +112,10 @@ export function readSavedSession(storage: TokenStorage, nowMs: number): SavedSes
         const bound = typeof binding === "string" && BINDING_PATTERN.test(binding) ? binding : null;
         saved = { accessToken: token, expiresAtMs: expiresAt, binding: bound };
         // No binding, no data: whatever is there was not kept for this token.
-        if (bound === null) storage.removeItem(ACCOUNT_KEY);
+        if (bound === null) {
+          storage.removeItem(ACCOUNT_KEY);
+          storage.removeItem(VEHICLE_KEY);
+        }
       }
     }
   } catch {
@@ -113,10 +125,11 @@ export function readSavedSession(storage: TokenStorage, nowMs: number): SavedSes
   return saved;
 }
 
-/** Removes the stored session and the account data, if any. */
+/** Removes the stored session, the account data and the chosen vehicle, if any. */
 export function clearSavedSession(storage: TokenStorage): void {
   storage.removeItem(KEY);
   storage.removeItem(ACCOUNT_KEY);
+  storage.removeItem(VEHICLE_KEY);
 }
 
 /** Whether the token stored now, usable at `nowMs`, is the one saved with `binding`. */
@@ -167,4 +180,43 @@ export function readSavedAccount(storage: TokenStorage, binding: string, nowMs: 
 /** Removes the account data alone (the restored copy did not pass its checks). */
 export function clearSavedAccount(storage: TokenStorage): void {
   storage.removeItem(ACCOUNT_KEY);
+}
+
+/**
+ * Keeps the chosen vehicle's id for the token saved with `binding` (null
+ * removes it), only while that token is the one stored and usable at
+ * `nowMs`. Returns whether it was kept.
+ */
+export function saveVehicleChoice(storage: TokenStorage, binding: string, vehicleId: string | null, nowMs: number): boolean {
+  if (vehicleId === null || !boundSession(storage, binding, nowMs)) {
+    storage.removeItem(VEHICLE_KEY);
+    return false;
+  }
+  if (vehicleId === "" || vehicleId.length > MAX_VEHICLE_ID_LENGTH) throw new TypeError("vehicle id");
+  storage.setItem(VEHICLE_KEY, JSON.stringify({ binding, vehicle: vehicleId }));
+  return true;
+}
+
+/**
+ * The vehicle id kept for the token saved with `binding`, or null. Like the
+ * account data, it is handed back only for that token; damaged or foreign
+ * entries are removed. The id is untrusted: the page uses it only if it is
+ * one of the ids `list_vehicles` answers.
+ */
+export function readVehicleChoice(storage: TokenStorage, binding: string, nowMs: number): string | null {
+  const bound = boundSession(storage, binding, nowMs);
+  const text = storage.getItem(VEHICLE_KEY);
+  if (text === null) return null;
+  try {
+    const value: unknown = bound ? JSON.parse(text) : null;
+    if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+      const saved = value as Record<string, unknown>;
+      const id = saved["vehicle"];
+      if (saved["binding"] === binding && typeof id === "string" && id !== "" && id.length <= MAX_VEHICLE_ID_LENGTH) return id;
+    }
+  } catch {
+    // Damaged: removed below.
+  }
+  storage.removeItem(VEHICLE_KEY);
+  return null;
 }

@@ -7,25 +7,27 @@
  * else can touch it. This is also the one place that opens a `RouteRef` to
  * ask for a route detail.
  */
-import type { Route, RouteRef, UntrimmedTrace, VehicleInfo, VehicleState } from "../domain/model";
+import type { Route, RouteRef, UntrimmedTrace, VehicleInfo, VehicleOption, VehicleState } from "../domain/model";
 import {
   needsRouteLookup,
   sanitizeRouteList,
   sanitizeRouteTrace,
   sanitizeVehicleDetails,
+  sanitizeVehicleList,
   sanitizeVehicleStatus,
   serviceRouteId,
   ShapeError,
 } from "../domain/sanitize";
 import { AuthError, type AuthErrorKind } from "../auth/login";
 import { ToolCallError, type ToolCaller } from "./contract";
-import { ServiceError, type ServiceErrorKind } from "./mcpClient";
+import { ServiceError, UNKNOWN_TOOL_CODE, type ServiceErrorKind } from "./mcpClient";
 
 /**
  * The step that failed. Each one has its own visible error code. `login` is
  * the way into the account: going to the login page or coming back from it.
+ * `vehicles` is the list of the account's motorbikes (`list_vehicles`).
  */
-export type LoadStep = "login" | "status" | "details" | "routes" | "detail";
+export type LoadStep = "login" | "vehicles" | "status" | "details" | "routes" | "detail";
 
 /**
  * What went wrong, in closed terms. The first five can happen with any
@@ -95,6 +97,50 @@ async function step<T>(name: LoadStep, run: () => Promise<T>): Promise<T> {
   } catch (error) {
     throw toLoadError(name, error);
   }
+}
+
+/**
+ * Codes of a vehicle choice the service does not take: several vehicles and
+ * no `vehicle_id`, or an id that is not one of the account's. The page
+ * forgets the kept choice and reads the list again.
+ */
+export const VEHICLE_CHOICE_CODES: readonly string[] = ["vehicle_selection_required", "vehicle_not_found"];
+
+/** Whether a failed load was about the vehicle choice (`VEHICLE_CHOICE_CODES`). */
+export function isVehicleChoiceError(error: LoadError): boolean {
+  return error.kind === "tool_error" && error.detail !== null && VEHICLE_CHOICE_CODES.includes(error.detail);
+}
+
+/**
+ * `list_vehicles` is not there: an older deployment of the service. The MCP
+ * SDK says so in a tool error (`unknown_tool`) or, in some versions, with a
+ * JSON-RPC error ("method not found" or "invalid params"); a gate in front
+ * of the tools may refuse it with a text that is no known code
+ * (`tool_error`). In all of these the page goes on as before, without a
+ * `vehicle_id`: with one vehicle that is today's behaviour, and with several
+ * the next call says `vehicle_selection_required`.
+ */
+function missingTool(error: unknown): boolean {
+  if (error instanceof ToolCallError) return error.code === UNKNOWN_TOOL_CODE || error.code === "tool_error";
+  return error instanceof ServiceError && error.kind === "rpc_error" && (error.detail === "-32601" || error.detail === "-32602");
+}
+
+/**
+ * The account's vehicles (`list_vehicles`), sanitized, in the service's
+ * order; null when the service has no such tool (`missingTool`), so the page
+ * works as it did before vehicle selection.
+ */
+export function loadVehicles(caller: ToolCaller): Promise<readonly VehicleOption[] | null> {
+  return step("vehicles", async () => {
+    let raw: unknown;
+    try {
+      raw = await caller.callTool("list_vehicles", {});
+    } catch (error) {
+      if (missingTool(error)) return null;
+      throw error;
+    }
+    return sanitizeVehicleList(raw);
+  });
 }
 
 export function loadVehicleState(caller: ToolCaller): Promise<VehicleState> {
