@@ -888,6 +888,9 @@ export function startApp(options: AppOptions): App {
       if (list !== null) await adoptMaintenance(list, loadOptions.demo);
       return chosen === null ? null : vehicleKey(chosen.ref);
     })();
+    // Paths below may return before awaiting `keyed`; mark it handled so a failure there is not an
+    // unhandled rejection. Code that awaits `keyed` still sees the error.
+    keyed.catch(() => undefined);
     const line = vehicleLine(vehicle);
     stage.showVehicle(line);
     stage.step("Vehículo", "Leyendo los datos del vehículo…");
