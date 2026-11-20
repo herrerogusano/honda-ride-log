@@ -5,7 +5,16 @@
 // demo service: they prove the contract as we read it, not the real service
 // nor a real browser's storage or quota.
 import { describe, expect, it } from "vitest";
-import { clearSavedSession, readSavedAccount, readSavedSession, saveAccount, saveSession, type TokenStorage } from "../src/auth/savedSession";
+import {
+  clearSavedSession,
+  readSavedAccount,
+  readSavedSession,
+  readVehicleChoice,
+  saveAccount,
+  saveSession,
+  saveVehicleChoice,
+  type TokenStorage,
+} from "../src/auth/savedSession";
 import { createDemoService } from "../src/demo/fakeService";
 import { generateRider } from "../src/demo/generator";
 import type { AccountData } from "../src/domain/model";
@@ -109,6 +118,56 @@ describe("the value kept in the tab", () => {
     expect(data.routes.length).toBeGreaterThan(1_000);
     // Browsers give a tab about 5 million characters of sessionStorage.
     expect(size).toBeLessThan(250_000);
+  });
+});
+
+describe("the motorbike chosen in the tab (docs/PLAN.md, section 19)", () => {
+  it("is kept and handed back only for the token stored with its binding", () => {
+    const tab = new MemoryStorage();
+    expect(saveVehicleChoice(tab, BINDING, "veh-DEMO-0002", NOW)).toBe(false);
+    saveSession(tab, { accessToken: TOKEN, expiresAtMs: EXPIRES, binding: BINDING });
+    expect(saveVehicleChoice(tab, BINDING, "veh-DEMO-0002", NOW)).toBe(true);
+    expect(JSON.parse(tab.items.get("ride-log.vehicle") ?? "{}")).toEqual({ binding: BINDING, vehicle: "veh-DEMO-0002" });
+    expect(readVehicleChoice(tab, BINDING, NOW)).toBe("veh-DEMO-0002");
+    // Another session's choice under this token: removed.
+    expect(readVehicleChoice(tab, OTHER_BINDING, NOW)).toBeNull();
+    expect(tab.items.has("ride-log.vehicle")).toBe(false);
+    saveVehicleChoice(tab, BINDING, "veh-DEMO-0002", NOW);
+    expect(saveVehicleChoice(tab, BINDING, null, NOW)).toBe(false);
+    expect(tab.items.has("ride-log.vehicle")).toBe(false);
+  });
+
+  it("goes with the token: at sign-out, at a new sign-in, with an expired or damaged token", () => {
+    const tab = new MemoryStorage();
+    const fill = (): void => {
+      saveSession(tab, { accessToken: TOKEN, expiresAtMs: EXPIRES, binding: BINDING });
+      saveVehicleChoice(tab, BINDING, "veh-DEMO-0001", NOW);
+      expect(tab.items.has("ride-log.vehicle")).toBe(true);
+    };
+    fill();
+    clearSavedSession(tab);
+    expect(tab.items.size).toBe(0);
+    fill();
+    saveSession(tab, { accessToken: TOKEN, expiresAtMs: EXPIRES, binding: OTHER_BINDING });
+    expect(tab.items.has("ride-log.vehicle")).toBe(false);
+    fill();
+    expect(readSavedSession(tab, EXPIRES)).toBeNull();
+    expect(tab.items.size).toBe(0);
+    fill();
+    tab.setItem("ride-log.session", "{");
+    expect(readSavedSession(tab, NOW)).toBeNull();
+    expect(tab.items.size).toBe(0);
+  });
+
+  it("drops a damaged entry and refuses an id the service would refuse", () => {
+    const tab = new MemoryStorage();
+    saveSession(tab, { accessToken: TOKEN, expiresAtMs: EXPIRES, binding: BINDING });
+    for (const bad of ["{", JSON.stringify({ binding: BINDING, vehicle: 7 }), JSON.stringify({ binding: BINDING, vehicle: "" }), JSON.stringify({ binding: BINDING, vehicle: "v".repeat(257) })]) {
+      tab.setItem("ride-log.vehicle", bad);
+      expect(readVehicleChoice(tab, BINDING, NOW)).toBeNull();
+      expect(tab.items.has("ride-log.vehicle")).toBe(false);
+    }
+    expect(() => saveVehicleChoice(tab, BINDING, "v".repeat(257), NOW)).toThrow(TypeError);
   });
 });
 

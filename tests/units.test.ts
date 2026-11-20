@@ -111,7 +111,8 @@ describe("demo scenarios", () => {
     expect(scenarioFromHash("#demo=")).toBe("commuter");
     expect(scenarioFromHash("#demo&x")).toBeNull();
     expect(scenarioFromHash("#demo=heavy2")).toBeNull();
-    expect(DEMO_SCENARIOS.map((one) => one.id)).toEqual(["commuter", "heavy", "empty", "error"]);
+    expect(scenarioFromHash("#demo=motos")).toBe("motos");
+    expect(DEMO_SCENARIOS.map((one) => one.id)).toEqual(["commuter", "heavy", "empty", "error", "motos"]);
   });
 
   it("serves an account without routes and a service that fails on the second list", async () => {

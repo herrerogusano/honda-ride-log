@@ -48,7 +48,7 @@ import {
   type Period,
   type Streak,
 } from "../domain/stats";
-import { clearMaintenance, readMaintenance, writeMaintenance, type StorageScope } from "../storage/maintenance";
+import { clearMaintenance, readMaintenance, writeMaintenance, type MaintenanceSlot, type StorageScope } from "../storage/maintenance";
 import { calendarCaption, calendarView } from "./calendar";
 import { cardContent, cardText, paintCard, splitUnit } from "./card";
 import { barChart } from "./charts";
@@ -58,6 +58,7 @@ import { clear, el, uniqueId } from "./dom";
 import { downloadBlob } from "./download";
 import { hourInsight, weekdayInsight, type Insight } from "./insights";
 import { countUp, durationToken, MAX_STAGGER, reveal, scanLine, watchOnScreen } from "./motion";
+import { cancelledBadge, vehicleName } from "./vehiclePicker";
 import { periodControl } from "./period";
 import { sectionHeader, type SectionHeader } from "./sectionHeader";
 
@@ -126,13 +127,19 @@ function tile(label: string, value: string, note?: string | null): HTMLElement {
 function statusPlate(data: RiderData): { readonly element: HTMLElement; update(next: RiderData): void } {
   const id = uniqueId("block");
   const model = el("span", { class: "scope" });
+  const badge = cancelledBadge();
   const head = el("div", { class: "block-head plate-head" }, el("h3", { id }, "Estado"));
   const tiles = el("dl", { class: "tiles plate-tiles" });
+  const note = el("p", { class: "plate-note" });
   /** Fills the plate; called again, in place, when a newer state arrives (no entry animation again). */
   function update(next: RiderData): void {
     const { vehicle, info } = next;
-    const lastUse = lastUseMs(next.figures, vehicle);
+    const cancelled = vehicle.cancelled === true;
+    // A cancelled motorbike has no live state: its last use comes from its routes alone.
+    const lastUse = lastUseMs(next.figures, cancelled ? null : vehicle);
     const odometer = vehicle.odometer ?? info?.mileage ?? null;
+    if (cancelled) head.append(badge);
+    else badge.remove();
     // The model is there only when the service gave one.
     if (info?.model) {
       model.textContent = info.model;
@@ -140,6 +147,16 @@ function statusPlate(data: RiderData): { readonly element: HTMLElement; update(n
     } else {
       model.remove();
     }
+    tiles.classList.toggle("plate-off", cancelled);
+    if (cancelled) {
+      tiles.replaceChildren(
+        tile("Estado", "No disponible", "Moto dada de baja: el servicio ya no da su batería ni su odómetro"),
+        tile("Última salida", lastUse === null ? "—" : formatDate(lastUse), lastUse === null ? "Sin rutas registradas" : `a las ${formatTime(lastUse)}`),
+      );
+      note.textContent = "Sus rutas siguen aquí. Sin posición: esta web nunca enseña dónde está la moto.";
+      return;
+    }
+    note.textContent = "Sin posición: esta web nunca enseña dónde está la moto.";
     tiles.replaceChildren(
       tile("Batería", vehicle.batteryPercent === null ? "—" : withUnit(formatNumber(vehicle.batteryPercent), "%")),
       tile(
@@ -156,7 +173,7 @@ function statusPlate(data: RiderData): { readonly element: HTMLElement; update(n
     { class: "block plate", attrs: { "aria-labelledby": id } },
     head,
     tiles,
-    el("p", { class: "plate-note" }, "Sin posición: esta web nunca enseña dónde está la moto."),
+    note,
   );
   return { element, update };
 }
@@ -580,7 +597,73 @@ function calendarBlock(data: RiderData, period: Period, periodLabel: string): HT
   );
 }
 
-function maintenanceBlock(data: RiderData, scope: StorageScope): { readonly element: HTMLElement; update(next: RiderData): void } {
+/**
+ * «Mantenimiento» of a cancelled motorbike: the service no longer gives its
+ * odometer, so there is nothing to compute; a notice takes the form's place.
+ */
+function cancelledMaintenance(): HTMLElement {
+  const id = uniqueId("block");
+  return el(
+    "section",
+    { class: "block rv", attrs: { "aria-labelledby": id } },
+    el("div", { class: "block-head" }, el("h3", { id }, "Mantenimiento"), cancelledBadge()),
+    el(
+      "p",
+      { class: "notice" },
+      "No disponible: esta moto está dada de baja y el servicio ya no da su odómetro, así que no se puede calcular cuánto falta para la revisión.",
+    ),
+  );
+}
+
+interface MaintenancePart {
+  readonly element: HTMLElement;
+  update(next: RiderData): void;
+  /** Where the numbers live changed (the old pair moved to this motorbike): read and write there from now on. */
+  retarget(slot: MaintenanceSlot | StorageScope): void;
+}
+
+/** Puts `next` where `current` is, already shown (it arrives after the page's entry animation). */
+function swapIn(current: HTMLElement, next: HTMLElement): HTMLElement {
+  if (next === current) return current;
+  for (const part of [next, ...next.querySelectorAll(".rv")]) part.classList.add("in");
+  current.replaceWith(next);
+  return next;
+}
+
+/**
+ * «Mantenimiento»: the form for an active motorbike, a notice for a
+ * cancelled one. A newer state that says the motorbike is now cancelled (or
+ * active again) swaps one for the other in place.
+ */
+function maintenanceBlock(data: RiderData, scope: MaintenanceSlot | StorageScope): MaintenancePart {
+  let slot = scope;
+  let form: MaintenancePart | null = null;
+  let notice: HTMLElement | null = null;
+  const formFor = (next: RiderData): MaintenancePart => (form ??= maintenanceForm(next, slot));
+  const noticeNow = (): HTMLElement => (notice ??= cancelledMaintenance());
+  let element = data.vehicle.cancelled === true ? noticeNow() : formFor(data).element;
+  return {
+    get element() {
+      return element;
+    },
+    update(next) {
+      if (next.vehicle.cancelled === true) {
+        element = swapIn(element, noticeNow());
+        return;
+      }
+      const part = formFor(next);
+      element = swapIn(element, part.element);
+      part.update(next);
+    },
+    retarget(next) {
+      slot = next;
+      form?.retarget(next);
+    },
+  };
+}
+
+function maintenanceForm(data: RiderData, initialSlot: MaintenanceSlot | StorageScope): MaintenancePart {
+  let scope = initialSlot;
   /** Changes when a newer vehicle state arrives (`update`). */
   let odometer = data.vehicle.odometer ?? data.info?.mileage ?? null;
   /** What `show` last said, to say it again with a newer odometer. */
@@ -698,6 +781,13 @@ function maintenanceBlock(data: RiderData, scope: StorageScope): { readonly elem
     odometer = newer;
     show(...shown);
   };
+  const retarget = (next: MaintenanceSlot | StorageScope): void => {
+    scope = next;
+    const plan = readMaintenance(scope);
+    interval.value = plan === null ? "" : String(plan.intervalKm);
+    last.value = plan === null ? "" : String(plan.lastServiceKm);
+    show(plan);
+  };
   const element = block(
     "Mantenimiento",
     null,
@@ -710,7 +800,7 @@ function maintenanceBlock(data: RiderData, scope: StorageScope): { readonly elem
     form,
     result,
   );
-  return { element, update };
+  return { element, update, retarget };
 }
 
 function cardBlock(data: RiderData, period: Period, periodLabel: string, signal: AbortSignal): HTMLElement {
@@ -851,9 +941,20 @@ export function heroTitle(id: string, lines: readonly string[]): HTMLElement {
   return title;
 }
 
-function hero(data: RiderData): { readonly element: HTMLElement; update(next: RiderData): void } {
+interface Hero {
+  readonly element: HTMLElement;
+  update(next: RiderData): void;
+  /** Puts the motorbike selector in place of the line that names the motorbike (null: the line again). */
+  setPicker(picker: HTMLElement | null): void;
+}
+
+function hero(data: RiderData, initialPicker: HTMLElement | null): Hero {
   const id = uniqueId("hero");
+  // One motorbike: the line that names it, exactly as before vehicle selection.
   const eyebrow = el("p", { class: "eyebrow hero-eyebrow" });
+  // One cancelled motorbike: the same line, with its mark beside it.
+  const markedText = el("p", { class: "eyebrow" });
+  const markedLine = el("div", { class: "vehicle-pick hero-eyebrow" }, markedText, cancelledBadge());
   const plate = statusPlate(data);
   const element = el(
     "section",
@@ -865,12 +966,40 @@ function hero(data: RiderData): { readonly element: HTMLElement; update(next: Ri
       plate.element,
     ),
   );
+  let picker = initialPicker;
+  let top: HTMLElement = eyebrow;
+  let shown = data;
+  function place(next: RiderData): void {
+    const line = `${vehicleName(next.info?.model ?? null)} · Ride Log`;
+    let wanted: HTMLElement;
+    if (picker !== null) {
+      wanted = picker;
+    } else if (next.vehicle.cancelled === true) {
+      markedText.textContent = line;
+      wanted = markedLine;
+    } else {
+      eyebrow.textContent = line;
+      wanted = eyebrow;
+    }
+    if (wanted !== top) {
+      top.replaceWith(wanted);
+      top = wanted;
+    }
+  }
   const update = (next: RiderData): void => {
-    eyebrow.textContent = `${next.info?.model ?? "Tu moto"} · Ride Log`;
+    shown = next;
+    place(next);
     plate.update(next);
   };
-  eyebrow.textContent = `${data.info?.model ?? "Tu moto"} · Ride Log`;
-  return { element, update };
+  place(data);
+  return {
+    element,
+    update,
+    setPicker(next) {
+      picker = next;
+      place(shown);
+    },
+  };
 }
 
 export interface PageSection {
@@ -890,6 +1019,12 @@ export interface RiderPage {
   readonly period: HTMLElement | null;
   /** Shows a newer vehicle state in place (after a reload painted the kept one). */
   showVehicle(vehicle: VehicleState, info: VehicleInfo | null): void;
+  /** The motorbike selector of the hero, once the list of motorbikes is known (null: none). */
+  setPicker(picker: HTMLElement | null): void;
+  /** Where the maintenance numbers live changed (the old pair moved to this motorbike's key). */
+  setMaintenanceSlot(slot: MaintenanceSlot | StorageScope): void;
+  /** The period chosen in the bar now. */
+  currentPeriod(): Period;
 }
 
 export interface RiderPageOptions {
@@ -899,13 +1034,30 @@ export interface RiderPageOptions {
   readonly archive?: HTMLElement | undefined;
   /** Section «Atlas», after «Rutas»; it follows the period chosen in the bar. */
   readonly atlas?: { readonly element: HTMLElement; setPeriod(period: Period): void } | undefined;
+  /**
+   * The period to open with, when another motorbike's page is replaced by
+   * this one (docs/PLAN.md, section 19): a year stays if this motorbike has
+   * rides in it, else its most recent year with rides; «Todo» stays.
+   */
+  readonly initialPeriod?: Period | undefined;
+  /** The motorbike selector of the hero, for an account with several (src/ui/vehiclePicker.ts). */
+  readonly picker?: HTMLElement | null | undefined;
 }
 
-export function renderRiderPage(data: RiderData, scope: StorageScope, options: RiderPageOptions = {}): RiderPage {
+/** The period a page opens with: `wanted` if this history can show it, else its most recent year with rides. */
+export function openingPeriod(wanted: Period | undefined, rideYears: readonly number[], currentYear: number): Period {
+  const standard: Period = SUMMARY_DEFAULT_PERIOD === "all" ? "all" : currentYear;
+  if (wanted === undefined) return standard;
+  if (wanted === "all" || rideYears.includes(wanted)) return wanted;
+  return rideYears.length > 0 ? Math.max(...rideYears) : standard;
+}
+
+export function renderRiderPage(data: RiderData, scope: MaintenanceSlot | StorageScope, options: RiderPageOptions = {}): RiderPage {
   const { signal } = options;
   const currentYear = new Date(data.nowMs).getFullYear();
-  const years = [...new Set([currentYear, ...yearsWithRoutes(data.figures)])].sort((a, b) => b - a);
-  let period: Period = SUMMARY_DEFAULT_PERIOD === "all" ? "all" : currentYear;
+  const rideYears = yearsWithRoutes(data.figures);
+  const years = [...new Set([currentYear, ...rideYears])].sort((a, b) => b - a);
+  let period: Period = openingPeriod(options.initialPeriod, rideYears, currentYear);
   const empty = data.figures.length === 0;
 
   const sections: PageSection[] = [];
@@ -953,7 +1105,7 @@ export function renderRiderPage(data: RiderData, scope: StorageScope, options: R
   const maintenance = maintenanceBlock(data, scope);
   section("taller", "Taller", ["A punto"], el("div", { class: "grid-2 grid-taller" }, maintenance.element, empty ? null : slots.card));
 
-  const heroPart = hero(data);
+  const heroPart = hero(data, options.picker ?? null);
   const page = { hero: heroPart.element, footer: footer(data) };
   // Everything that never changes is revealed once, before the slots are filled,
   // so that no observer keeps watching a block a period change has removed.
@@ -1029,5 +1181,13 @@ export function renderRiderPage(data: RiderData, scope: StorageScope, options: R
     maintenance.update(next);
   }
 
-  return { ...page, sections, period: control?.element ?? null, showVehicle };
+  return {
+    ...page,
+    sections,
+    period: control?.element ?? null,
+    showVehicle,
+    setPicker: (picker) => heroPart.setPicker(picker),
+    setMaintenanceSlot: (slot) => maintenance.retarget(slot),
+    currentPeriod: () => period,
+  };
 }

@@ -811,8 +811,8 @@ describe("leaving the account", () => {
   ])("%s forgets the token kept in the tab before leaving", async (_name, leave) => {
     await signedIn();
     await vi.waitFor(() => expect(visibleButtons()).toContain("Borrar mis datos"));
-    // The token and the account data bound to it.
-    expect(storageForTab.items.size).toBe(2);
+    // The token, and the account data and the chosen motorbike bound to it.
+    expect(storageForTab.items.size).toBe(3);
     leave();
     await vi.waitFor(() => expect(navigations).toHaveLength(1));
     expect(storageForTab.items.size).toBe(0);
@@ -821,7 +821,7 @@ describe("leaving the account", () => {
   it("session_expired from the service forgets the token kept in the tab", async () => {
     await signedIn();
     await holdATrace();
-    expect(storageForTab.items.size).toBe(2);
+    expect(storageForTab.items.size).toBe(3);
     server.mcpOverride = sdkToolError("session_expired");
     root.querySelectorAll<HTMLButtonElement>(".routes-table tbody tr .row-button")[1]?.click();
     await vi.waitFor(() => expect(root.querySelector(".archive-map .error")).not.toBeNull());

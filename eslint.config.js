@@ -44,6 +44,7 @@ const sealedImport = (name, where) => ({
   message: `${name} is only for ${where} (docs/PLAN.md, privacy).`,
 });
 const ROUTE_ID_SEAL = sealedImport("serviceRouteId", "the code that requests a route detail, in src/service/");
+const VEHICLE_ID_SEAL = sealedImport("serviceVehicleId", "the code that sends vehicle_id and keeps the chosen vehicle, in src/service/");
 const TRACE_SEAL = sealedImport("untrimmedLines", "the trim function in src/domain/trim.ts");
 const PLACES_SEAL = sealedImport("sensitivePlaces", "the trim function in src/domain/trim.ts");
 /**
@@ -99,7 +100,7 @@ export default tseslint.config(
           message: "No import.meta.glob: it loads modules past the import rules that guard the privacy seals.",
         },
       ],
-      "no-restricted-imports": ["error", { patterns: [ROUTE_ID_SEAL, TRACE_SEAL, PLACES_SEAL, SCREEN_SEAL, STORE_SEAL] }],
+      "no-restricted-imports": ["error", { patterns: [ROUTE_ID_SEAL, VEHICLE_ID_SEAL, TRACE_SEAL, PLACES_SEAL, SCREEN_SEAL, STORE_SEAL] }],
     },
   },
   {
@@ -108,15 +109,15 @@ export default tseslint.config(
   },
   {
     files: ["src/domain/trim.ts"],
-    rules: { "no-restricted-imports": ["error", { patterns: [ROUTE_ID_SEAL, STORE_SEAL] }] },
+    rules: { "no-restricted-imports": ["error", { patterns: [ROUTE_ID_SEAL, VEHICLE_ID_SEAL, STORE_SEAL] }] },
   },
   {
     files: ["src/ui/traceStore.ts"],
-    rules: { "no-restricted-imports": ["error", { patterns: [ROUTE_ID_SEAL, TRACE_SEAL, PLACES_SEAL] }] },
+    rules: { "no-restricted-imports": ["error", { patterns: [ROUTE_ID_SEAL, VEHICLE_ID_SEAL, TRACE_SEAL, PLACES_SEAL] }] },
   },
   {
     files: ["src/ui/app.ts", "src/ui/mapView.ts", "src/ui/atlas/atlasView.ts"],
-    rules: { "no-restricted-imports": ["error", { patterns: [ROUTE_ID_SEAL, TRACE_SEAL, PLACES_SEAL, SCREEN_SEAL] }] },
+    rules: { "no-restricted-imports": ["error", { patterns: [ROUTE_ID_SEAL, VEHICLE_ID_SEAL, TRACE_SEAL, PLACES_SEAL, SCREEN_SEAL] }] },
   },
   {
     // Storage exception 1 (docs/PLAN.md, "Privacidad"): this file may use

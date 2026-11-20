@@ -37,8 +37,10 @@ import {
   clearSavedAccount,
   clearSavedSession,
   readSavedAccount,
+  readVehicleChoice,
   readSavedSession,
   saveAccount,
+  saveVehicleChoice,
   saveSession,
   type TokenStorage,
 } from "./savedSession";
@@ -204,6 +206,34 @@ export function keptAccountData(session: AuthSession, deps: AuthDeps): unknown {
     return readSavedAccount(storage, binding, deps.now());
   } catch {
     return null;
+  }
+}
+
+/**
+ * The vehicle chosen in this tab (docs/PLAN.md, section 19), kept next to
+ * the session and removed with it; null when none is kept, the session is
+ * over or the tab cannot keep it.
+ */
+export function keptVehicleChoice(session: AuthSession, deps: AuthDeps): string | null {
+  const binding = bindings.get(session);
+  const storage = tokenStorageOf(deps);
+  if (storage === null || binding === undefined || session.endReason !== null) return null;
+  try {
+    return readVehicleChoice(storage, binding, deps.now());
+  } catch {
+    return null;
+  }
+}
+
+/** Keeps (or, with null, removes) the chosen vehicle's id for this session. Says nothing if the tab refuses. */
+export function keepVehicleChoice(session: AuthSession, deps: AuthDeps, vehicleId: string | null): void {
+  const binding = bindings.get(session);
+  const storage = tokenStorageOf(deps);
+  if (storage === null || binding === undefined) return;
+  try {
+    saveVehicleChoice(storage, binding, session.endReason === null ? vehicleId : null, deps.now());
+  } catch {
+    // Not kept: the next reload shows the default vehicle.
   }
 }
 

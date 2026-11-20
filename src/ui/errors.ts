@@ -3,6 +3,7 @@ import type { FailureKind, LoadError, LoadStep } from "../service/loader";
 
 const STEP_TEXT: Readonly<Record<LoadStep, string>> = {
   login: "No se ha podido entrar.",
+  vehicles: "No se ha podido leer la lista de motos de tu cuenta.",
   status: "No se ha podido leer el estado de la moto.",
   details: "No se han podido leer los datos del vehículo.",
   routes: "No se han podido cargar las rutas.",
@@ -82,9 +83,25 @@ const INVITATION_TOOL_CODES: Readonly<Record<string, { readonly text: string; re
   session_expired: { text: "Tu sesión ha terminado. Vuelve a entrar.", action: "sign_in" },
 };
 
+/**
+ * The vehicle choice the service did not take, in both builds. «Reintentar»
+ * reads the list of motorbikes again and forgets the kept choice
+ * (src/ui/app.ts).
+ */
+const VEHICLE_TOOL_CODES: Readonly<Record<string, { readonly text: string; readonly action: ErrorAction }>> = {
+  vehicle_selection_required: {
+    text: "Tu cuenta tiene varias motos y el servicio necesita saber cuál enseñar. Reintenta para volver a leer la lista de motos.",
+    action: "retry",
+  },
+  vehicle_not_found: {
+    text: "Esa moto ya no aparece en tu cuenta. Reintenta para volver a leer la lista de motos.",
+    action: "retry",
+  },
+};
+
 export function errorText(error: LoadError, publicService = false): ErrorText {
   const code = error.detail;
-  const codes = publicService ? PUBLIC_TOOL_CODES : INVITATION_TOOL_CODES;
+  const codes = { ...VEHICLE_TOOL_CODES, ...(publicService ? PUBLIC_TOOL_CODES : INVITATION_TOOL_CODES) };
   const special = error.kind === "tool_error" && code !== null && Object.hasOwn(codes, code) ? codes[code] : undefined;
   const kind = special ?? KIND[error.kind];
   return {

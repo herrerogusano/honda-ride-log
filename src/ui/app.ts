@@ -7,10 +7,28 @@
  */
 import { createDemoCaller, DEMO_SCENARIOS, isDemoScenario, scenarioFromHash, type DemoScenario } from "../demo/scenarios";
 import { formatNumber, formatWholeKm, withUnit } from "../domain/format";
-import type { AccountData, VehicleState } from "../domain/model";
-import type { ToolCaller } from "../service/contract";
-import { loadAllRoutes, loadVehicleInfo, loadVehicleState, LoadError, signInError } from "../service/loader";
-import type { StorageScope } from "../storage/maintenance";
+import type { AccountData, VehicleInfo, VehicleOption, VehicleState } from "../domain/model";
+import type { Period } from "../domain/stats";
+import type { ToolArguments, ToolCaller, ToolName } from "../service/contract";
+import {
+  isVehicleChoiceError,
+  loadAllRoutes,
+  loadVehicleInfo,
+  loadVehicles,
+  loadVehicleState,
+  LoadError,
+  signInError,
+} from "../service/loader";
+import {
+  defaultVehicle,
+  memoryChoiceStore,
+  selectorOrder,
+  vehicleCaller,
+  vehicleKey,
+  vehicleMemory,
+  type VehicleMemory,
+} from "../service/vehicles";
+import { adoptLegacyMaintenance, type MaintenanceSlot, type StorageScope } from "../storage/maintenance";
 import { createAtlasView, type AtlasView } from "./atlas/atlasView";
 import { buildRiderData, type RiderData } from "./data";
 import { clear, el, uniqueId } from "./dom";
@@ -21,6 +39,7 @@ import { scrollToTop, sectionNav, type SectionNav } from "./nav";
 import { createRouteList } from "./routesView";
 import { heroTitle, promises, renderRiderPage, type RiderPage } from "./summary";
 import { createTraceStore, type TraceStore } from "./traceStore";
+import { vehiclePicker } from "./vehiclePicker";
 
 /**
  * The way in and out of a real account, given only when the build has a
@@ -83,6 +102,41 @@ export interface LoadOptions {
   readonly saved?: AccountData | null;
   /** Called with what a load from the service brought, once it is on screen (to keep it in the tab). */
   readonly onLoaded?: (data: AccountData) => void;
+  /**
+   * Where the motorbike chosen in this tab is kept (docs/PLAN.md, section
+   * 19): next to the session for a real account (src/boot.ts); in a
+   * variable when left out.
+   */
+  readonly vehicles?: VehicleMemory;
+}
+
+/**
+ * What one load knows of the account's motorbikes. `list` left out: not read
+ * yet (the load asks `list_vehicles` first); null: the service has no such
+ * tool and the page works without vehicle selection. `picked`: the
+ * motorbike chosen in the selector, whose state is read again; `period`:
+ * the period of the page it replaces.
+ */
+interface VehicleContext {
+  readonly list?: readonly VehicleOption[] | null;
+  readonly picked?: VehicleOption;
+  readonly period?: Period;
+}
+
+/** The parts of a drawn page the load still talks to. */
+type ShownPage = Pick<RiderPage, "showVehicle" | "setPicker" | "setMaintenanceSlot" | "currentPeriod">;
+
+/**
+ * A caller whose real target is known later: a page painted from the tab
+ * before the list of motorbikes says which one it is. Every call waits for
+ * the target (and fails as it does).
+ */
+function deferredCaller(target: () => Promise<ToolCaller>): ToolCaller {
+  return {
+    async callTool<N extends ToolName>(name: N, args: ToolArguments[N]): Promise<unknown> {
+      return (await target()).callTool(name, args);
+    },
+  };
 }
 
 export interface App {
@@ -509,6 +563,7 @@ export function startApp(options: AppOptions): App {
   }
 
   function vehicleLine(vehicle: VehicleState): HTMLElement {
+    if (vehicle.cancelled === true) return el("p", { class: "vehicle-line" }, "Moto dada de baja: sin estado en vivo.");
     const parts = [
       vehicle.batteryPercent === null ? null : `Batería ${withUnit(formatNumber(vehicle.batteryPercent), "%")}`,
       vehicle.odometer === null ? null : `Odómetro ${formatWholeKm(vehicle.odometer)}`,
@@ -517,9 +572,20 @@ export function startApp(options: AppOptions): App {
   }
 
 
-  /** Draws the page; gives back how to show a newer vehicle state on it in place. */
-  function showLoaded(data: RiderData, caller: ToolCaller, warnings: readonly string[], stage: LoadingStage): RiderPage["showVehicle"] {
+  /** The page on screen, to read its period when another motorbike replaces it. */
+  let shownPage: ShownPage | null = null;
+
+  /** How a page is drawn: where its maintenance numbers live, its selector and its opening period. */
+  interface PageSetup {
+    readonly vehicleKey: string | null;
+    readonly picker: HTMLElement | null;
+    readonly period?: Period | undefined;
+  }
+
+  /** Draws the page; gives back how to change its vehicle state and selector in place. */
+  function showLoaded(data: RiderData, caller: ToolCaller, warnings: readonly string[], stage: LoadingStage, setup: PageSetup): ShownPage {
     const scope: StorageScope = data.demo ? "demo" : "account";
+    const slot: MaintenanceSlot = { scope, vehicleKey: setup.vehicleKey };
     const motion = new AbortController();
     // A failed trace that needs a new sign-in offers it, never a retry.
     const mapBox = el("div", { class: "archive-map" });
@@ -582,7 +648,7 @@ export function startApp(options: AppOptions): App {
       watcher.observe(mapBox);
       motion.signal.addEventListener("abort", () => watcher.disconnect(), { once: true });
     }
-    const page = renderRiderPage(data, scope, { signal: motion.signal, archive, atlas });
+    const page = renderRiderPage(data, slot, { signal: motion.signal, archive, atlas, picker: setup.picker, initialPeriod: setup.period });
     const nav = sectionNav(page.sections, { signal: motion.signal, offset: barHeight });
     activeNav = nav;
     navSlot.append(nav.element);
@@ -601,7 +667,8 @@ export function startApp(options: AppOptions): App {
     // The loading stage becomes the page: its wedge wipes over the hero and settles on the hero's wedge.
     stage.handOff(page.hero, motion.signal);
     publishBar();
-    return page.showVehicle;
+    shownPage = page;
+    return page;
   }
 
   /**
@@ -617,13 +684,19 @@ export function startApp(options: AppOptions): App {
     showVehicle: RiderPage["showVehicle"],
     current: () => boolean,
     onLoaded: LoadOptions["onLoaded"],
+    known: { readonly vehicle: VehicleState; readonly key: string | null } | null = null,
   ): Promise<void> {
     let vehicle: VehicleState;
-    try {
-      vehicle = await loadVehicleState(caller);
-    } catch (error) {
-      if (error instanceof LoadError || !current()) return;
-      throw error;
+    if (known !== null) {
+      // `list_vehicles` already brought this motorbike's state.
+      vehicle = known.vehicle;
+    } else {
+      try {
+        vehicle = await loadVehicleState(caller);
+      } catch (error) {
+        if (error instanceof LoadError || !current()) return;
+        throw error;
+      }
     }
     if (!current()) return;
     let info = saved.info;
@@ -635,16 +708,49 @@ export function startApp(options: AppOptions): App {
     }
     if (!current()) return;
     showVehicle(vehicle, info);
-    onLoaded?.({ vehicle, info, routes: saved.routes, skipped: saved.skipped });
+    const data: AccountData = { vehicle, info, routes: saved.routes, skipped: saved.skipped };
+    onLoaded?.(known?.key ? { ...data, vehicleKey: known.key } : data);
+  }
+
+  /** The selector of the hero for an account with several motorbikes; null with one. */
+  function pickerFor(base: ToolCaller, loadOptions: LoadOptions, list: readonly VehicleOption[], chosen: VehicleOption): HTMLElement | null {
+    if (list.length < 2) return null;
+    return vehiclePicker(selectorOrder(list), chosen, (picked) => {
+      // One load per switch, with the loading sweep; the list is not asked again.
+      const period = shownPage?.currentPeriod();
+      void run(base, { ...loadOptions, saved: null }, { list, picked, ...(period === undefined ? {} : { period }) });
+      content.focus();
+    });
+  }
+
+  /**
+   * The pair of maintenance numbers kept before vehicle selection belongs to
+   * the first motorbike the service lists (src/storage/maintenance.ts).
+   */
+  async function adoptMaintenance(list: readonly VehicleOption[], demo: boolean): Promise<void> {
+    const first = list.find((one) => one.order === 0);
+    if (first !== undefined) adoptLegacyMaintenance(demo ? "demo" : "account", await vehicleKey(first.ref));
   }
 
   async function load(caller: ToolCaller, loadOptions: LoadOptions): Promise<void> {
+    // One memory of the chosen motorbike for this account (or demo), shared by its retries and switches.
+    const options = loadOptions.vehicles === undefined ? { ...loadOptions, vehicles: vehicleMemory(memoryChoiceStore()) } : loadOptions;
+    await run(caller, options, {});
+  }
+
+  async function run(base: ToolCaller, loadOptions: LoadOptions, context: VehicleContext): Promise<void> {
     generation += 1;
     releaseView();
+    shownPage = null;
     const mine = generation;
     const current = (): boolean => mine === generation;
-    // A retry always asks the service.
-    const retry = (): void => void load(caller, { ...loadOptions, saved: null });
+    const memory = loadOptions.vehicles ?? vehicleMemory(memoryChoiceStore());
+    // A retry always asks the service, the list of motorbikes included. A
+    // choice the service refused is forgotten first.
+    const retryFor = (error: LoadError) => (): void => {
+      if (isVehicleChoiceError(error)) memory.forget();
+      void run(base, { ...loadOptions, saved: null }, {});
+    };
     if (!loadOptions.demo) {
       // A real account: nothing of the demo may stay on screen or in the address.
       scenarioShown = null;
@@ -666,38 +772,131 @@ export function startApp(options: AppOptions): App {
       content.append(...parts);
     };
 
-    const saved = loadOptions.demo ? null : (loadOptions.saved ?? null);
-    if (saved !== null) {
+    const saved = loadOptions.demo || context.list !== undefined ? null : (loadOptions.saved ?? null);
+    // Painted only under the motorbike it was loaded for (both null: a page without selection).
+    const savedFits = saved !== null && (saved.vehicleKey ?? null) === (await memory.storedKey());
+    if (!current()) return;
+    if (saved !== null && savedFits) {
       // A reload of a signed-in tab: what the sign-in loaded, painted at once.
       loading.abort();
       const routes = { routes: saved.routes, skipped: saved.skipped, requests: 0 };
-      const showVehicle = showLoaded(buildRiderData(saved.vehicle, saved.info, routes, false, now()), caller, [], stage);
-      // The vehicle changes between reloads (battery, last use): it is asked
-      // for again behind the page, with the same two calls as a full load.
+      // The list of motorbikes says which one this is, once: the refresh below
+      // and any trace opened before it wait for the same answer.
+      let listed: Promise<readonly VehicleOption[] | null> | null = null;
+      const list = (): Promise<readonly VehicleOption[] | null> => {
+        listed ??= loadVehicles(base).catch((error: unknown) => {
+          listed = null;
+          throw error;
+        });
+        return listed;
+      };
+      const chosenIn = (vehicles: readonly VehicleOption[]): VehicleOption | null =>
+        // A copy kept before vehicle selection belongs to the only motorbike.
+        memory.recall(vehicles) ?? ((saved.vehicleKey ?? null) === null && vehicles.length === 1 ? (vehicles[0] ?? null) : null);
+      const pageCaller = deferredCaller(async () => {
+        const vehicles = await list();
+        const chosen = vehicles === null ? null : chosenIn(vehicles);
+        return chosen === null ? base : vehicleCaller(base, chosen.ref);
+      });
+      const page = showLoaded(buildRiderData(saved.vehicle, saved.info, routes, false, now()), pageCaller, [], stage, {
+        vehicleKey: saved.vehicleKey ?? null,
+        picker: null,
+      });
+      // The vehicle changes between reloads (battery, last use): it is read
+      // again behind the page, with the same two calls as a full load (the
+      // list of motorbikes, which carries each one's state, and the details).
       // The route list is not.
-      await refreshVehicle(caller, saved, showVehicle, current, loadOptions.onLoaded);
+      let vehicles: readonly VehicleOption[] | null;
+      try {
+        vehicles = await list();
+      } catch (error) {
+        if (error instanceof LoadError || !current()) return;
+        throw error;
+      }
+      if (!current()) return;
+      if (vehicles === null) {
+        // A service without vehicle selection: as before.
+        await refreshVehicle(base, saved, page.showVehicle, current, loadOptions.onLoaded);
+        return;
+      }
+      const chosen = chosenIn(vehicles);
+      const key = chosen === null ? null : await vehicleKey(chosen.ref);
+      if (!current()) return;
+      const fits = chosen !== null && (key === saved.vehicleKey || ((saved.vehicleKey ?? null) === null && vehicles.length === 1));
+      if (chosen === null || !fits) {
+        // The kept copy is not this motorbike's (or the choice is gone): load it whole.
+        void run(base, { ...loadOptions, saved: null }, { list: vehicles });
+        return;
+      }
+      memory.remember(chosen);
+      await adoptMaintenance(vehicles, false);
+      if (!current()) return;
+      // A copy kept before vehicle selection was painted with the plain key;
+      // the pair has just moved to this motorbike's key: the form follows it.
+      if (key !== (saved.vehicleKey ?? null)) page.setMaintenanceSlot({ scope: "account", vehicleKey: key });
+      page.setPicker(pickerFor(base, loadOptions, vehicles, chosen));
+      await refreshVehicle(vehicleCaller(base, chosen.ref), saved, page.showVehicle, current, loadOptions.onLoaded, { vehicle: chosen.state, key });
       return;
     }
 
-    let vehicle: VehicleState;
-    try {
-      vehicle = await loadVehicleState(caller);
-    } catch (error) {
-      // The first call is the end-to-end check: if it fails, nothing else is asked.
-      if (current() && error instanceof LoadError) {
-        fail(errorPanel(error, retry));
+    // The account's motorbikes first: one `list_vehicles`, which also brings each one's state.
+    let list = context.list;
+    if (list === undefined) {
+      try {
+        list = await loadVehicles(base);
+      } catch (error) {
+        // The first call is the end-to-end check: if it fails, nothing else is asked.
+        if (current() && error instanceof LoadError) {
+          fail(errorPanel(error, retryFor(error)));
+          return;
+        }
+        if (current()) throw error;
         return;
       }
-      if (current()) throw error;
-      return;
+      if (!current()) return;
+    }
+    let chosen: VehicleOption | null = null;
+    let caller = base;
+    let listed: VehicleState | null = null;
+    if (list !== null) {
+      chosen = context.picked ?? memory.recall(list) ?? defaultVehicle(list);
+      memory.remember(chosen);
+      caller = vehicleCaller(base, chosen.ref);
+      // A motorbike picked in the selector: its state is read now, not taken from an older list.
+      if (context.picked === undefined) listed = chosen.state;
+    }
+
+    let vehicle: VehicleState;
+    if (listed !== null) {
+      vehicle = listed;
+    } else {
+      try {
+        vehicle = await loadVehicleState(caller);
+      } catch (error) {
+        // Without vehicle selection this is the end-to-end check: if it fails, nothing else is asked.
+        if (current() && error instanceof LoadError) {
+          fail(errorPanel(error, retryFor(error)));
+          return;
+        }
+        if (current()) throw error;
+        return;
+      }
     }
     if (!current()) return;
+    // Local work (a hash and the move of old maintenance numbers), awaited before the page is drawn.
+    const keyed = (async (): Promise<string | null> => {
+      if (list !== null) await adoptMaintenance(list, loadOptions.demo);
+      return chosen === null ? null : vehicleKey(chosen.ref);
+    })();
+    // Paths below may return before awaiting `keyed`; mark it handled so a failure there is not an
+    // unhandled rejection. Code that awaits `keyed` still sees the error.
+    keyed.catch(() => undefined);
     const line = vehicleLine(vehicle);
     stage.showVehicle(line);
     stage.step("Vehículo", "Leyendo los datos del vehículo…");
 
     const warnings: string[] = [];
-    let info = null;
+    let info: VehicleInfo | null = null;
     try {
       info = await loadVehicleInfo(caller);
     } catch (error) {
@@ -718,15 +917,21 @@ export function startApp(options: AppOptions): App {
       if (!current()) return;
       // A fast load still reads as a boot: at most a short hold, never more than MAX_HOLD_MS.
       await stage.settle();
+      const key = await keyed;
       if (!current()) return;
       loading.abort();
-      showLoaded(buildRiderData(vehicle, info, routes, loadOptions.demo, now()), caller, warnings, stage);
-      if (!loadOptions.demo) loadOptions.onLoaded?.({ vehicle, info, routes: routes.routes, skipped: routes.skipped });
+      showLoaded(buildRiderData(vehicle, info, routes, loadOptions.demo, now()), caller, warnings, stage, {
+        vehicleKey: key,
+        picker: list === null || chosen === null ? null : pickerFor(base, loadOptions, list, chosen),
+        period: context.period,
+      });
+      const data: AccountData = { vehicle, info, routes: routes.routes, skipped: routes.skipped };
+      if (!loadOptions.demo) loadOptions.onLoaded?.(key === null ? data : { ...data, vehicleKey: key });
     } catch (error) {
       if (!current()) return;
       if (!(error instanceof LoadError)) throw error;
       // The stage goes; what is known of the vehicle stays above the error.
-      fail(line, errorPanel(error, retry));
+      fail(line, errorPanel(error, retryFor(error)));
     }
   }
 

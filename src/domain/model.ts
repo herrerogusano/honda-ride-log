@@ -48,6 +48,39 @@ export interface VehicleState {
   readonly batteryPercent: number | null;
   readonly lastCommunicationMs: number | null;
   readonly odometer: number | null;
+  /**
+   * The service says the vehicle is cancelled (`vehicle_cancelled`): its
+   * state is the last one MAPIT stored, not a live one, so the page shows
+   * «No disponible» instead. Left out (or false) for an active vehicle.
+   */
+  readonly cancelled?: boolean;
+}
+
+declare const vehicleRefBrand: unique symbol;
+
+/**
+ * Opaque handle for one of the account's vehicles. It stands for the
+ * service's `vehicle_id`, which is never rendered, exported or sent to the
+ * visit counters. Only `serviceVehicleId` in `sanitize.ts` opens it, and an
+ * ESLint rule lets only src/service/ import that function.
+ */
+export type VehicleRef = { readonly [vehicleRefBrand]: true };
+
+/** One vehicle of `list_vehicles`, sanitized: no registration, no position. */
+export interface VehicleOption {
+  readonly ref: VehicleRef;
+  readonly model: string | null;
+  readonly cancelled: boolean;
+  /** Its state as `list_vehicles` gave it (the same fields as `get_vehicle_status`). */
+  readonly state: VehicleState;
+  /**
+   * The last three characters of the registration, only when another
+   * vehicle of the list has the same model (else null). For the selector's
+   * label alone: never on the card, a download, the counters or storage.
+   */
+  readonly twinSuffix: string | null;
+  /** Position in the service's answer (0 first). */
+  readonly order: number;
 }
 
 export interface VehicleInfo {
@@ -68,6 +101,13 @@ export interface AccountData {
   /** Oldest first, short routes included. */
   readonly routes: readonly Route[];
   readonly skipped: number;
+  /**
+   * Which vehicle this data belongs to, as the hashed key of
+   * src/service/vehicles.ts (`vehicleKey`, never the service's id); null or
+   * left out when the page worked without vehicle selection. A kept copy is
+   * painted only under the vehicle it was loaded for.
+   */
+  readonly vehicleKey?: string | null;
 }
 
 /** `[latitude, longitude]`, the order Leaflet expects. */

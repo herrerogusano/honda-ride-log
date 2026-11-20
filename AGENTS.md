@@ -45,7 +45,8 @@ technical facts.
   handlers. No browser storage and no cookies, with four one-file
   exceptions recorded in `docs/PLAN.md`: `src/storage/maintenance.ts` may
   use `localStorage` (and only `localStorage`) for the two service-interval
-  numbers the user types; `src/auth/pendingLogin.ts` may use
+  numbers the user types (one pair per motorbike, keyed by a SHA-256
+  hash of its id, never the raw id); `src/auth/pendingLogin.ts` may use
   `sessionStorage` (and only `sessionStorage`) for the PKCE verifier and the
   `state` while the browser goes to the login page and back (and, in the
   open service only, the fixed word `delete_unconfirmed` across the trip
@@ -59,8 +60,10 @@ technical facts.
   bound to that token and removed with it, the same file keeps the
   account data as `src/domain/sanitize.ts` makes it (`accountSnapshot`:
   route dates, km, durations, speeds and inferred flag, and the vehicle's
-  battery, odometer, last use, model and mileage), so a reload paints
-  without asking the service. Never a trace, a start or end place, a route
+  battery, odometer, last use, model and mileage, plus the hashed key of
+  its motorbike), so a reload paints without asking the service, and in a
+  third entry, bound the same way, the `vehicle_id` of the motorbike chosen
+  in the tab (`docs/PLAN.md`, section 19). Never a trace, a start or end place, a route
   id (`RouteRef` stays sealed: the loader finds a kept route again in the
   light list), an email or the token in that entry. No visit counter
   loads in a page load that holds that token (`src/boot.ts` seals them).

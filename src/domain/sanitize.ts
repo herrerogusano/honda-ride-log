@@ -8,7 +8,19 @@
  * mistyped field we depend on raises `ShapeError`, whose message names the
  * field path and the expected type but never includes a value.
  */
-import type { AccountData, LatLng, Route, RouteListPage, RouteRef, TraceLine, UntrimmedTrace, VehicleInfo, VehicleState } from "./model";
+import type {
+  AccountData,
+  LatLng,
+  Route,
+  RouteListPage,
+  RouteRef,
+  TraceLine,
+  UntrimmedTrace,
+  VehicleInfo,
+  VehicleOption,
+  VehicleRef,
+  VehicleState,
+} from "./model";
 
 export class ShapeError extends Error {
   readonly path: string;
@@ -189,15 +201,79 @@ function percentOrNull(value: unknown, path: string): number | null {
   return number !== null && number >= 0 && number <= 100 ? number : null;
 }
 
-export function sanitizeVehicleStatus(raw: unknown): VehicleState {
-  const status = asObject(raw, "get_vehicle_status");
-  // `position`, `speed`, `voltage` and `last_coordinate_update` are dropped here.
-  return {
-    status: labelOrNull(status["status"], "get_vehicle_status.status"),
-    batteryPercent: percentOrNull(status["battery"], "get_vehicle_status.battery"),
-    lastCommunicationMs: instantMsOrNull(status["last_communication"], "get_vehicle_status.last_communication"),
-    odometer: nonNegativeOrNull(status["odometer"], "get_vehicle_status.odometer"),
+export function sanitizeVehicleStatus(raw: unknown, path = "get_vehicle_status"): VehicleState {
+  const status = asObject(raw, path);
+  // `position`, `speed`, `voltage`, `last_coordinate_update` and the
+  // service's `state_warning` text are dropped here.
+  const state: VehicleState = {
+    status: labelOrNull(status["status"], `${path}.status`),
+    batteryPercent: percentOrNull(status["battery"], `${path}.battery`),
+    lastCommunicationMs: instantMsOrNull(status["last_communication"], `${path}.last_communication`),
+    odometer: nonNegativeOrNull(status["odometer"], `${path}.odometer`),
   };
+  // Present only for a cancelled vehicle, so an active one keeps today's exact shape.
+  return boolOrNull(status["vehicle_cancelled"], `${path}.vehicle_cancelled`) === true ? { ...state, cancelled: true } : state;
+}
+
+const vehicleIds = new WeakMap<VehicleRef, string>();
+
+/**
+ * The service's `vehicle_id` behind a `VehicleRef`. Only for the code that
+ * sends it back to the service and keeps the choice in the tab
+ * (src/service/); never render, export, log or count it.
+ */
+export function serviceVehicleId(ref: VehicleRef): string {
+  const id = vehicleIds.get(ref);
+  if (id === undefined) throw new ShapeError("vehicleRef", "a reference created by sanitizeVehicleList");
+  return id;
+}
+
+/** Longest `vehicle_id` the service takes (contract, "Vehicle selection"). */
+const MAX_VEHICLE_ID_LENGTH = 256;
+/** Characters of the registration kept to tell two vehicles of one model apart. */
+const TWIN_SUFFIX_LENGTH = 3;
+
+/**
+ * `list_vehicles`, sanitized. Each vehicle keeps a sealed ref for its id, its
+ * model, whether it is cancelled and its state. The registration is read
+ * only to tell apart two vehicles of the same model (its last three
+ * characters, `twinSuffix`) and dropped here; with distinct models nothing
+ * of it is kept. A list without vehicles, or with a repeated id, is a shape
+ * error: the service never sends one.
+ */
+export function sanitizeVehicleList(raw: unknown): readonly VehicleOption[] {
+  const list = asObject(raw, "list_vehicles");
+  const entries = asArray(list["vehicles"], "list_vehicles.vehicles");
+  if (entries.length === 0) throw new ShapeError("list_vehicles.vehicles", "at least one vehicle");
+  const seen = new Set<string>();
+  const read = entries.map((entry, index) => {
+    const path = `list_vehicles.vehicles[${index}]`;
+    const fields = asObject(entry, path);
+    const id = fields["vehicle_id"];
+    if (typeof id !== "string" || id.trim() === "" || id.length > MAX_VEHICLE_ID_LENGTH) throw new ShapeError(`${path}.vehicle_id`, "non-empty string");
+    if (seen.has(id)) throw new ShapeError(`${path}.vehicle_id`, "an id not repeated");
+    seen.add(id);
+    const cancelled = boolOrNull(fields["cancelled"], `${path}.cancelled`) === true;
+    const state = sanitizeVehicleStatus(fields["status"], `${path}.status`);
+    const registration = stringOrNull(fields["registration"], `${path}.registration`);
+    // Spaces and dashes are how a plate is written, not part of it.
+    const plate = registration === null ? "" : registration.replace(/[^\p{L}\p{N}]/gu, "").toUpperCase();
+    const tail = Array.from(plate).slice(-TWIN_SUFFIX_LENGTH).join("");
+    return {
+      id,
+      model: labelOrNull(fields["model"], `${path}.model`),
+      cancelled,
+      state: cancelled && state.cancelled !== true ? { ...state, cancelled: true } : state,
+      tail: tail === "" ? null : tail,
+      order: index,
+    };
+  });
+  return read.map((vehicle) => {
+    const twin = read.some((other) => other !== vehicle && other.model === vehicle.model);
+    const ref = Object.freeze({}) as VehicleRef;
+    vehicleIds.set(ref, vehicle.id);
+    return { ref, model: vehicle.model, cancelled: vehicle.cancelled, state: vehicle.state, twinSuffix: twin ? vehicle.tail : null, order: vehicle.order };
+  });
 }
 
 export function sanitizeVehicleDetails(raw: unknown): VehicleInfo {
@@ -233,19 +309,29 @@ const MAX_SAVED_ROUTES = 100_000;
  * The account data as a plain JSON value to keep in the tab (docs/PLAN.md,
  * section 10, «Los datos de la cuenta»). Each field is copied by name, so
  * nothing else can ride along: no `RouteRef` (and so no route id), no trace,
- * no start or end place, no email, no token. A route is
- * `[startMs, endMs, distanceKm, averageSpeed, maxSpeed, hasInferredSegments]`.
+ * no start or end place, no email, no token, no vehicle id or registration. A
+ * route is `[startMs, endMs, distanceKm, averageSpeed, maxSpeed,
+ * hasInferredSegments]`. Two keys appear only when they apply, so a
+ * single active vehicle without selection keeps the earlier value: `c`
+ * (the vehicle is cancelled) and `k` (the hashed key of the vehicle the data
+ * was loaded for, `vehicleKey` in src/service/vehicles.ts).
  */
 export function accountSnapshot(data: AccountData): unknown {
   const { vehicle, info } = data;
-  return {
+  const snapshot: Record<string, unknown> = {
     v: SNAPSHOT_VERSION,
     vehicle: [vehicle.status, vehicle.batteryPercent, vehicle.lastCommunicationMs, vehicle.odometer],
     info: info === null ? null : [info.model, info.mileage],
     skipped: data.skipped,
     routes: data.routes.map((route) => [route.startMs, route.endMs, route.distanceKm, route.averageSpeed, route.maxSpeed, route.hasInferredSegments]),
   };
+  if (vehicle.cancelled === true) snapshot["c"] = true;
+  if (typeof data.vehicleKey === "string" && VEHICLE_KEY_PATTERN.test(data.vehicleKey)) snapshot["k"] = data.vehicleKey;
+  return snapshot;
 }
+
+/** What `vehicleKey` in src/service/vehicles.ts makes: 16 lowercase hex digits. */
+export const VEHICLE_KEY_PATTERN = /^[0-9a-f]{16}$/;
 
 function savedTuple(value: unknown, length: number, path: string): unknown[] {
   const tuple = asArray(value, path);
@@ -292,12 +378,17 @@ export function restoreAccount(raw: unknown): AccountData {
   const saved = asObject(raw, "saved");
   if (saved["v"] !== SNAPSHOT_VERSION) throw new ShapeError("saved.v", `${SNAPSHOT_VERSION}`);
   const [status, battery, lastCommunication, odometer] = savedTuple(saved["vehicle"], 4, "saved.vehicle");
-  const vehicle: VehicleState = {
+  const state: VehicleState = {
     status: labelOrNull(status, "saved.vehicle[0]"),
     batteryPercent: percentOrNull(battery, "saved.vehicle[1]"),
     lastCommunicationMs: savedInstantOrNull(lastCommunication, "saved.vehicle[2]"),
     odometer: nonNegativeOrNull(odometer, "saved.vehicle[3]"),
   };
+  const cancelled = saved["c"];
+  if (cancelled !== undefined && cancelled !== true) throw new ShapeError("saved.c", "true or absent");
+  const vehicle: VehicleState = cancelled === true ? { ...state, cancelled: true } : state;
+  const key = saved["k"];
+  if (key !== undefined && (typeof key !== "string" || !VEHICLE_KEY_PATTERN.test(key))) throw new ShapeError("saved.k", "vehicle key or absent");
   let info: VehicleInfo | null = null;
   if (saved["info"] !== null) {
     const [model, mileage] = savedTuple(saved["info"], 2, "saved.info");
@@ -309,7 +400,7 @@ export function restoreAccount(raw: unknown): AccountData {
   if (rawRoutes.length > MAX_SAVED_ROUTES) throw new ShapeError("saved.routes", `at most ${MAX_SAVED_ROUTES} routes`);
   const routes = rawRoutes.map((route, index) => savedRoute(route, `saved.routes[${index}]`));
   routes.sort((a, b) => a.startMs - b.startMs);
-  return { vehicle, info, routes, skipped };
+  return key === undefined ? { vehicle, info, routes, skipped } : { vehicle, info, routes, skipped, vehicleKey: key };
 }
 
 function sanitizePosition(raw: unknown, path: string): LatLng {

@@ -9,7 +9,7 @@
  * does not know would be rejected). Answers are plain JSON; an event stream
  * or a session id is not expected and is not followed.
  *
- * Limits: only the four read tools of `ALLOWED_TOOLS` through `callTool`
+ * Limits: only the five read tools of `ALLOWED_TOOLS` through `callTool`
  * (the open service's two account tools go only through `endSession` and
  * `deleteMyData`, and only with `publicService`); at most two requests
  * in flight and a gap between starts, to stay well under the account-wide
@@ -26,6 +26,7 @@ import { ToolCallError, type ToolArguments, type ToolCaller, type ToolName } fro
 
 /** Closed list. `get_route_detail` is the last one; never a tool that writes or deletes. */
 export const ALLOWED_TOOLS: readonly ToolName[] = Object.freeze([
+  "list_vehicles",
   "get_vehicle_status",
   "get_vehicle_details",
   "list_routes",
@@ -140,6 +141,8 @@ export const SERVICE_TOOL_CODES: readonly string[] = [
   "route_limit_exceeded",
   "route_outside_requested_interval",
   "vehicle_not_found",
+  // Several vehicles in the account and no `vehicle_id` (contract "Vehicle selection").
+  "vehicle_selection_required",
   // Open service (`public_web_service.py`).
   "session_expired",
   "session_limit_reached",
@@ -162,26 +165,51 @@ function reauth(session: AuthSession, why: EndReason): ServiceError {
   return new ServiceError("reauth_required", why);
 }
 
-/** Copies only the arguments each tool takes, as strings; anything else is refused. */
+/**
+ * Copies only the arguments each tool takes, as strings; anything else is
+ * refused. `vehicle_id` is optional on the four vehicle tools and never on
+ * `list_vehicles` (service contract, "Vehicle selection").
+ */
 function requestArguments(name: ToolName, args: unknown): Record<string, string> {
   const given = typeof args === "object" && args !== null && !Array.isArray(args) ? (args as Record<string, unknown>) : null;
   if (given === null) throw new ServiceError("not_allowed", "arguments");
   const keys: Record<ToolName, readonly string[]> = {
+    list_vehicles: [],
     get_vehicle_status: [],
     get_vehicle_details: [],
     list_routes: ["from_time", "to_time"],
     get_route_detail: ["route_id"],
   };
   const expected = keys[name];
-  if (Object.keys(given).some((key) => !expected.includes(key))) throw new ServiceError("not_allowed", "arguments");
+  const optional = name === "list_vehicles" ? [] : ["vehicle_id"];
+  if (Object.keys(given).some((key) => !expected.includes(key) && !optional.includes(key))) throw new ServiceError("not_allowed", "arguments");
+  const valid = (value: unknown): value is string => typeof value === "string" && value.length > 0 && value.length <= 256;
   const copy: Record<string, string> = {};
   for (const key of expected) {
     const value = given[key];
-    if (typeof value !== "string" || value.length === 0 || value.length > 256) throw new ServiceError("not_allowed", "arguments");
+    if (!valid(value)) throw new ServiceError("not_allowed", "arguments");
+    copy[key] = value;
+  }
+  for (const key of optional) {
+    if (!(key in given) || given[key] === undefined) continue;
+    const value = given[key];
+    if (!valid(value)) throw new ServiceError("not_allowed", "arguments");
     copy[key] = value;
   }
   return copy;
 }
+
+/**
+ * A tool the service does not have (an older deployment without
+ * `list_vehicles`). The service registers its tools with the MCP Python SDK
+ * (`mcp` 2.2, `remove_tool` for those the web may not call); for a name it
+ * does not know the SDK answers a tool error whose text is exactly
+ * `Unknown tool: <name>`, before any gate of the service runs. Only that
+ * exact text, for the tool that was called, gets this code; the page then
+ * works as before, without vehicle selection. Not a service code: this web
+ * gives it its own name.
+ */
+export const UNKNOWN_TOOL_CODE = "unknown_tool";
 
 /**
  * The code at the start of a tool error's text. The MCP Python SDK puts
@@ -196,6 +224,7 @@ function toolCode(result: Record<string, unknown>, tool: string): string {
   if (typeof raw !== "string") return "tool_error";
   const prefix = `Error executing tool ${tool}: `;
   const text = raw.startsWith(prefix) ? raw.slice(prefix.length) : raw;
+  if (text === `Unknown tool: ${tool}`) return UNKNOWN_TOOL_CODE;
   const code = text.split(":", 1)[0]?.trim() ?? "";
   return SAFE_TOOL_CODE.test(code) && SERVICE_TOOL_CODES.includes(code) ? code : "tool_error";
 }

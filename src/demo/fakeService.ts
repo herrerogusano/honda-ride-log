@@ -1,7 +1,10 @@
 /**
- * In-memory stand-in for the service, with the same four tools and the same
+ * In-memory stand-in for the service, with the same five tools and the same
  * limits (period length, 500-route cap with `truncated`, `from` inclusive and
- * `to` exclusive). It powers the demo mode and the tests.
+ * `to` exclusive) and the same vehicle selection (`list_vehicles`, an
+ * optional `vehicle_id`, `vehicle_selection_required` with several vehicles
+ * and none given, `vehicle_not_found`). It powers the demo mode and the
+ * tests.
  *
  * It is a double: it reproduces the contract as read from the service code,
  * not the network, the login, CORS, timeouts or throttling.
@@ -13,6 +16,7 @@ import {
   NATIVE_UNIT,
   ToolCallError,
   type RawRouteList,
+  type RawVehicleList,
   type ToolArguments,
   type ToolCaller,
   type ToolName,
@@ -43,12 +47,74 @@ function parseBoundary(value: unknown, field: string): number {
 export interface DemoService extends ToolCaller {
   /** Names of the tools called so far, in order (for tests and diagnostics). */
   readonly calls: readonly ToolName[];
+  /** The `vehicle_id` each call carried (undefined: none), in the same order as `calls`. */
+  readonly vehicleIds: readonly (string | undefined)[];
 }
 
-export function createDemoService(rider: SyntheticRider): DemoService {
-  const calls: ToolName[] = [];
+/** One synthetic motorbike of a demo account. Every value is invented. */
+export interface DemoVehicle {
+  readonly id: string;
+  readonly model: string;
+  readonly registration: string;
+  readonly cancelled?: boolean;
+  readonly rider: SyntheticRider;
+}
 
-  function listRoutes(args: ToolArguments["list_routes"]): RawRouteList {
+/** The id of the one motorbike of a demo account made from a single rider. */
+export const DEMO_VEHICLE_ID = "veh-DEMO-0001";
+
+/** The service's fixed text for a cancelled vehicle's state (not read by the web). */
+const STATE_WARNING = "Vehicle is cancelled: values are the last ones MAPIT stored, not live state.";
+
+export function createDemoService(account: SyntheticRider | readonly DemoVehicle[]): DemoService {
+  const calls: ToolName[] = [];
+  const vehicleIds: (string | undefined)[] = [];
+  const fleet: readonly DemoVehicle[] = Array.isArray(account)
+    ? (account as readonly DemoVehicle[])
+    : [
+        {
+          id: DEMO_VEHICLE_ID,
+          model: (account as SyntheticRider).details.model ?? "Demo 125",
+          registration: (account as SyntheticRider).details.registration ?? "",
+          rider: account as SyntheticRider,
+        },
+      ];
+  if (fleet.length === 0) throw new RangeError("a demo account needs a vehicle");
+
+  function statusOf(vehicle: DemoVehicle): unknown {
+    const status = vehicle.rider.status;
+    return vehicle.cancelled === true ? { ...status, vehicle_cancelled: true, state_warning: STATE_WARNING } : status;
+  }
+
+  function listVehicles(): RawVehicleList {
+    return {
+      vehicles: fleet.map((vehicle) => ({
+        vehicle_id: vehicle.id,
+        model: vehicle.model,
+        registration: vehicle.registration,
+        cancelled: vehicle.cancelled === true,
+        status: statusOf(vehicle) as RawVehicleList["vehicles"][number]["status"],
+      })),
+      vehicle_count: fleet.length,
+      selection_required: fleet.length > 1,
+      selection_basis: "mapit_dashboard_filter",
+      selection_hint: "When more than one vehicle is listed, pass vehicle_id to every vehicle-scoped tool.",
+    };
+  }
+
+  /** The vehicle a call works on, as the service picks it. */
+  function vehicleFor(args: unknown): DemoVehicle {
+    const given = (args as { vehicle_id?: unknown } | null)?.vehicle_id;
+    if (given === undefined || given === null) {
+      if (fleet.length === 1) return fleet[0] as DemoVehicle;
+      throw new ToolCallError("vehicle_selection_required", `this account has ${fleet.length} vehicles; call list_vehicles and pass vehicle_id`);
+    }
+    const found = typeof given === "string" ? fleet.find((vehicle) => vehicle.id === given) : undefined;
+    if (found === undefined) throw new ToolCallError("vehicle_not_found", "vehicle not found");
+    return found;
+  }
+
+  function listRoutes(rider: SyntheticRider, args: ToolArguments["list_routes"]): RawRouteList {
     const from = parseBoundary(args.from_time, "from_time");
     const to = parseBoundary(args.to_time, "to_time");
     if (from >= to) throw new ToolCallError("invalid_date_range", "from_time must be earlier than to_time");
@@ -74,13 +140,16 @@ export function createDemoService(rider: SyntheticRider): DemoService {
   }
 
   function run(name: ToolName, args: ToolArguments[ToolName]): unknown {
+    if (name === "list_vehicles") return listVehicles();
+    const vehicle = vehicleFor(args);
+    const rider = vehicle.rider;
     switch (name) {
       case "get_vehicle_status":
-        return rider.status;
+        return statusOf(vehicle);
       case "get_vehicle_details":
-        return rider.details;
+        return { ...rider.details, model: vehicle.model, registration: vehicle.registration };
       case "list_routes":
-        return listRoutes(args as ToolArguments["list_routes"]);
+        return listRoutes(rider, args as ToolArguments["list_routes"]);
       case "get_route_detail": {
         const routeId = (args as ToolArguments["get_route_detail"]).route_id;
         if (typeof routeId !== "string" || routeId.trim() === "" || routeId.length > 256) {
@@ -98,8 +167,11 @@ export function createDemoService(rider: SyntheticRider): DemoService {
 
   return {
     calls,
+    vehicleIds,
     async callTool(name, args) {
       calls.push(name);
+      const id = (args as { vehicle_id?: unknown } | null)?.vehicle_id;
+      vehicleIds.push(typeof id === "string" ? id : undefined);
       // A JSON round trip, like the network: callers cannot share or mutate our objects.
       return JSON.parse(JSON.stringify(run(name, args))) as unknown;
     },
