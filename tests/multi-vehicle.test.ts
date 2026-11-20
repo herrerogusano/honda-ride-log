@@ -449,6 +449,10 @@ describe("several motorbikes", () => {
       choose(picker() as HTMLSelectElement, "1");
       await vi.waitFor(() => expect(picker()?.selectedOptions[0]?.textContent).toBe("Demo 125 · …KLM"));
       await loaded();
+      // Redraw the card while the selector (with the registration's end) is on the page.
+      const before = drawn.length;
+      choose(root.querySelector<HTMLSelectElement>(".period-select:not(.vehicle-select)") as HTMLSelectElement, "all");
+      await vi.waitFor(() => expect(drawn.length).toBeGreaterThan(before));
     } finally {
       HTMLCanvasElement.prototype.getContext = original;
     }
