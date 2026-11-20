@@ -2393,11 +2393,17 @@ estado y los datos. El identificador vive detrás de un `VehicleRef` opaco;
 solo `serviceVehicleId` lo abre y ESLint solo deja importarlo en
 `src/service/` (`tests/lint-seals.test.ts`).
 
-Si el servicio no tiene `list_vehicles` (un despliegue anterior: error de
-herramienta «Unknown tool», que esta web llama `unknown_tool`; un error
-JSON-RPC −32601 o −32602; o un rechazo sin código conocido), la web
-funciona como antes, sin `vehicle_id`. Con varias motos, la siguiente
-llamada diría `vehicle_selection_required`.
+Si el servicio no tiene `list_vehicles` (un despliegue anterior), la web
+funciona como antes, sin `vehicle_id`. Solo se reconoce la respuesta
+exacta del SDK de MCP que usa el servicio (`mcp` 2.2: quita con
+`remove_tool` las herramientas que la web no usa y, para un nombre que no
+conoce, responde un error de herramienta con el texto
+`Unknown tool: list_vehicles`, antes de que corra ninguna puerta del
+servicio); esta web lo llama `unknown_tool`. Cualquier otro fallo de
+`list_vehicles`, también uno ilegible, es un error del paso `vehicles` con
+«Reintentar»: caer al modo sin selección por un fallo pasajero guardaría el
+mantenimiento en la clave antigua y escondería el ya movido a la de la
+moto.
 
 `vehicle_selection_required` y `vehicle_not_found` tienen texto propio en
 los dos modos y «Reintentar», que olvida la moto guardada y vuelve a leer
@@ -2413,7 +2419,11 @@ la lista.
   la pestaña: mismo riesgo aceptado que el token y los datos (apartado 10).
 - **Los datos guardados de la cuenta** llevan la clave de su moto (`k`, ver
   abajo) y solo se pintan si coincide con la moto elegida; si no, la carga
-  se hace entera. Una moto dada de baja añade `c: true`. Los dos campos
+  se hace entera. Si al llegar la lista la moto resulta dada de baja, la
+  placa y Taller cambian en su sitio (aviso en lugar del formulario). Una
+  copia guardada antes de este cambio se pinta con la clave antigua del
+  mantenimiento; al mover la pareja a la clave de la moto, el formulario
+  pasa a leer y escribir allí. Una moto dada de baja añade `c: true`. Los dos campos
   solo aparecen cuando aplican.
 - **El mantenimiento es por moto**, en `localStorage` bajo
   `ride-log.maintenance.v1.<clave>`. La clave son los 16 primeros dígitos
@@ -2448,6 +2458,7 @@ más de un año.
 - **Nada con una cuenta real de varias motos** ni contra el servicio
   desplegado: la forma de `list_vehicles` y de sus errores sale de su
   código y su documento de contrato.
-- El texto exacto con que un servicio sin `list_vehicles` lo rechaza: se
-  aceptan las tres formas de arriba.
+- El texto con que un servicio desplegado sin `list_vehicles` lo rechaza:
+  se leyó en el código del servicio y del SDK instalado, no se pidió a un
+  despliegue antiguo.
 - El menú nativo del selector en un móvil real (se pinta el del sistema).

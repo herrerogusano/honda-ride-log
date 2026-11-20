@@ -615,8 +615,55 @@ function cancelledMaintenance(): HTMLElement {
   );
 }
 
-function maintenanceBlock(data: RiderData, scope: MaintenanceSlot | StorageScope): { readonly element: HTMLElement; update(next: RiderData): void } {
-  if (data.vehicle.cancelled === true) return { element: cancelledMaintenance(), update: () => undefined };
+interface MaintenancePart {
+  readonly element: HTMLElement;
+  update(next: RiderData): void;
+  /** Where the numbers live changed (the old pair moved to this motorbike): read and write there from now on. */
+  retarget(slot: MaintenanceSlot | StorageScope): void;
+}
+
+/** Puts `next` where `current` is, already shown (it arrives after the page's entry animation). */
+function swapIn(current: HTMLElement, next: HTMLElement): HTMLElement {
+  if (next === current) return current;
+  for (const part of [next, ...next.querySelectorAll(".rv")]) part.classList.add("in");
+  current.replaceWith(next);
+  return next;
+}
+
+/**
+ * «Mantenimiento»: the form for an active motorbike, a notice for a
+ * cancelled one. A newer state that says the motorbike is now cancelled (or
+ * active again) swaps one for the other in place.
+ */
+function maintenanceBlock(data: RiderData, scope: MaintenanceSlot | StorageScope): MaintenancePart {
+  let slot = scope;
+  let form: MaintenancePart | null = null;
+  let notice: HTMLElement | null = null;
+  const formFor = (next: RiderData): MaintenancePart => (form ??= maintenanceForm(next, slot));
+  const noticeNow = (): HTMLElement => (notice ??= cancelledMaintenance());
+  let element = data.vehicle.cancelled === true ? noticeNow() : formFor(data).element;
+  return {
+    get element() {
+      return element;
+    },
+    update(next) {
+      if (next.vehicle.cancelled === true) {
+        element = swapIn(element, noticeNow());
+        return;
+      }
+      const part = formFor(next);
+      element = swapIn(element, part.element);
+      part.update(next);
+    },
+    retarget(next) {
+      slot = next;
+      form?.retarget(next);
+    },
+  };
+}
+
+function maintenanceForm(data: RiderData, initialSlot: MaintenanceSlot | StorageScope): MaintenancePart {
+  let scope = initialSlot;
   /** Changes when a newer vehicle state arrives (`update`). */
   let odometer = data.vehicle.odometer ?? data.info?.mileage ?? null;
   /** What `show` last said, to say it again with a newer odometer. */
@@ -734,6 +781,13 @@ function maintenanceBlock(data: RiderData, scope: MaintenanceSlot | StorageScope
     odometer = newer;
     show(...shown);
   };
+  const retarget = (next: MaintenanceSlot | StorageScope): void => {
+    scope = next;
+    const plan = readMaintenance(scope);
+    interval.value = plan === null ? "" : String(plan.intervalKm);
+    last.value = plan === null ? "" : String(plan.lastServiceKm);
+    show(plan);
+  };
   const element = block(
     "Mantenimiento",
     null,
@@ -746,7 +800,7 @@ function maintenanceBlock(data: RiderData, scope: MaintenanceSlot | StorageScope
     form,
     result,
   );
-  return { element, update };
+  return { element, update, retarget };
 }
 
 function cardBlock(data: RiderData, period: Period, periodLabel: string, signal: AbortSignal): HTMLElement {
@@ -967,6 +1021,8 @@ export interface RiderPage {
   showVehicle(vehicle: VehicleState, info: VehicleInfo | null): void;
   /** The motorbike selector of the hero, once the list of motorbikes is known (null: none). */
   setPicker(picker: HTMLElement | null): void;
+  /** Where the maintenance numbers live changed (the old pair moved to this motorbike's key). */
+  setMaintenanceSlot(slot: MaintenanceSlot | StorageScope): void;
   /** The period chosen in the bar now. */
   currentPeriod(): Period;
 }
@@ -1131,6 +1187,7 @@ export function renderRiderPage(data: RiderData, scope: MaintenanceSlot | Storag
     period: control?.element ?? null,
     showVehicle,
     setPicker: (picker) => heroPart.setPicker(picker),
+    setMaintenanceSlot: (slot) => maintenance.retarget(slot),
     currentPeriod: () => period,
   };
 }

@@ -176,6 +176,17 @@ describe("vehicle selection (docs/PLAN.md, section 19)", () => {
     server.mcpOverride = () => ({ body: JSON.stringify({ jsonrpc: "2.0", id: 1, result: { isError: true, content: [{ type: "text", text }] } }) });
     expect(((await failure(client.callTool("list_vehicles", {}))) as ToolCallError).code).toBe("unknown_tool");
   });
+
+  it.each([
+    ["another tool's name", "Unknown tool: get_vehicle_status"],
+    ["other words", "unknown tool: list_vehicles"],
+    ["more text after it", "Unknown tool: list_vehicles (gate)"],
+    ["a service refusal", "tool_not_allowed: list_vehicles"],
+  ])("does not take %s for a missing tool", async (_label, text) => {
+    const { server, client } = await setUp();
+    server.mcpOverride = () => ({ body: JSON.stringify({ jsonrpc: "2.0", id: 1, result: { isError: true, content: [{ type: "text", text }] } }) });
+    expect(((await failure(client.callTool("list_vehicles", {}))) as ToolCallError).code).toBe("tool_error");
+  });
 });
 
 describe("rejected or lost token", () => {

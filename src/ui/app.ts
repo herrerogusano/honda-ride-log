@@ -124,7 +124,7 @@ interface VehicleContext {
 }
 
 /** The parts of a drawn page the load still talks to. */
-type ShownPage = Pick<RiderPage, "showVehicle" | "setPicker" | "currentPeriod">;
+type ShownPage = Pick<RiderPage, "showVehicle" | "setPicker" | "setMaintenanceSlot" | "currentPeriod">;
 
 /**
  * A caller whose real target is known later: a page painted from the tab
@@ -831,6 +831,9 @@ export function startApp(options: AppOptions): App {
       memory.remember(chosen);
       await adoptMaintenance(vehicles, false);
       if (!current()) return;
+      // A copy kept before vehicle selection was painted with the plain key;
+      // the pair has just moved to this motorbike's key: the form follows it.
+      if (key !== (saved.vehicleKey ?? null)) page.setMaintenanceSlot({ scope: "account", vehicleKey: key });
       page.setPicker(pickerFor(base, loadOptions, vehicles, chosen));
       await refreshVehicle(vehicleCaller(base, chosen.ref), saved, page.showVehicle, current, loadOptions.onLoaded, { vehicle: chosen.state, key });
       return;

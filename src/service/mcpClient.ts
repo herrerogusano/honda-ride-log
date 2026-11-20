@@ -201,9 +201,13 @@ function requestArguments(name: ToolName, args: unknown): Record<string, string>
 
 /**
  * A tool the service does not have (an older deployment without
- * `list_vehicles`). The MCP SDK answers it with a tool error whose text
- * starts "Unknown tool"; the page then works as before, without vehicle
- * selection. Not a service code: this web gives it its own name.
+ * `list_vehicles`). The service registers its tools with the MCP Python SDK
+ * (`mcp` 2.2, `remove_tool` for those the web may not call); for a name it
+ * does not know the SDK answers a tool error whose text is exactly
+ * `Unknown tool: <name>`, before any gate of the service runs. Only that
+ * exact text, for the tool that was called, gets this code; the page then
+ * works as before, without vehicle selection. Not a service code: this web
+ * gives it its own name.
  */
 export const UNKNOWN_TOOL_CODE = "unknown_tool";
 
@@ -220,7 +224,7 @@ function toolCode(result: Record<string, unknown>, tool: string): string {
   if (typeof raw !== "string") return "tool_error";
   const prefix = `Error executing tool ${tool}: `;
   const text = raw.startsWith(prefix) ? raw.slice(prefix.length) : raw;
-  if (/^unknown tool\b/i.test(text)) return UNKNOWN_TOOL_CODE;
+  if (text === `Unknown tool: ${tool}`) return UNKNOWN_TOOL_CODE;
   const code = text.split(":", 1)[0]?.trim() ?? "";
   return SAFE_TOOL_CODE.test(code) && SERVICE_TOOL_CODES.includes(code) ? code : "tool_error";
 }

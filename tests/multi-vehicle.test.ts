@@ -242,15 +242,38 @@ describe("choosing the motorbike", () => {
 });
 
 describe("a service without list_vehicles", () => {
-  it("is read as no vehicle selection: an unknown tool, a JSON-RPC «not found» or an unreadable refusal", async () => {
+  it("is read as no vehicle selection only on the SDK's «Unknown tool» answer; anything else fails the step", async () => {
     const failing = (error: Error): ToolCaller => ({ callTool: () => Promise.reject(error) });
     expect(await loadVehicles(failing(new ToolCallError("unknown_tool", "x")))).toBeNull();
-    expect(await loadVehicles(failing(new ToolCallError("tool_error", "x")))).toBeNull();
-    expect(await loadVehicles(failing(new ServiceError("rpc_error", "-32601")))).toBeNull();
-    expect(await loadVehicles(failing(new ServiceError("rpc_error", "-32602")))).toBeNull();
-    // A real failure stays a failure of its own step.
+    // A passing or unreadable failure is not a missing tool.
+    await expect(loadVehicles(failing(new ToolCallError("tool_error", "x")))).rejects.toMatchObject({ step: "vehicles", kind: "tool_error" });
+    await expect(loadVehicles(failing(new ServiceError("rpc_error", "-32601")))).rejects.toMatchObject({ step: "vehicles", kind: "rpc_error" });
+    await expect(loadVehicles(failing(new ServiceError("rpc_error", "-32602")))).rejects.toMatchObject({ step: "vehicles", kind: "rpc_error" });
     await expect(loadVehicles(failing(new ToolCallError("mapit_unavailable", "x")))).rejects.toMatchObject({ step: "vehicles", kind: "tool_error", detail: "mapit_unavailable" });
-    await expect(loadVehicles(failing(new ServiceError("rpc_error", "-32000")))).rejects.toMatchObject({ step: "vehicles", kind: "rpc_error" });
+  });
+
+  it("an unreadable failure of the list shows the vehicles step with «Reintentar», which lists again and sends vehicle_id", async () => {
+    const service = createDemoService(generateRider({ seed: DEMO_SEED, nowMs: NOW }));
+    let fail = true;
+    const caller = recording({
+      callTool(name, args) {
+        if (fail && name === "list_vehicles") return Promise.reject(new ToolCallError("tool_error", "something else"));
+        return service.callTool(name, args);
+      },
+    });
+    await mount().load(caller, { demo: false });
+    const alert = await vi.waitFor(() => {
+      const found = root.querySelector('[role="alert"]');
+      expect(found).not.toBeNull();
+      return found as Element;
+    });
+    expect(alert.querySelector("code")?.textContent).toBe("vehicles/tool_error (tool_error)");
+    // Nothing else was asked: no fallback without vehicle_id.
+    expect(caller.log.map((one) => one.name)).toEqual(["list_vehicles"]);
+    fail = false;
+    [...alert.querySelectorAll("button")].find((one) => one.textContent === "Reintentar")?.click();
+    await loaded();
+    expect(caller.log.filter((one) => one.name !== "list_vehicles").every((one) => one.vehicle === DEMO_VEHICLE_ID)).toBe(true);
   });
 
   it("loads exactly as before: no vehicle_id on any call and no selector", async () => {
@@ -404,6 +427,36 @@ describe("several motorbikes", () => {
     expect(onDemo).not.toHaveBeenCalled();
   });
 
+  it("never draws the registration's end on the share card", async () => {
+    const drawn: string[] = [];
+    const context = new Proxy({} as Record<string | symbol, unknown>, {
+      get(target, name) {
+        if (name in target) return target[name];
+        if (name === "fillText") return (value: string) => void drawn.push(String(value));
+        if (name === "measureText") return (value: string) => ({ width: String(value).length * 20 });
+        return () => ({ addColorStop: () => undefined });
+      },
+      set(target, name, value) {
+        target[name] = value;
+        return true;
+      },
+    });
+    const original = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = (() => context) as unknown as typeof HTMLCanvasElement.prototype.getContext;
+    try {
+      await openFleet();
+      await vi.waitFor(() => expect(drawn.length).toBeGreaterThan(5));
+      choose(picker() as HTMLSelectElement, "1");
+      await vi.waitFor(() => expect(picker()?.selectedOptions[0]?.textContent).toBe("Demo 125 · …KLM"));
+      await loaded();
+    } finally {
+      HTMLCanvasElement.prototype.getContext = original;
+    }
+    const all = drawn.join(" | ");
+    expect(all).toMatch(/km/i);
+    for (const tail of ["BCD", "KLM", "XYZ", "DEMO-", "veh-DEMO", "…"]) expect(all).not.toContain(tail);
+  });
+
   it("gives each motorbike its own maintenance numbers, and the old pair to the first one listed", async () => {
     stored.set("ride-log.maintenance.v1", JSON.stringify({ intervalKm: 5000, lastServiceKm: 10 }));
     await openFleet();
@@ -523,6 +576,56 @@ describe("the copy kept in the tab, per motorbike", () => {
     await vi.waitFor(() => expect(picker()?.selectedOptions[0]?.textContent).toBe("Demo 125 · …KLM"));
     expect(caller.log.map((one) => one.name)).toEqual(["list_vehicles", "get_vehicle_details"]);
     expect(caller.log[1]?.vehicle).toBe("veh-DEMO-0002");
+  });
+
+  it("after a copy kept before vehicle selection, Taller saves under the motorbike's key the old pair moved to", async () => {
+    // A copy with no motorbike key, as the page kept it before this change, and the old plain pair.
+    const before = await keptCopy("veh-DEMO-0001");
+    const old = accountSnapshot({ ...before, vehicleKey: null }) as Record<string, unknown>;
+    expect("k" in old).toBe(false);
+    stored.clear();
+    stored.set("ride-log.maintenance.v1", JSON.stringify({ intervalKm: 5000, lastServiceKm: 10 }));
+    const single = createDemoService(generateRider({ seed: DEMO_SEED, nowMs: NOW }));
+    const caller = recording(single);
+    await mount().load(caller, { demo: false, saved: restoreAccount(old), vehicles: vehicleMemory(memoryChoiceStore()) });
+    await loaded();
+    const key = `ride-log.maintenance.v1.${await keyOfVehicleId(DEMO_VEHICLE_ID)}`;
+    await vi.waitFor(() => expect(caller.log.map((one) => one.name)).toEqual(["list_vehicles", "get_vehicle_details"]));
+    await vi.waitFor(() => expect(stored.has(key)).toBe(true));
+    const [interval, last] = [...root.querySelectorAll<HTMLInputElement>("form.maintenance input")] as [HTMLInputElement, HTMLInputElement];
+    expect(interval.value).toBe("5000");
+    interval.value = "8000";
+    last.value = "10";
+    root.querySelector("form.maintenance")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(JSON.parse(stored.get(key) as string)).toEqual({ intervalKm: 8000, lastServiceKm: 10 });
+    expect(stored.has("ride-log.maintenance.v1")).toBe(false);
+  });
+
+  it("a motorbike kept as active and now cancelled gets the Taller notice, not the form", async () => {
+    const copy = await keptCopy("veh-DEMO-0001");
+    expect(copy.vehicle.cancelled).toBeUndefined();
+    const [first] = fleet();
+    const store = memoryChoiceStore();
+    store.write("veh-DEMO-0001");
+    const service = createDemoService([{ ...(first as DemoVehicle), cancelled: true }]);
+    let release: () => void = () => undefined;
+    const listed = new Promise<void>((resolve) => (release = resolve));
+    const caller: ToolCaller = {
+      async callTool(name, args) {
+        if (name === "list_vehicles") await listed;
+        return service.callTool(name, args);
+      },
+    };
+    const loading = mount().load(caller, { demo: false, saved: copy, vehicles: vehicleMemory(store) });
+    // Painted from the copy, as an active motorbike, until the list says otherwise.
+    await loaded();
+    expect(root.querySelector("form.maintenance")).not.toBeNull();
+    release();
+    await loading;
+    await vi.waitFor(() => expect(tileValue("Estado")).toBe("No disponible"));
+    expect(root.querySelector("form.maintenance")).toBeNull();
+    expect(text()).toContain("No disponible: esta moto está dada de baja");
+    expect(root.querySelector(".sec-taller .vehicle-badge")).not.toBeNull();
   });
 
   it("refuses a damaged motorbike key", async () => {

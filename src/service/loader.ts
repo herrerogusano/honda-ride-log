@@ -112,17 +112,16 @@ export function isVehicleChoiceError(error: LoadError): boolean {
 }
 
 /**
- * `list_vehicles` is not there: an older deployment of the service. The MCP
- * SDK says so in a tool error (`unknown_tool`) or, in some versions, with a
- * JSON-RPC error ("method not found" or "invalid params"); a gate in front
- * of the tools may refuse it with a text that is no known code
- * (`tool_error`). In all of these the page goes on as before, without a
- * `vehicle_id`: with one vehicle that is today's behaviour, and with several
- * the next call says `vehicle_selection_required`.
+ * `list_vehicles` is not there: an older deployment of the service, whose
+ * MCP SDK answers exactly `Unknown tool: list_vehicles` (`unknown_tool`, see
+ * src/service/mcpClient.ts). Only then does the page go on as before,
+ * without a `vehicle_id`. Any other failure, an unreadable one included, is
+ * a failure of the `vehicles` step with «Reintentar»: falling back on a
+ * passing error would file new maintenance numbers under the plain key and
+ * hide the ones already moved to the motorbike's key.
  */
 function missingTool(error: unknown): boolean {
-  if (error instanceof ToolCallError) return error.code === UNKNOWN_TOOL_CODE || error.code === "tool_error";
-  return error instanceof ServiceError && error.kind === "rpc_error" && (error.detail === "-32601" || error.detail === "-32602");
+  return error instanceof ToolCallError && error.code === UNKNOWN_TOOL_CODE;
 }
 
 /**
